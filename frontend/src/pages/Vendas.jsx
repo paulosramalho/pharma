@@ -11,7 +11,7 @@ import Table, { Pagination } from "../components/ui/Table";
 import EmptyState from "../components/ui/EmptyState";
 import Modal from "../components/ui/Modal";
 import { PageSpinner } from "../components/ui/Spinner";
-import { Plus, ShoppingCart, Search, RefreshCw, X, Tag, XCircle } from "lucide-react";
+import { Plus, ShoppingCart, Search, RefreshCw, X, Tag, XCircle, Play, Trash2 } from "lucide-react";
 
 const STATUS_TABS = [
   { key: "", label: "Todas" },
@@ -96,6 +96,14 @@ export default function Vendas() {
       setExchangeModal(null);
     }
     setExchangeLoading(false);
+  };
+
+  const deleteDraft = async (sale) => {
+    try {
+      await apiFetch(`/api/sales/${sale.id}`, { method: "DELETE" });
+      addToast("Rascunho apagado", "success");
+      load();
+    } catch (err) { addToast(err.message, "error"); }
   };
 
   const openCancel = (sale) => {
@@ -231,6 +239,16 @@ export default function Vendas() {
     )},
     { key: "actions", label: "", render: (r) => (
       <div className="flex items-center gap-1">
+        {r.status === "DRAFT" && (
+          <>
+            <button onClick={() => navigate(`/vendas/nova?resume=${r.id}`)} className="p-1.5 text-gray-400 hover:text-primary-600 rounded" title="Continuar">
+              <Play size={14} />
+            </button>
+            <button onClick={() => deleteDraft(r)} className="p-1.5 text-gray-400 hover:text-red-600 rounded" title="Apagar">
+              <Trash2 size={14} />
+            </button>
+          </>
+        )}
         {r.status === "CONFIRMED" && (
           <button onClick={() => openCancel(r)} className="p-1.5 text-gray-400 hover:text-red-600 rounded" title="Cancelar">
             <XCircle size={14} />

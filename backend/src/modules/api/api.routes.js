@@ -1166,6 +1166,7 @@ function buildApiRoutes({ prisma, log }) {
     await prisma.cashMovement.create({
       data: {
         sessionId: session.id, type: "RECEBIMENTO", method, amount: sale.total,
+        reason: `Venda #${sale.number}`,
         refType: "SALE", refId: sale.id, createdById: req.user?.id,
       },
     });
@@ -1174,6 +1175,17 @@ function buildApiRoutes({ prisma, log }) {
     await prisma.sale.update({ where: { id: sale.id }, data: { status: "PAID" } });
     const updated = await loadFullSale(sale.id);
     return sendOk(res, req, updated);
+  }));
+
+  // Delete a DRAFT sale (permanent removal, not cancellation)
+  router.delete("/sales/:id", asyncHandler(async (req, res) => {
+    const sale = await prisma.sale.findUnique({ where: { id: req.params.id } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    if (sale.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Somente rascunhos podem ser apagados" } });
+
+    await prisma.saleItem.deleteMany({ where: { saleId: sale.id } });
+    await prisma.sale.delete({ where: { id: sale.id } });
+    return sendOk(res, req, { deleted: true });
   }));
 
   router.post("/sales/:id/cancel", asyncHandler(async (req, res) => {

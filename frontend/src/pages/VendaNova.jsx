@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../lib/api";
 import { money, cpfMask, formatDate, whatsappMask } from "../lib/format";
 import { useToast } from "../contexts/ToastContext";
@@ -12,6 +12,7 @@ import { Search, Trash2, ShoppingCart, X, UserPlus, User, Plus, Tag, Pencil, Che
 export default function VendaNova() {
   const { addToast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const searchRef = useRef(null);
 
   const [sale, setSale] = useState(null);
@@ -35,6 +36,24 @@ export default function VendaNova() {
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: "", birthDate: "", whatsapp: "" });
   const [searchingCpf, setSearchingCpf] = useState(false);
+
+  // Resume existing draft if ?resume=id is in URL
+  useEffect(() => {
+    const resumeId = searchParams.get("resume");
+    if (resumeId) {
+      setCreating(true);
+      apiFetch(`/api/sales/${resumeId}`)
+        .then((res) => {
+          setSale(res.data);
+          if (res.data?.customer) {
+            setCustomerFound(res.data.customer);
+            setCpfInput(res.data.customer.document || "");
+          }
+        })
+        .catch((err) => { addToast(err.message, "error"); navigate("/vendas"); })
+        .finally(() => setCreating(false));
+    }
+  }, []);
 
   // Ensure a draft exists (lazy — created on first action, not on mount)
   const ensureDraft = async () => {
