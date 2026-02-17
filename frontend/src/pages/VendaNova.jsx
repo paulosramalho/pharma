@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../lib/api";
-import { money, cpfMask, formatDate } from "../lib/format";
+import { money, cpfMask, formatDate, whatsappMask } from "../lib/format";
 import { useToast } from "../contexts/ToastContext";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -278,7 +278,7 @@ export default function VendaNova() {
                             title="Data de nascimento"
                           />
                           <input
-                            value={newCustomer.whatsapp}
+                            value={whatsappMask(newCustomer.whatsapp)}
                             onChange={(e) => setNewCustomer({ ...newCustomer, whatsapp: e.target.value.replace(/\D/g, "").slice(0, 11) })}
                             placeholder="WhatsApp (opcional)"
                             className={inputClass}

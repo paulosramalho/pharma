@@ -2,6 +2,14 @@ const express = require("express");
 const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
 
+/** Converts "YYYY-MM-DD" to noon UTC to avoid timezone day-shift */
+function safeDate(v) {
+  if (!v) return null;
+  const s = String(v);
+  if (s.includes("T")) return new Date(s);
+  return new Date(s + "T12:00:00Z");
+}
+
 function buildApiRoutes({ prisma, log }) {
   const router = express.Router();
 
@@ -227,8 +235,8 @@ function buildApiRoutes({ prisma, log }) {
         productId,
         type,
         value: Number(value),
-        startDate: startDate ? new Date(startDate) : new Date(),
-        endDate: endDate ? new Date(endDate) : null,
+        startDate: startDate ? safeDate(startDate) : new Date(),
+        endDate: endDate ? safeDate(endDate) : null,
         active: true,
       },
       include: { product: { select: { id: true, name: true } } },
@@ -241,8 +249,8 @@ function buildApiRoutes({ prisma, log }) {
     const data = {};
     if (type !== undefined) data.type = type;
     if (value !== undefined) data.value = Number(value);
-    if (startDate !== undefined) data.startDate = new Date(startDate);
-    if (endDate !== undefined) data.endDate = endDate ? new Date(endDate) : null;
+    if (startDate !== undefined) data.startDate = safeDate(startDate);
+    if (endDate !== undefined) data.endDate = endDate ? safeDate(endDate) : null;
     if (active !== undefined) data.active = active;
 
     const discount = await prisma.discount.update({
@@ -589,9 +597,9 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const lot = await prisma.inventoryLot.upsert({
-      where: { storeId_productId_lotNumber_expiration: { storeId, productId, lotNumber, expiration: new Date(expiration) } },
+      where: { storeId_productId_lotNumber_expiration: { storeId, productId, lotNumber, expiration: safeDate(expiration) } },
       update: { quantity: { increment: Number(quantity) }, costUnit: Number(costUnit) },
-      create: { storeId, productId, lotNumber, expiration: new Date(expiration), costUnit: Number(costUnit), quantity: Number(quantity), active: true },
+      create: { storeId, productId, lotNumber, expiration: safeDate(expiration), costUnit: Number(costUnit), quantity: Number(quantity), active: true },
     });
 
     await prisma.inventoryMovement.create({
@@ -842,7 +850,7 @@ function buildApiRoutes({ prisma, log }) {
       data: {
         name,
         document: cleanDoc,
-        birthDate: birthDate ? new Date(birthDate) : null,
+        birthDate: safeDate(birthDate),
         whatsapp: whatsapp || null,
         phone: phone || null,
         email: email || null,
@@ -1410,8 +1418,8 @@ function buildApiRoutes({ prisma, log }) {
     if (storeId) where.storeId = storeId;
     if (from || to) {
       where.closedAt = {};
-      if (from) where.closedAt.gte = new Date(from);
-      if (to) { const d = new Date(to); d.setHours(23, 59, 59, 999); where.closedAt.lte = d; }
+      if (from) where.closedAt.gte = safeDate(from);
+      if (to) { const d = safeDate(to); d.setHours(23, 59, 59, 999); where.closedAt.lte = d; }
     }
 
     const [sessions, total] = await Promise.all([
@@ -1478,8 +1486,8 @@ function buildApiRoutes({ prisma, log }) {
     if (customerId) where.customerId = customerId;
     if (from || to) {
       where.createdAt = {};
-      if (from) where.createdAt.gte = new Date(from);
-      if (to) { const d = new Date(to); d.setHours(23, 59, 59, 999); where.createdAt.lte = d; }
+      if (from) where.createdAt.gte = safeDate(from);
+      if (to) { const d = safeDate(to); d.setHours(23, 59, 59, 999); where.createdAt.lte = d; }
     }
 
     const [sales, total, agg] = await Promise.all([
