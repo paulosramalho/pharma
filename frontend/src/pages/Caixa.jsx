@@ -65,7 +65,7 @@ export default function Caixa() {
   // Payment modal
   const [payModal, setPayModal] = useState(null);
   const [payMethod, setPayMethod] = useState("DINHEIRO");
-  const [payAmount, setPayAmount] = useState("");
+  const [payAmount, setPayAmount] = useState(0);
   const [paying, setPaying] = useState(false);
 
   // Cancel modal
@@ -208,7 +208,7 @@ export default function Caixa() {
   const openPayModal = (sale) => {
     setPayModal(sale);
     setPayMethod("DINHEIRO");
-    setPayAmount(String(parseFloat(sale.total || 0).toFixed(2)));
+    setPayAmount(parseFloat(sale.total || 0));
   };
 
   const paySale = async () => {
@@ -217,7 +217,7 @@ export default function Caixa() {
     try {
       await apiFetch(`/api/sales/${payModal.id}/pay`, {
         method: "POST",
-        body: JSON.stringify({ method: payMethod, amount: parseFloat(payAmount) || 0 }),
+        body: JSON.stringify({ method: payMethod, amount: payAmount || 0 }),
       });
       setPayModal(null);
       addToast("Pagamento registrado!", "success");
@@ -236,8 +236,7 @@ export default function Caixa() {
   const totalOut = movements.filter((m) => ["SANGRIA"].includes(m.type)).reduce((s, m) => s + parseFloat(m.amount || 0), 0);
   const expectedCash = parseFloat(session?.initialCash || 0) + totalIn - totalOut;
   const payTotal = payModal ? parseFloat(payModal.total || 0) : 0;
-  const payAmountNum = parseFloat(payAmount || 0);
-  const troco = payMethod === "DINHEIRO" && payAmountNum > payTotal ? payAmountNum - payTotal : 0;
+  const troco = payMethod === "DINHEIRO" && payAmount > payTotal ? payAmount - payTotal : 0;
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
 
@@ -558,10 +557,7 @@ export default function Caixa() {
             </div>
           </div>
           {payMethod === "DINHEIRO" && (
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Valor Recebido</label>
-              <input type="number" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className={inputClass} />
-            </div>
+            <MoneyInput label="Valor Recebido" value={payAmount} onChange={setPayAmount} />
           )}
           {troco > 0 && (
             <div className="p-3 bg-emerald-50 rounded-lg">
