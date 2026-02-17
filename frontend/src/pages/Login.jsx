@@ -98,7 +98,7 @@ export default function Login() {
           {/* Dev hint */}
           <div className="mt-6 p-3 bg-gray-50 rounded-lg">
             <p className="text-xs text-gray-400 text-center">
-              Demo: admin@pharma.local / admin123
+              Sistema em fase de desenvolvimento
             </p>
           </div>
         </div>
