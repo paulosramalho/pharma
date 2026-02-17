@@ -1,0 +1,665 @@
+// ============================================================
+// PHARMA — Schema Prisma Definitivo (Base de Produção)
+// Multi-loja + Estoque Central + Lotes/Validade + COGS gravado
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------
+// ENUMS
+// ------------------------------
+enum StoreType {
+  CENTRAL
+  LOJA
+}
+
+enum SaleStatus {
+  DRAFT
+  CONFIRMED
+  PAID
+  CANCELED
+  REFUNDED
+}
+
+enum SaleChannel {
+  BALCAO
+  DELIVERY
+}
+
+enum PaymentMethod {
+  DINHEIRO
+  PIX
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+}
+
+enum CashMovementType {
+  RECEBIMENTO
+  SANGRIA
+  SUPRIMENTO
+  ESTORNO
+  AJUSTE
+}
+
+enum InventoryMovementType {
+  IN
+  OUT
+  ADJUST_POS
+  ADJUST_NEG
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+enum TransferStatus {
+  DRAFT
+  SENT
+  RECEIVED
+  CANCELED
+}
+
+// ------------------------------
+// CORE: LOJAS
+// ------------------------------
+model Store {
+  id        String    @id @default(uuid())
+  name      String
+  type      StoreType
+  active    Boolean   @default(true)
+  isDefault Boolean   @default(false) // default store for stock operations
+  createdAt DateTime  @default(now())
+
+  // contact / address
+  cnpj       String?
+  phone      String?
+  email      String?
+  street     String?
+  number     String?
+  complement String?
+  district   String?
+  city       String?
+  state      String?
+  zipCode    String?
+
+  // relações
+  auditLogs       AuditLog[]
+  accessUsers     StoreUser[]
+  sales           Sale[]
+  inventoryLots   InventoryLot[]
+  inventoryMoves  InventoryMovement[]
+  cashSessions    CashSession[]
+  deliveries      Delivery[]
+  transfersOrigin StockTransfer[]     @relation("TransferOrigin")
+  transfersDest   StockTransfer[]     @relation("TransferDestination")
+
+  fiscalConfig    FiscalConfig?
+  fiscalDocs      FiscalDocument[]
+  fiscalSequences FiscalSequence[]
+
+  @@index([type])
+  @@index([active])
+}
+
+// Usuário pode operar em múltiplas lojas (multi-loja real)
+model StoreUser {
+  id        String   @id @default(uuid())
+  store     Store    @relation(fields: [storeId], references: [id])
+  storeId   String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([storeId, userId])
+  @@index([userId])
+  @@index([storeId])
+}
+
+// ------------------------------
+// AUTH / RBAC (compacto e suficiente)
+// ------------------------------
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  active       Boolean  @default(true)
+
+  // 2FA (TOTP)
+  twoFactorEnabled   Boolean   @default(false)
+  twoFactorSecretEnc Json?
+
+  createdAt    DateTime @default(now())
+
+  role   Role   @relation("UserRole", fields: [roleId], references: [id])
+  roleId String
+
+  // back-relations (required by Prisma)
+  roleUsers              RoleUser[]
+  inventoryMovesCreated  InventoryMovement[] @relation("InventoryMovementCreatedBy")
+  salesSold              Sale[]              @relation("SaleSeller")
+  cashSessionsOpened     CashSession[]       @relation("CashSessionOpenedBy")
+  cashSessionsClosed     CashSession[]       @relation("CashSessionClosedBy")
+  cashMovementsCreated   CashMovement[]      @relation("CashMovementCreatedBy")
+  stockTransfersCreated  StockTransfer[]     @relation("StockTransferCreatedBy")
+  stockTransfersReceived StockTransfer[]     @relation("StockTransferReceivedBy")
+
+  stores StoreUser[]
+  audit  AuditLog[]
+
+  @@index([active])
+}
+
+model Role {
+  id   String @id @default(uuid())
+  name String @unique
+
+  usersDirect User[]           @relation("UserRole")
+  users       RoleUser[]       @relation("RoleUsers")
+  perms       RolePermission[]
+}
+
+// Relação separada para facilitar auditoria/expansão
+model RoleUser {
+  id     String @id @default(uuid())
+  role   Role   @relation("RoleUsers", fields: [roleId], references: [id])
+  roleId String
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  @@unique([roleId, userId])
+  @@index([userId])
+}
+
+// Permissões por chave (ex.: "cash.close", "inventory.adjust")
+model RolePermission {
+  id            String @id @default(uuid())
+  role          Role   @relation(fields: [roleId], references: [id])
+  roleId        String
+  permissionKey String
+
+  @@unique([roleId, permissionKey])
+  @@index([permissionKey])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  store     Store?   @relation(fields: [storeId], references: [id])
+  storeId   String?
+  action    String
+  entity    String
+  entityId  String?
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([storeId])
+  @@index([userId])
+  @@index([entity, entityId])
+}
+
+// ------------------------------
+// PRODUTOS / PREÇOS
+// ------------------------------
+model Category {
+  id   String @id @default(uuid())
+  name String @unique
+
+  products Product[]
+}
+
+model Product {
+  id         String   @id @default(uuid())
+  ean        String?  @unique
+  name       String
+  brand      String?
+  controlled    Boolean  @default(false)
+  usageDays     Int?     // how many days a medicine box typically lasts
+  defaultMarkup Decimal? @db.Decimal(5, 2) // default markup % for selling price calculation
+  active        Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  category   Category? @relation(fields: [categoryId], references: [id])
+  categoryId String?
+
+  prices         ProductPrice[]
+  lots           InventoryLot[]
+  inventoryMoves InventoryMovement[]
+  saleItems      SaleItem[]
+  transferItems  StockTransferItem[]
+  discounts      Discount[]
+
+  @@index([active])
+  @@index([controlled])
+  @@index([categoryId])
+  @@index([name])
+}
+
+model ProductPrice {
+  id        String  @id @default(uuid())
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  // Dinheiro: Decimal (evitar Float)
+  price Decimal @db.Decimal(14, 2)
+
+  // Se no futuro quiser preço por loja, adicione storeId aqui (fase avançada)
+  createdAt DateTime @default(now())
+  active    Boolean  @default(true)
+
+  @@index([productId, active])
+}
+
+// ------------------------------
+// ESTOQUE (LOTE/VALIDADE) + MOVIMENTAÇÕES
+// ------------------------------
+model InventoryLot {
+  id        String  @id @default(uuid())
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+  store     Store   @relation(fields: [storeId], references: [id])
+  storeId   String
+
+  lotNumber  String
+  expiration DateTime
+  costUnit   Decimal  @db.Decimal(14, 4) // custo interno com 4 casas
+  quantity   Int
+  createdAt  DateTime @default(now())
+  active     Boolean  @default(true)
+
+  moves               InventoryMovement[] @relation("InventoryMovementLot")
+  saleItems           SaleItem[]          @relation("SaleItemLot")
+  originTransferItems StockTransferItem[] @relation("TransferOriginLot")
+
+  @@unique([storeId, productId, lotNumber, expiration])
+  @@index([storeId, productId])
+  @@index([expiration])
+  @@index([active])
+}
+
+model InventoryMovement {
+  id        String        @id @default(uuid())
+  store     Store         @relation(fields: [storeId], references: [id])
+  storeId   String
+  product   Product       @relation(fields: [productId], references: [id])
+  productId String
+  lot       InventoryLot? @relation("InventoryMovementLot", fields: [lotId], references: [id])
+  lotId     String?
+
+  type      InventoryMovementType
+  quantity  Int // sempre positivo; o tipo determina o sentido
+  reason    String?
+  refType   String?
+  refId     String?
+  createdAt DateTime              @default(now())
+
+  // Ligações importantes
+  sale   Sale?   @relation(fields: [saleId], references: [id])
+  saleId String?
+
+  transfer   StockTransfer? @relation(fields: [transferId], references: [id])
+  transferId String?
+
+  createdBy   User?   @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id])
+  createdById String?
+
+  @@index([storeId, createdAt])
+  @@index([productId, createdAt])
+  @@index([refType, refId])
+  @@index([saleId])
+  @@index([transferId])
+}
+
+// ------------------------------
+// VENDAS / ITENS / PAGAMENTOS (COGS gravado)
+// ------------------------------
+model Sale {
+  id      String @id @default(uuid())
+  number  String
+  store   Store  @relation(fields: [storeId], references: [id])
+  storeId String
+
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  customerId String?
+
+  seller   User?   @relation("SaleSeller", fields: [sellerId], references: [id])
+  sellerId String?
+
+  status  SaleStatus  @default(DRAFT)
+  channel SaleChannel @default(BALCAO)
+
+  total        Decimal  @db.Decimal(14, 2)
+  discount     Decimal  @default(0) @db.Decimal(14, 2)
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items     SaleItem[]
+  payments  Payment[]
+  movements InventoryMovement[]
+  delivery  Delivery?
+
+  @@unique([storeId, number])
+  @@index([storeId, createdAt])
+  @@index([status])
+}
+
+model SaleItem {
+  id     String @id @default(uuid())
+  sale   Sale   @relation(fields: [saleId], references: [id])
+  saleId String
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  // No MVP pode ser 1 lote por item; se precisar multi-lote por item,
+  // trocamos para SaleItemAllocation (fase avançada).
+  lot   InventoryLot? @relation("SaleItemLot", fields: [lotId], references: [id])
+  lotId String?
+
+  quantity      Int
+  priceUnit     Decimal  @db.Decimal(14, 2)
+  priceOriginal Decimal? @db.Decimal(14, 2) // original price before discount (null = no discount)
+  subtotal      Decimal  @db.Decimal(14, 2)
+
+  // COGS gravado no pagamento (PAID): custo unitário e total do item
+  cogsUnit  Decimal? @db.Decimal(14, 4)
+  cogsTotal Decimal? @db.Decimal(14, 2)
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([lotId])
+}
+
+model Payment {
+  id        String        @id @default(uuid())
+  sale      Sale          @relation(fields: [saleId], references: [id])
+  saleId    String
+  method    PaymentMethod
+  amount    Decimal       @db.Decimal(14, 2)
+  createdAt DateTime      @default(now())
+
+  @@index([saleId])
+  @@index([createdAt])
+}
+
+// ------------------------------
+// CAIXA (SESSÃO + MOVIMENTOS)
+// ------------------------------
+model CashSession {
+  id          String    @id @default(uuid())
+  store       Store     @relation(fields: [storeId], references: [id])
+  storeId     String
+  openedBy    User?     @relation("CashSessionOpenedBy", fields: [openedById], references: [id])
+  openedById  String?
+  openedAt    DateTime  @default(now())
+  closedBy    User?     @relation("CashSessionClosedBy", fields: [closedById], references: [id])
+  closedById  String?
+  closedAt    DateTime?
+  initialCash Decimal   @db.Decimal(14, 2)
+  finalCash   Decimal?  @db.Decimal(14, 2)
+  note        String?
+
+  movements CashMovement[]
+
+  @@index([storeId, openedAt])
+  @@index([closedAt])
+}
+
+model CashMovement {
+  id        String           @id @default(uuid())
+  session   CashSession      @relation(fields: [sessionId], references: [id])
+  sessionId String
+  type      CashMovementType
+  method    PaymentMethod?
+  amount    Decimal          @db.Decimal(14, 2)
+  reason    String?
+  refType   String?
+  refId     String?
+  createdAt DateTime         @default(now())
+
+  createdBy   User?   @relation("CashMovementCreatedBy", fields: [createdById], references: [id])
+  createdById String?
+
+  @@index([sessionId, createdAt])
+  @@index([refType, refId])
+}
+
+// ------------------------------
+// DESCONTOS (histórico e controle)
+// ------------------------------
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+model Discount {
+  id        String       @id @default(uuid())
+  product   Product      @relation(fields: [productId], references: [id])
+  productId String
+
+  type      DiscountType // PERCENT = %, FIXED = R$
+  value     Decimal      @db.Decimal(14, 2) // percentage (e.g. 10.00 = 10%) or fixed amount
+
+  startDate DateTime     @default(now())
+  endDate   DateTime?    // null = valid indefinitely
+
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+
+  @@index([productId, active])
+  @@index([startDate, endDate])
+}
+
+// ------------------------------
+// CLIENTES + ENDEREÇOS
+// ------------------------------
+model Customer {
+  id        String    @id @default(uuid())
+  name      String
+  document  String?   @unique
+  phone     String?
+  email     String?
+  whatsapp  String?
+  birthDate DateTime?
+  createdAt DateTime  @default(now())
+
+  addresses Address[]
+  sales     Sale[]
+
+  @@index([name])
+}
+
+model Address {
+  id         String   @id @default(uuid())
+  customer   Customer @relation(fields: [customerId], references: [id])
+  customerId String
+  street     String
+  number     String
+  district   String
+  city       String
+  state      String
+  zipCode    String
+  complement String?
+  reference  String?
+
+  @@index([customerId])
+}
+
+// ------------------------------
+// DELIVERY (gancho; fase 2)
+// ------------------------------
+model Delivery {
+  id          String    @id @default(uuid())
+  sale        Sale      @relation(fields: [saleId], references: [id])
+  saleId      String    @unique
+  store       Store     @relation(fields: [storeId], references: [id])
+  storeId     String
+  status      String
+  fee         Decimal   @default(0) @db.Decimal(14, 2)
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([storeId, createdAt])
+}
+
+// ------------------------------
+// TRANSFERÊNCIAS CENTRAL ↔ LOJA
+// ------------------------------
+model StockTransfer {
+  id                 String @id @default(uuid())
+  originStore        Store  @relation("TransferOrigin", fields: [originStoreId], references: [id])
+  originStoreId      String
+  destinationStore   Store  @relation("TransferDestination", fields: [destinationStoreId], references: [id])
+  destinationStoreId String
+
+  status       TransferStatus @default(DRAFT)
+  createdAt    DateTime       @default(now())
+  createdBy    User?          @relation("StockTransferCreatedBy", fields: [createdById], references: [id])
+  createdById  String?
+  sentAt       DateTime?
+  receivedAt   DateTime?
+  receivedBy   User?          @relation("StockTransferReceivedBy", fields: [receivedById], references: [id])
+  receivedById String?
+  note         String?
+
+  items     StockTransferItem[]
+  movements InventoryMovement[]
+
+  @@index([originStoreId, createdAt])
+  @@index([destinationStoreId, createdAt])
+  @@index([status])
+}
+
+model StockTransferItem {
+  id         String        @id @default(uuid())
+  transfer   StockTransfer @relation(fields: [transferId], references: [id])
+  transferId String
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  // lote da origem (quando existir)
+  originLot   InventoryLot? @relation("TransferOriginLot", fields: [originLotId], references: [id])
+  originLotId String?
+
+  quantity Int
+  costUnit Decimal @db.Decimal(14, 4) // custo preservado
+
+  @@index([transferId])
+  @@index([productId])
+  @@index([originLotId])
+}
+
+// === PATCH: Módulo Fiscal / NFC-e (mínimo) ===
+// Cole no FINAL do seu schema.prisma (e depois rode migrate).
+// Observação: mantemos dados sensíveis (CSC/cert) na tabela FiscalConfig por loja.
+
+enum FiscalEnv {
+  HOMOLOG
+  PROD
+}
+
+enum FiscalDocType {
+  NFCE
+}
+
+enum FiscalDocStatus {
+  DRAFT
+  SIGNED
+  SENT
+  AUTHORIZED
+  REJECTED
+  CANCELED
+}
+
+model FiscalConfig {
+  id      String @id @default(uuid())
+  store   Store  @relation(fields: [storeId], references: [id])
+  storeId String @unique
+
+  uf           String // ex: "PA", "SP"
+  cnpj         String
+  ie           String? // pode ser nulo para alguns cenários (ajuste conforme UF)
+  cscId        String? // ID do CSC (token id)
+  cscToken     String? // CSC (segredo)
+  certPfxPath  String? // caminho do .pfx (A1)
+  certPassword String? // senha do PFX (segredo)
+
+  env FiscalEnv @default(HOMOLOG)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FiscalDocument {
+  id      String @id @default(uuid())
+  store   Store  @relation(fields: [storeId], references: [id])
+  storeId String
+
+  type   FiscalDocType   @default(NFCE)
+  status FiscalDocStatus @default(DRAFT)
+
+  // referência operacional
+  saleId  String? // futura FK p/ Sale (depois amarramos)
+  number  Int? // nNF
+  series  Int? // serie
+  issueAt DateTime?
+
+  // chave e protocolo
+  accessKey    String? @unique // chave 44
+  protocol     String? // nProt
+  sefazReceipt String? // nRec (quando lote assíncrono)
+  sefazMessage String?
+
+  xml       String? // XML assinado/enviado/retornado (armazenar)
+  qrCodeUrl String? // QRCode do DANFE NFC-e (quando aplicável)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events FiscalEvent[]
+
+  @@index([storeId, status])
+  @@index([storeId, issueAt])
+}
+
+model FiscalEvent {
+  id    String          @id @default(uuid())
+  doc   FiscalDocument? @relation(fields: [docId], references: [id])
+  docId String?
+
+  type     String // "CANCELAMENTO", "INUTILIZACAO", etc
+  payload  String? // XML/JSON do evento
+  protocol String?
+  message  String?
+
+  createdAt DateTime @default(now())
+}
+
+// === PATCH: Sequência Fiscal p/ numeração NFC-e ===
+// Cole no FINAL do seu schema.prisma e rode migrate.
+
+model FiscalSequence {
+  id      String @id @default(uuid())
+  store   Store  @relation(fields: [storeId], references: [id])
+  storeId String
+
+  docType    FiscalDocType @default(NFCE)
+  series     Int           @default(1)
+  lastNumber Int           @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([storeId, docType, series])
+  @@index([storeId])
+}

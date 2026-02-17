@@ -1,0 +1,23 @@
+PATCH (Prisma) — adicionar lados opostos (Store e FiscalDocument)
+
+1) Em model Store, adicionar (em qualquer lugar dentro do model):
+  fiscalConfig   FiscalConfig?
+  fiscalDocs     FiscalDocument[]
+
+2) Em model FiscalDocument, adicionar (em qualquer lugar dentro do model):
+  events         FiscalEvent[]
+
+Opcional (para evitar ambiguidade futura, mas não é obrigatório agora):
+- Se você preferir explicitar, pode nomear relações:
+  FiscalConfig.store @relation("StoreFiscalConfig", ...)
+  Store.fiscalConfig @relation("StoreFiscalConfig")
+
+  FiscalDocument.store @relation("StoreFiscalDocuments", ...)
+  Store.fiscalDocs @relation("StoreFiscalDocuments")
+
+  FiscalEvent.doc @relation("FiscalDocumentEvents", ...)
+  FiscalDocument.events @relation("FiscalDocumentEvents")
+
+Depois rode:
+  npx prisma format
+  npx prisma migrate dev -n fiscal_nfce_init

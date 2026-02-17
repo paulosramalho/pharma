@@ -1,0 +1,17 @@
+// === PATCH: Sequência Fiscal p/ numeração NFC-e ===
+// Cole no FINAL do seu schema.prisma e rode migrate.
+
+model FiscalSequence {
+  id         String        @id @default(uuid())
+  store      Store         @relation(fields: [storeId], references: [id])
+  storeId    String
+
+  docType    FiscalDocType @default(NFCE)
+  series     Int           @default(1)
+  lastNumber Int           @default(0)
+
+  updatedAt  DateTime      @updatedAt
+
+  @@unique([storeId, docType, series])
+  @@index([storeId])
+}

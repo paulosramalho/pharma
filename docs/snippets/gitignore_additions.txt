@@ -1,0 +1,4 @@
+# Add to C:\pharma\.gitignore (root) if you use one:
+.env
+*.dump
+/backups/

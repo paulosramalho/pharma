@@ -1,0 +1,9 @@
+PATCH (Prisma) — Corrigir relações ambíguas com User
+
+1) Em model CashSession, adicionar nomes de relação:
+- openedBy  -> @relation("CashSessionOpenedBy", ...)
+- closedBy  -> @relation("CashSessionClosedBy", ...)
+
+2) Em model StockTransfer, adicionar nomes de relação:
+- createdBy  -> @relation("StockTransferCreatedBy", ...)
+- receivedBy -> @relation("StockTransferReceivedBy", ...)

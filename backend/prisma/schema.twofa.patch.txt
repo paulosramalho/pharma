@@ -1,0 +1,13 @@
+## APLICAR NO prisma/schema.prisma (model User)
+
+// 2FA (TOTP)
+twoFactorEnabled   Boolean   @default(false)
+twoFactorSecretEnc Json?
+
+## Depois rodar:
+npx prisma migrate dev -n user_twofa
+npx prisma generate
+
+## APP_ENC_KEY:
+Gere 32 bytes (64 hex). Ex:
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"

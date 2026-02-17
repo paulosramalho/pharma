@@ -1,0 +1,8 @@
+PATCH server.js (mínimo)
+
+1) Importar:
+  const { buildFiscalRouter } = require("./modules/fiscal");
+  const { prisma } = require("./common/prisma");
+
+2) Montar antes do 404:
+  app.use("/fiscal", buildFiscalRouter({ prisma, log }));

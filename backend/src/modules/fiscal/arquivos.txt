@@ -1,0 +1,25 @@
+ O volume na unidade C ‚ Windows-SSD
+ O N£mero de S‚rie do Volume ‚ E2F5-F2FD
+
+ Pasta de C:\Pharma\backend\src\modules\fiscal
+
+15/02/2026  19:06    <DIR>          .
+15/02/2026  05:04    <DIR>          ..
+15/02/2026  19:06                 0 arquivos.txt
+15/02/2026  17:15    <DIR>          danfe
+15/02/2026  18:07    <DIR>          errors
+15/02/2026  18:16               737 fiscal.error.middleware.js
+15/02/2026  18:07               467 fiscal.errors.routes.js
+15/02/2026  18:16               557 fiscal.response.middleware.js
+15/02/2026  05:04               883 index.js
+15/02/2026  17:19             1.738 nfce.cancel.routes.js
+15/02/2026  05:04             1.346 nfce.controller.js
+15/02/2026  17:28             3.814 nfce.inutilize.routes.js
+15/02/2026  17:53             1.583 nfce.send.withRetry.js
+15/02/2026  17:53             6.653 nfce.service.js
+15/02/2026  17:53    <DIR>          providers
+15/02/2026  16:45    <DIR>          qr
+15/02/2026  17:53    <DIR>          utils
+15/02/2026  16:36    <DIR>          xml
+              10 arquivo(s)         17.778 bytes
+               8 pasta(s)    9.971.232.768 bytes dispon¡veis

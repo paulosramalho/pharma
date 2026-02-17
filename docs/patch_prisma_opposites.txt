@@ -1,0 +1,5 @@
+PATCH (Prisma) — Adicionar campos de relação inversa obrigatórios (P1012)
+
+O Prisma exige o “lado oposto” das relações. Este patch:
+- Nomeia relações onde necessário (User↔Role, Sale↔User, CashMovement↔User, InventoryMovement↔User/Lot, etc.)
+- Adiciona back-relations (arrays) em User, Role, Store, Product, InventoryLot

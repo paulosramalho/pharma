@@ -1,0 +1,83 @@
+// === PATCH: Módulo Fiscal / NFC-e (mínimo) ===
+// Cole no FINAL do seu schema.prisma (e depois rode migrate).
+// Observação: mantemos dados sensíveis (CSC/cert) na tabela FiscalConfig por loja.
+
+enum FiscalEnv {
+  HOMOLOG
+  PROD
+}
+
+enum FiscalDocType {
+  NFCE
+}
+
+enum FiscalDocStatus {
+  DRAFT
+  SIGNED
+  SENT
+  AUTHORIZED
+  REJECTED
+  CANCELED
+}
+
+model FiscalConfig {
+  id            String    @id @default(uuid())
+  store         Store     @relation(fields: [storeId], references: [id])
+  storeId       String    @unique
+
+  uf            String    // ex: "PA", "SP"
+  cnpj          String
+  ie            String?   // pode ser nulo para alguns cenários (ajuste conforme UF)
+  cscId         String?   // ID do CSC (token id)
+  cscToken      String?   // CSC (segredo)
+  certPfxPath   String?   // caminho do .pfx (A1)
+  certPassword  String?   // senha do PFX (segredo)
+
+  env           FiscalEnv @default(HOMOLOG)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model FiscalDocument {
+  id            String         @id @default(uuid())
+  store         Store          @relation(fields: [storeId], references: [id])
+  storeId       String
+
+  type          FiscalDocType  @default(NFCE)
+  status        FiscalDocStatus @default(DRAFT)
+
+  // referência operacional
+  saleId        String?        // futura FK p/ Sale (depois amarramos)
+  number        Int?           // nNF
+  series        Int?           // serie
+  issueAt       DateTime?
+
+  // chave e protocolo
+  accessKey     String?        @unique // chave 44
+  protocol      String?        // nProt
+  sefazReceipt  String?        // nRec (quando lote assíncrono)
+  sefazMessage  String?
+
+  xml           String?        // XML assinado/enviado/retornado (armazenar)
+  qrCodeUrl     String?        // QRCode do DANFE NFC-e (quando aplicável)
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([storeId, status])
+  @@index([storeId, issueAt])
+}
+
+model FiscalEvent {
+  id           String        @id @default(uuid())
+  doc          FiscalDocument @relation(fields: [docId], references: [id])
+  docId        String
+
+  type         String        // "CANCELAMENTO", "INUTILIZACAO", etc
+  payload      String?       // XML/JSON do evento
+  protocol     String?
+  message      String?
+
+  createdAt    DateTime      @default(now())
+}

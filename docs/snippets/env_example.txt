@@ -1,0 +1,5 @@
+# backend\.env.example
+NODE_ENV=dev
+PORT=3000
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DBNAME?schema=public"
+SERVICE_NAME="pharma-backend"
