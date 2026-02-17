@@ -1069,6 +1069,26 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, sale);
   }));
 
+  // Update item quantity
+  router.put("/sales/:saleId/items/:itemId", asyncHandler(async (req, res) => {
+    const { quantity } = req.body;
+    if (!quantity || quantity < 1) return res.status(400).json({ error: { code: 400, message: "quantity deve ser >= 1" } });
+
+    const item = await prisma.saleItem.findUnique({ where: { id: req.params.itemId } });
+    if (!item) return res.status(404).json({ error: { code: 404, message: "Item não encontrado" } });
+
+    const subtotal = Number(item.priceUnit) * Number(quantity);
+    await prisma.saleItem.update({ where: { id: req.params.itemId }, data: { quantity: Number(quantity), subtotal } });
+
+    // Recalculate sale total
+    const items = await prisma.saleItem.findMany({ where: { saleId: req.params.saleId } });
+    const total = items.reduce((s, i) => s + Number(i.subtotal), 0);
+    await prisma.sale.update({ where: { id: req.params.saleId }, data: { total } });
+
+    const sale = await loadFullSale(req.params.saleId);
+    return sendOk(res, req, sale);
+  }));
+
   router.delete("/sales/:saleId/items/:itemId", asyncHandler(async (req, res) => {
     await prisma.saleItem.delete({ where: { id: req.params.itemId } });
     const items = await prisma.saleItem.findMany({ where: { saleId: req.params.saleId } });

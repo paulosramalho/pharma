@@ -7,7 +7,7 @@ import Card, { CardBody, CardHeader } from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Badge from "../components/ui/Badge";
 import Modal from "../components/ui/Modal";
-import { Search, Trash2, ShoppingCart, X, UserPlus, User, Plus, Tag } from "lucide-react";
+import { Search, Trash2, ShoppingCart, X, UserPlus, User, Plus, Tag, Pencil, Check } from "lucide-react";
 
 export default function VendaNova() {
   const { addToast } = useToast();
@@ -18,6 +18,9 @@ export default function VendaNova() {
   const [creating, setCreating] = useState(false);
   const [cancelModal, setCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+
+  // Edit item
+  const [editingItem, setEditingItem] = useState(null); // { id, quantity }
 
   // Product search
   const [productSearch, setProductSearch] = useState("");
@@ -33,10 +36,12 @@ export default function VendaNova() {
   const [newCustomer, setNewCustomer] = useState({ name: "", birthDate: "", whatsapp: "" });
   const [searchingCpf, setSearchingCpf] = useState(false);
 
-  // Create draft sale on mount
-  useEffect(() => {
-    createDraft();
-  }, []);
+  // Ensure a draft exists (lazy — created on first action, not on mount)
+  const ensureDraft = async () => {
+    if (sale) return sale;
+    const s = await createDraft();
+    return s;
+  };
 
   const createDraft = async () => {
     setCreating(true);
@@ -51,11 +56,14 @@ export default function VendaNova() {
       setProducts([]);
       setSelectedProduct(null);
       setAddQty(1);
+      setCreating(false);
+      return res.data;
     } catch (err) {
       addToast(err.message, "error");
       navigate("/vendas");
+      setCreating(false);
+      return null;
     }
-    setCreating(false);
   };
 
   // CPF search
@@ -72,8 +80,9 @@ export default function VendaNova() {
         const list = res.data?.customers || [];
         if (list.length > 0) {
           setCustomerFound(list[0]);
-          // Link customer to sale
-          await apiFetch(`/api/sales/${sale.id}`, {
+          // Link customer to sale (ensure draft exists)
+          const s = await ensureDraft();
+          if (s) await apiFetch(`/api/sales/${s.id}`, {
             method: "PUT",
             body: JSON.stringify({ customerId: list[0].id }),
           }).then((r) => setSale(r.data));
@@ -100,8 +109,9 @@ export default function VendaNova() {
       });
       setCustomerFound(res.data);
       setShowNewCustomer(false);
-      // Link to sale
-      await apiFetch(`/api/sales/${sale.id}`, {
+      // Link to sale (ensure draft exists)
+      const s = await ensureDraft();
+      if (s) await apiFetch(`/api/sales/${s.id}`, {
         method: "PUT",
         body: JSON.stringify({ customerId: res.data.id }),
       }).then((r) => setSale(r.data));
@@ -144,7 +154,9 @@ export default function VendaNova() {
   const addItem = async () => {
     if (!selectedProduct || addQty < 1) return;
     try {
-      const res = await apiFetch(`/api/sales/${sale.id}/items`, {
+      const s = await ensureDraft();
+      if (!s) return;
+      const res = await apiFetch(`/api/sales/${s.id}/items`, {
         method: "POST",
         body: JSON.stringify({ productId: selectedProduct.id, quantity: addQty }),
       });
@@ -162,6 +174,20 @@ export default function VendaNova() {
     try {
       const res = await apiFetch(`/api/sales/${sale.id}/items/${itemId}`, { method: "DELETE" });
       setSale(res.data);
+    } catch (err) {
+      addToast(err.message, "error");
+    }
+  };
+
+  const updateItem = async (itemId, newQty) => {
+    if (!newQty || newQty < 1) return;
+    try {
+      const res = await apiFetch(`/api/sales/${sale.id}/items/${itemId}`, {
+        method: "PUT",
+        body: JSON.stringify({ quantity: newQty }),
+      });
+      setSale(res.data);
+      setEditingItem(null);
     } catch (err) {
       addToast(err.message, "error");
     }
@@ -191,7 +217,7 @@ export default function VendaNova() {
     }
   };
 
-  if (creating || !sale) {
+  if (creating) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
@@ -199,9 +225,9 @@ export default function VendaNova() {
     );
   }
 
-  const items = sale.items || [];
-  const isDraft = sale.status === "DRAFT";
-  const isConfirmed = sale.status === "CONFIRMED";
+  const items = sale?.items || [];
+  const isDraft = !sale || sale.status === "DRAFT";
+  const isConfirmed = sale?.status === "CONFIRMED";
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
 
@@ -210,7 +236,7 @@ export default function VendaNova() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Nova Venda</h1>
-          <p className="text-sm text-gray-500">Venda #{sale.number} — {sale.status}</p>
+          <p className="text-sm text-gray-500">{sale ? `Venda #${sale.number} — ${sale.status}` : "Nova venda"}</p>
         </div>
         <Button variant="ghost" onClick={() => navigate("/vendas")}><X size={16} /> Fechar</Button>
       </div>
@@ -237,7 +263,7 @@ export default function VendaNova() {
                       onClick={() => {
                         setCustomerFound(null);
                         setCpfInput("");
-                        apiFetch(`/api/sales/${sale.id}`, { method: "PUT", body: JSON.stringify({ customerId: null }) })
+                        if (sale) apiFetch(`/api/sales/${sale.id}`, { method: "PUT", body: JSON.stringify({ customerId: null }) })
                           .then((r) => setSale(r.data));
                       }}
                       className="text-xs text-gray-500 hover:text-red-600"
@@ -440,7 +466,24 @@ export default function VendaNova() {
                           {item.product?.name || "—"}
                           {hasDiscount && <Tag size={12} className="inline ml-1.5 text-amber-500" />}
                         </td>
-                        <td className="px-4 py-2 text-right">{item.quantity}</td>
+                        <td className="px-4 py-2 text-right">
+                          {editingItem?.id === item.id ? (
+                            <input
+                              type="number"
+                              min="1"
+                              value={editingItem.quantity}
+                              onChange={(e) => setEditingItem({ ...editingItem, quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") updateItem(item.id, editingItem.quantity);
+                                if (e.key === "Escape") setEditingItem(null);
+                              }}
+                              className="w-16 px-1 py-0.5 text-sm text-center border border-primary-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
+                              autoFocus
+                            />
+                          ) : (
+                            item.quantity
+                          )}
+                        </td>
                         <td className="px-4 py-2 text-right">
                           {hasDiscount ? (
                             <span>
@@ -452,9 +495,27 @@ export default function VendaNova() {
                         <td className="px-4 py-2 text-right font-medium">{money(item.subtotal)}</td>
                         {isDraft && (
                           <td className="px-4 py-2">
-                            <button onClick={() => removeItem(item.id)} className="text-gray-400 hover:text-red-600">
-                              <Trash2 size={14} />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              {editingItem?.id === item.id ? (
+                                <>
+                                  <button onClick={() => updateItem(item.id, editingItem.quantity)} className="text-emerald-500 hover:text-emerald-700" title="Confirmar">
+                                    <Check size={14} />
+                                  </button>
+                                  <button onClick={() => setEditingItem(null)} className="text-gray-400 hover:text-gray-600" title="Cancelar">
+                                    <X size={14} />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button onClick={() => setEditingItem({ id: item.id, quantity: item.quantity })} className="text-gray-400 hover:text-primary-600" title="Editar">
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button onClick={() => removeItem(item.id)} className="text-gray-400 hover:text-red-600" title="Remover">
+                                    <Trash2 size={14} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -473,7 +534,7 @@ export default function VendaNova() {
             <CardBody className="space-y-4">
               <h3 className="font-semibold text-gray-900">Resumo</h3>
 
-              {sale.customer && (
+              {sale?.customer && (
                 <div className="p-2 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-500">Cliente</p>
                   <p className="text-sm font-medium text-gray-900">{sale.customer.name}</p>
@@ -488,7 +549,7 @@ export default function VendaNova() {
                   const orig = i.priceOriginal && Number(i.priceOriginal) > 0 ? Number(i.priceOriginal) : Number(i.priceUnit);
                   return s + orig * i.quantity;
                 }, 0);
-                const discountTotal = originalSubtotal - Number(sale.total);
+                const discountTotal = originalSubtotal - Number(sale?.total || 0);
                 return (
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
@@ -503,7 +564,7 @@ export default function VendaNova() {
                     )}
                     <div className="border-t pt-2 flex justify-between font-bold text-lg">
                       <span>Total</span>
-                      <span className="text-primary-600">{money(sale.total)}</span>
+                      <span className="text-primary-600">{money(sale?.total || 0)}</span>
                     </div>
                   </div>
                 );
@@ -511,12 +572,12 @@ export default function VendaNova() {
 
               {/* Actions */}
               <div className="space-y-2 pt-2">
-                {isDraft && items.length > 0 && (
+                {isDraft && sale && items.length > 0 && (
                   <Button className="w-full" onClick={confirmSale}>
                     <ShoppingCart size={16} /> Confirmar Venda
                   </Button>
                 )}
-                {isDraft && (
+                {isDraft && sale && (
                   <Button variant="danger" className="w-full" onClick={() => cancelSale()}>
                     Cancelar Venda
                   </Button>
