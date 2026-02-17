@@ -260,7 +260,7 @@ export default function Caixa() {
 
   const movements = session?.movements || [];
   const totalIn = movements.filter((m) => ["RECEBIMENTO", "SUPRIMENTO"].includes(m.type)).reduce((s, m) => s + parseFloat(m.amount || 0), 0);
-  const totalOut = movements.filter((m) => ["SANGRIA"].includes(m.type)).reduce((s, m) => s + parseFloat(m.amount || 0), 0);
+  const totalOut = movements.filter((m) => ["SANGRIA", "ESTORNO"].includes(m.type)).reduce((s, m) => s + parseFloat(m.amount || 0), 0);
   const expectedCash = parseFloat(session?.initialCash || 0) + totalIn - totalOut;
   const payTotal = payModal ? parseFloat(payModal.total || 0) : 0;
   const troco = payMethod === "DINHEIRO" && payAmount > payTotal ? payAmount - payTotal : 0;
