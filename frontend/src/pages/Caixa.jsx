@@ -11,7 +11,7 @@ import Badge from "../components/ui/Badge";
 import { PageSpinner } from "../components/ui/Spinner";
 import {
   Wallet, ArrowDownCircle, ArrowUpCircle, DollarSign,
-  CreditCard, ShoppingCart, ChevronDown, ChevronUp, Clock, User, XCircle,
+  CreditCard, ShoppingCart, ChevronDown, ChevronUp, Clock, User, XCircle, RefreshCw,
 } from "lucide-react";
 
 const MOVEMENT_LABELS = {
@@ -72,6 +72,10 @@ export default function Caixa() {
   const [cancelModal, setCancelModal] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
 
+  // Pending exchanges
+  const [pendingExchanges, setPendingExchanges] = useState([]);
+  const [settlingExchange, setSettlingExchange] = useState(null);
+
   // Clock update every second
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -94,7 +98,13 @@ export default function Caixa() {
       .finally(() => setLoadingPending(false));
   };
 
-  useEffect(() => { loadSession(); loadPendingSales(); }, []);
+  const loadPendingExchanges = () => {
+    apiFetch("/api/sales?exchangePending=true&limit=100")
+      .then((res) => setPendingExchanges(res.data?.sales || []))
+      .catch(() => setPendingExchanges([]));
+  };
+
+  useEffect(() => { loadSession(); loadPendingSales(); loadPendingExchanges(); }, []);
 
   const submitCancelSale = async () => {
     if (!cancelReason.trim()) { addToast("Informe o motivo", "warning"); return; }
@@ -107,6 +117,23 @@ export default function Caixa() {
       setCancelModal(null);
       loadPendingSales();
     } catch (err) { addToast(err.message, "error"); }
+  };
+
+  const settleExchange = async (sale) => {
+    setSettlingExchange(sale.id);
+    try {
+      await apiFetch(`/api/sales/${sale.id}/settle-exchange`, { method: "POST" });
+      const bal = Number(sale.exchangeBalance);
+      addToast(
+        bal > 0
+          ? `Recebido ${money(bal)} do cliente (Troca #${sale.number})`
+          : `Devolvido ${money(Math.abs(bal))} ao cliente (Troca #${sale.number})`,
+        "success"
+      );
+      loadPendingExchanges();
+      loadSession();
+    } catch (err) { addToast(err.message, "error"); }
+    setSettlingExchange(null);
   };
 
   // Verify operator by matrícula + password
@@ -407,6 +434,59 @@ export default function Caixa() {
               </div>
             )}
           </Card>
+
+          {/* Pending Exchanges */}
+          {pendingExchanges.length > 0 && (
+            <Card>
+              <CardHeader className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <RefreshCw size={18} className="text-yellow-500" />
+                  <h3 className="font-semibold text-gray-900">
+                    Trocas Pendentes
+                    <Badge color="yellow" className="ml-2">{pendingExchanges.length}</Badge>
+                  </h3>
+                </div>
+                <button onClick={loadPendingExchanges} className="text-xs text-primary-600 hover:underline">Atualizar</button>
+              </CardHeader>
+              <div className="divide-y divide-gray-100">
+                {pendingExchanges.map((s) => {
+                  const bal = Number(s.exchangeBalance);
+                  const isPositive = bal > 0;
+                  return (
+                    <div key={s.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">#{s.number}</span>
+                          <Badge color={isPositive ? "green" : "red"}>
+                            {isPositive ? "Receber" : "Devolver"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+                          {s.customer ? (
+                            <span>{s.customer.name}</span>
+                          ) : (
+                            <span className="text-gray-400 italic">Sem cliente</span>
+                          )}
+                          <span>{formatDateTime(s.createdAt)}</span>
+                        </div>
+                      </div>
+                      <span className={`text-lg font-bold ${isPositive ? "text-green-600" : "text-red-600"}`}>
+                        {isPositive ? "+" : "-"}{money(Math.abs(bal))}
+                      </span>
+                      <Button
+                        size="sm"
+                        color={isPositive ? "green" : "red"}
+                        loading={settlingExchange === s.id}
+                        onClick={() => settleExchange(s)}
+                      >
+                        {isPositive ? "Receber" : "Devolver"}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
 
           {/* Movements */}
           <Card>

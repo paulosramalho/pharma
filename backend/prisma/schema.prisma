@@ -338,7 +338,8 @@ model Sale {
 
   total        Decimal  @db.Decimal(14, 2)
   discount     Decimal  @default(0) @db.Decimal(14, 2)
-  cancelReason String?
+  cancelReason    String?
+  exchangeBalance Decimal? @db.Decimal(14, 2)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

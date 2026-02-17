@@ -203,13 +203,11 @@ export default function Vendas() {
         }),
       });
       const d = res.data;
-      const net = d.netDifference;
-      if (net > 0) {
-        addToast(`Troca realizada! Cliente paga diferenca: ${money(net)}`, "success");
-      } else if (net < 0) {
-        addToast(`Troca realizada! Devolver ao cliente: ${money(Math.abs(net))}`, "success");
+      if (d.pendingSettlement) {
+        const net = d.netDifference;
+        addToast(`Troca registrada! Diferença de ${money(Math.abs(net))} a liquidar no Caixa.`, "info");
       } else {
-        addToast("Troca realizada! Valores iguais, sem diferenca.", "success");
+        addToast("Troca realizada! Valores iguais, sem diferença.", "success");
       }
       setExchangeModal(null);
       load();
@@ -232,6 +230,9 @@ export default function Vendas() {
     { key: "status", label: "Status", render: (r) => (
       <div>
         <Badge status={r.status}>{STATUS_LABELS[r.status] || r.status}</Badge>
+        {r.exchangeBalance && Number(r.exchangeBalance) !== 0 && (
+          <span className="ml-1 px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] rounded">Troca pendente</span>
+        )}
         {r.status === "CANCELED" && r.cancelReason && (
           <p className="text-[10px] text-gray-500 mt-0.5 max-w-[150px] truncate" title={r.cancelReason}>{r.cancelReason}</p>
         )}

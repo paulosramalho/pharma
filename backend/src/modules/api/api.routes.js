@@ -940,6 +940,7 @@ function buildApiRoutes({ prisma, log }) {
     if (storeId) where.storeId = storeId;
     if (status) where.status = status;
     if (search) where.number = { contains: search };
+    if (req.query.exchangePending === "true") where.exchangeBalance = { not: null };
 
     const [sales, total] = await Promise.all([
       prisma.sale.findMany({
@@ -1224,9 +1225,6 @@ function buildApiRoutes({ prisma, log }) {
     if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     if (sale.status !== "PAID") return res.status(400).json({ error: { code: 400, message: "Somente vendas pagas podem ser trocadas" } });
 
-    const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
-
     let totalReturn = 0;
     let totalNew = 0;
     const now = new Date();
@@ -1310,22 +1308,16 @@ function buildApiRoutes({ prisma, log }) {
     // 3) Calculate net difference: positive = customer pays, negative = store refunds
     const netDifference = totalNew - totalReturn;
 
-    if (netDifference !== 0) {
-      await prisma.cashMovement.create({
-        data: {
-          sessionId: session.id,
-          type: netDifference > 0 ? "RECEBIMENTO" : "ESTORNO",
-          amount: Math.abs(netDifference),
-          reason: reason || `Troca - Venda #${sale.number}`,
-          refType: "EXCHANGE", refId: sale.id, createdById: req.user?.id,
-        },
-      });
-    }
-
-    // Recalculate sale total
+    // Recalculate sale total + store pending exchange balance (settled in Caixa)
     const allItems = await prisma.saleItem.findMany({ where: { saleId: sale.id } });
     const newTotal = allItems.reduce((s, i) => s + Number(i.subtotal), 0);
-    await prisma.sale.update({ where: { id: sale.id }, data: { total: newTotal } });
+    await prisma.sale.update({
+      where: { id: sale.id },
+      data: {
+        total: newTotal,
+        exchangeBalance: netDifference !== 0 ? netDifference : null,
+      },
+    });
 
     const updated = await loadFullSale(sale.id);
     return sendOk(res, req, {
@@ -1333,7 +1325,38 @@ function buildApiRoutes({ prisma, log }) {
       totalReturn: Number(totalReturn.toFixed(2)),
       totalNew: Number(totalNew.toFixed(2)),
       netDifference: Number(netDifference.toFixed(2)),
+      pendingSettlement: netDifference !== 0,
     });
+  }));
+
+  // ─── SETTLE EXCHANGE (CAIXA) ───
+  router.post("/sales/:id/settle-exchange", asyncHandler(async (req, res) => {
+    const sale = await prisma.sale.findUnique({ where: { id: req.params.id } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    if (sale.exchangeBalance === null || Number(sale.exchangeBalance) === 0) {
+      return res.status(400).json({ error: { code: 400, message: "Nenhuma troca pendente para esta venda" } });
+    }
+
+    const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
+
+    const amount = Number(sale.exchangeBalance);
+
+    await prisma.cashMovement.create({
+      data: {
+        sessionId: session.id,
+        type: amount > 0 ? "RECEBIMENTO" : "ESTORNO",
+        amount: Math.abs(amount),
+        reason: `Troca - Venda #${sale.number}`,
+        refType: "EXCHANGE", refId: sale.id,
+        createdById: req.user?.id,
+      },
+    });
+
+    await prisma.sale.update({ where: { id: sale.id }, data: { exchangeBalance: null } });
+
+    const updated = await loadFullSale(sale.id);
+    return sendOk(res, req, { sale: updated, settled: Math.abs(amount) });
   }));
 
   // ─── CASH OPERATOR AUTH ───
