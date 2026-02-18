@@ -12,7 +12,7 @@ import { PageSpinner } from "../components/ui/Spinner";
 import { Users, Plus, Pencil } from "lucide-react";
 
 const ROLE_COLORS = { ADMIN: "purple", CAIXA: "blue", VENDEDOR: "green", FARMACEUTICO: "yellow" };
-const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "Farmaceutico" };
+const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "Farmacêutico" };
 const emptyForm = { name: "", email: "", password: "", roleName: "VENDEDOR" };
 
 export default function UsuariosPage() {
@@ -74,7 +74,7 @@ export default function UsuariosPage() {
   const roleName = (r) => r.role?.name || r.role || "—";
 
   const columns = [
-    { key: "matricula", label: "Matricula", render: (r) => (
+    { key: "matricula", label: "Matrícula", render: (r) => (
       <span className="font-mono text-xs text-gray-500">{r.matricula || "—"}</span>
     )},
     { key: "name", label: "Nome", render: (r) => <span className="font-medium text-gray-900">{r.name}</span> },

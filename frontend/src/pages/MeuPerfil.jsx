@@ -7,7 +7,7 @@ import Button from "../components/ui/Button";
 import Badge from "../components/ui/Badge";
 import { User, Mail, Lock, Shield } from "lucide-react";
 
-const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "Farmaceutico" };
+const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "Farmacêutico" };
 
 export default function MeuPerfil() {
   const { user } = useAuth();

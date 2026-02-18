@@ -18,7 +18,7 @@ const TABS = [
 
 const STATUS_LABELS = { DRAFT: "Rascunho", CONFIRMED: "Confirmada", PAID: "Paga", CANCELED: "Cancelada", REFUNDED: "Estornada" };
 const STATUS_COLORS = { DRAFT: "gray", CONFIRMED: "amber", PAID: "green", CANCELED: "red", REFUNDED: "purple" };
-const METHOD_LABELS = { DINHEIRO: "Dinheiro", PIX: "PIX", CARTAO_CREDITO: "Cartao Credito", CARTAO_DEBITO: "Cartao Debito" };
+const METHOD_LABELS = { DINHEIRO: "Dinheiro", PIX: "PIX", CARTAO_CREDITO: "Cartão de Crédito", CARTAO_DEBITO: "Cartão de Débito" };
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -75,7 +75,7 @@ export default function Relatorios() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">Relatorios</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Relatoóios</h1>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
@@ -171,11 +171,11 @@ export default function Relatorios() {
           <Card>
             <CardHeader className="flex items-center gap-2">
               <BarChart3 size={18} className="text-gray-400" />
-              <h3 className="font-semibold text-gray-900">Vendas no Periodo</h3>
+              <h3 className="font-semibold text-gray-900">Vendas no Período</h3>
               <span className="text-xs text-gray-400 ml-2">{salesData.total || 0} registros</span>
             </CardHeader>
             {(salesData.sales || []).length === 0 ? (
-              <CardBody><p className="text-sm text-gray-400 text-center py-4">Nenhuma venda encontrada no periodo</p></CardBody>
+              <CardBody><p className="text-sm text-gray-400 text-center py-4">Nenhuma venda encontrada no período</p></CardBody>
             ) : (
               <>
                 <div className="overflow-x-auto">
@@ -245,7 +245,7 @@ export default function Relatorios() {
             <span className="text-xs text-gray-400 ml-2">{cashData.total || 0} registros</span>
           </CardHeader>
           {(cashData.closings || []).length === 0 ? (
-            <CardBody><p className="text-sm text-gray-400 text-center py-4">Nenhum fechamento encontrado no periodo</p></CardBody>
+            <CardBody><p className="text-sm text-gray-400 text-center py-4">Nenhum fechamento encontrado no período</p></CardBody>
           ) : (
             <>
               <div className="divide-y divide-gray-100">

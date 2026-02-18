@@ -23,8 +23,8 @@ const TABS = [
 ];
 
 const TYPE_ICON = { CENTRAL: Warehouse, LOJA: Store };
-const TYPE_LABEL = { CENTRAL: "Deposito", LOJA: "Loja" };
-const MOV_LABELS = { IN: "Entrada", OUT: "Saida", ADJUST_POS: "Ajuste +", ADJUST_NEG: "Ajuste -", TRANSFER_IN: "Transf. Entrada", TRANSFER_OUT: "Transf. Saida" };
+const TYPE_LABEL = { CENTRAL: "Depósito", LOJA: "Loja" };
+const MOV_LABELS = { IN: "Entrada", OUT: "Saída", ADJUST_POS: "Ajuste +", ADJUST_NEG: "Ajuste -", TRANSFER_IN: "Transf. Entrada", TRANSFER_OUT: "Transf. Saída" };
 
 export default function Estoque() {
   const { hasPermission } = useAuth();
@@ -213,7 +213,7 @@ export default function Estoque() {
         body: JSON.stringify({ markup: parseFloat(markup) }),
       });
       setPricingResult(res.data);
-      addToast(`Preco atualizado: ${money(res.data.sellingPrice)}`, "success");
+      addToast(`Preço atualizado: ${money(res.data.sellingPrice)}`, "success");
       loadValuation();
     } catch (err) { addToast(err.message, "error"); }
   };
@@ -457,7 +457,7 @@ export default function Estoque() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Numero do Lote</label>
+                <label className="block text-sm font-medium text-gray-700">Número do Lote</label>
                 <input value={receiveForm.lotNumber} onChange={(e) => setReceiveForm({ ...receiveForm, lotNumber: e.target.value })} className={inputClass} />
               </div>
               <div className="space-y-1">
@@ -516,7 +516,7 @@ export default function Estoque() {
               </div>
             </div>
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Motivo (obrigatorio)</label>
+              <label className="block text-sm font-medium text-gray-700">Motivo (obrigatório)</label>
               <input value={adjustForm.reason} onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value })}
                 placeholder="Descreva o motivo do ajuste..."
                 className={inputClass} />
@@ -580,7 +580,7 @@ export default function Estoque() {
                     <tr className="border-b border-gray-200 text-left">
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Produto</th>
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Estoque</th>
-                      <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Custo Medio</th>
+                      <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Custo Médio</th>
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Valor Estoque</th>
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Vendido (Qtd)</th>
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Vendido (R$)</th>
@@ -601,7 +601,7 @@ export default function Estoque() {
                         <td className="px-4 py-2.5 text-right text-emerald-600 font-medium">{money(p.soldValue)}</td>
                         <td className="px-4 py-2.5 text-center">
                           {p.stockQty > 0 && (
-                            <button onClick={() => openAutoPrice(p)} className="p-1 text-gray-400 hover:text-primary-600 rounded" title="Calcular preco de venda">
+                            <button onClick={() => openAutoPrice(p)} className="p-1 text-gray-400 hover:text-primary-600 rounded" title="Calcular preço de venda">
                               <DollarSign size={14} />
                             </button>
                           )}
@@ -647,7 +647,7 @@ export default function Estoque() {
       </Modal>
 
       {/* Auto-Price Modal */}
-      <Modal open={!!priceModal} onClose={() => setPriceModal(null)} title="Calcular Preco de Venda">
+      <Modal open={!!priceModal} onClose={() => setPriceModal(null)} title="Calcular Preço de Venda">
         {priceModal && (
           <div className="space-y-4">
             <div className="p-3 bg-gray-50 rounded-lg">
@@ -662,7 +662,7 @@ export default function Estoque() {
                 placeholder="Ex: 30 = 30% sobre o custo" />
               {markup > 0 && priceModal.avgCost > 0 && (
                 <p className="text-xs text-gray-500">
-                  Preco estimado: <span className="font-bold text-primary-700">
+                  Preço estimado: <span className="font-bold text-primary-700">
                     {money(priceModal.avgCost * (1 + parseFloat(markup || 0) / 100))}
                   </span>
                 </p>
@@ -672,13 +672,13 @@ export default function Estoque() {
               <div className="p-3 bg-emerald-50 rounded-lg space-y-1">
                 <div className="flex justify-between text-sm"><span className="text-gray-600">Custo medio:</span><span>{money(pricingResult.avgCost)}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-600">Markup:</span><span>{pricingResult.markup}%</span></div>
-                <div className="flex justify-between text-sm font-bold"><span>Preco de venda:</span><span className="text-emerald-700">{money(pricingResult.sellingPrice)}</span></div>
+                <div className="flex justify-between text-sm font-bold"><span>Preço de venda:</span><span className="text-emerald-700">{money(pricingResult.sellingPrice)}</span></div>
               </div>
             )}
             <div className="flex gap-2 pt-2">
               <Button variant="secondary" className="flex-1" onClick={() => setPriceModal(null)}>Fechar</Button>
               <Button className="flex-1" disabled={!markup || parseFloat(markup) <= 0} onClick={submitAutoPrice}>
-                <DollarSign size={14} /> Definir Preco
+                <DollarSign size={14} /> Definir Preço
               </Button>
             </div>
           </div>

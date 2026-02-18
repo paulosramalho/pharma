@@ -30,7 +30,7 @@ export default function Dashboard() {
   const kpis = [
     { label: "Vendas Hoje", value: data?.salesToday ?? 0, icon: ShoppingCart, color: "text-blue-600 bg-blue-50" },
     { label: "Receita Bruta", value: money(data?.grossRevenue ?? 0), icon: DollarSign, color: "text-emerald-600 bg-emerald-50" },
-    { label: "Ticket Medio", value: money(data?.avgTicket ?? 0), icon: TrendingUp, color: "text-purple-600 bg-purple-50" },
+    { label: "Ticket Médio", value: money(data?.avgTicket ?? 0), icon: TrendingUp, color: "text-purple-600 bg-purple-50" },
     { label: "Itens Vendidos", value: data?.itemsSold ?? 0, icon: Package, color: "text-amber-600 bg-amber-50" },
   ];
 
@@ -100,7 +100,7 @@ export default function Dashboard() {
         {/* Quick actions */}
         <Card>
           <CardBody>
-            <h3 className="font-semibold text-gray-900 mb-3">Acoes Rapidas</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">Ações Rápidas</h3>
             <div className="grid grid-cols-2 gap-2">
               {hasPermission("sales.create") && (
                 <button

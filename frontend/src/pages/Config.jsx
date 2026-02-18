@@ -204,7 +204,7 @@ export default function Config() {
           <CardHeader className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Store size={18} className="text-gray-400" />
-              <h3 className="font-semibold text-gray-900">Lojas e Depositos</h3>
+              <h3 className="font-semibold text-gray-900">Lojas e Depósitos</h3>
             </div>
             <Button size="sm" onClick={openCreateStore}><Plus size={14} /> Nova Loja</Button>
           </CardHeader>
@@ -262,7 +262,7 @@ export default function Config() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-gray-200 text-left">
-                  <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Matricula</th>
+                  <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Matrícula</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Nome</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Email</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Perfil</th>
@@ -339,12 +339,12 @@ export default function Config() {
         <Card>
           <CardHeader className="flex items-center gap-2">
             <Shield size={18} className="text-gray-400" />
-            <h3 className="font-semibold text-gray-900">Matriz de Permissoes</h3>
+            <h3 className="font-semibold text-gray-900">Matriz de Permissões</h3>
           </CardHeader>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-200">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Permissao</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Permissão</th>
                 {ROLES.map((r) => <th key={r.name} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{r.name}</th>)}
               </tr></thead>
               <tbody className="divide-y divide-gray-100">
@@ -369,7 +369,7 @@ export default function Config() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 space-y-1"><label className="block text-sm font-medium text-gray-700">Nome *</label><input value={storeForm.name} onChange={(e) => setStoreForm({ ...storeForm, name: e.target.value })} className={inputClass} /></div>
-            <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Tipo *</label><select value={storeForm.type} onChange={(e) => setStoreForm({ ...storeForm, type: e.target.value })} className={inputClass}><option value="LOJA">Loja</option><option value="CENTRAL">Central (Deposito)</option></select></div>
+            <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Tipo *</label><select value={storeForm.type} onChange={(e) => setStoreForm({ ...storeForm, type: e.target.value })} className={inputClass}><option value="LOJA">Loja</option><option value="CENTRAL">Central (Depósito)</option></select></div>
             <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">CNPJ</label><input value={cnpjMask(storeForm.cnpj)} onChange={(e) => setStoreForm({ ...storeForm, cnpj: e.target.value.replace(/\D/g, "").slice(0, 14) })} placeholder="00.000.000/0000-00" className={inputClass} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -380,7 +380,7 @@ export default function Config() {
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Endereco</p>
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2 space-y-1"><label className="block text-sm font-medium text-gray-700">Rua</label><input value={storeForm.street} onChange={(e) => setStoreForm({ ...storeForm, street: e.target.value })} className={inputClass} /></div>
-              <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Numero</label><input value={storeForm.number} onChange={(e) => setStoreForm({ ...storeForm, number: e.target.value })} className={inputClass} /></div>
+              <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Número</label><input value={storeForm.number} onChange={(e) => setStoreForm({ ...storeForm, number: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Complemento</label><input value={storeForm.complement} onChange={(e) => setStoreForm({ ...storeForm, complement: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Bairro</label><input value={storeForm.district} onChange={(e) => setStoreForm({ ...storeForm, district: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">CEP</label><input value={storeForm.zipCode} onChange={(e) => setStoreForm({ ...storeForm, zipCode: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="00000-000" className={inputClass} /></div>
@@ -407,7 +407,7 @@ export default function Config() {
           )}
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Perfil</label>
             <select value={userForm.roleName} onChange={(e) => setUserForm({ ...userForm, roleName: e.target.value })} className={inputClass}>
-              <option value="ADMIN">Administrador</option><option value="VENDEDOR">Vendedor</option><option value="CAIXA">Caixa</option><option value="FARMACEUTICO">Farmaceutico</option>
+              <option value="ADMIN">Administrador</option><option value="VENDEDOR">Vendedor</option><option value="CAIXA">Caixa</option><option value="FARMACEUTICO">Farmacêutico</option>
             </select>
           </div>
           <div className="flex gap-2 pt-2">

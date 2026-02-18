@@ -155,7 +155,7 @@ export default function Produtos() {
     { key: "ean", label: "EAN", render: (r) => <span className="font-mono text-xs text-gray-500">{r.ean || "—"}</span> },
     { key: "brand", label: "Marca", render: (r) => r.brand || "—" },
     { key: "category", label: "Categoria", render: (r) => r.category?.name || "—" },
-    { key: "price", label: "Preco", className: "text-right", render: (r) => {
+    { key: "price", label: "Preço", className: "text-right", render: (r) => {
       const price = r.prices?.[0]?.price;
       return price != null ? money(price) : "—";
     }},
@@ -169,7 +169,7 @@ export default function Produtos() {
         </Badge>
       );
     }},
-    { key: "controlled", label: "Controlado", render: (r) => r.controlled ? <Badge color="red">Sim</Badge> : <Badge color="gray">Nao</Badge> },
+    { key: "controlled", label: "Controlado", render: (r) => r.controlled ? <Badge color="red">Sim</Badge> : <Badge color="gray">Não</Badge> },
     { key: "actions", label: "", className: "w-20", render: (r) => (
       <div className="flex items-center gap-1">
         <button onClick={() => openDiscount(r)} className="p-1 text-gray-400 hover:text-amber-600 rounded" title="Descontos">
@@ -235,7 +235,7 @@ export default function Produtos() {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Preco (R$)</label>
+              <label className="block text-sm font-medium text-gray-700">Preço (R$)</label>
               <input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className={inputClass} />
             </div>
           </div>

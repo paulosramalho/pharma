@@ -24,8 +24,8 @@ const MOVEMENT_LABELS = {
 
 const PAY_METHODS = [
   { key: "DINHEIRO", label: "Dinheiro" },
-  { key: "CARTAO_CREDITO", label: "Cartao Credito" },
-  { key: "CARTAO_DEBITO", label: "Cartao Debito" },
+  { key: "CARTAO_CREDITO", label: "Cartão de Crédito" },
+  { key: "CARTAO_DEBITO", label: "Cartão de Debito" },
   { key: "PIX", label: "PIX" },
 ];
 
@@ -327,7 +327,7 @@ export default function Caixa() {
             </Card>
             <Card>
               <CardBody>
-                <p className="text-xs text-gray-500 uppercase">Saidas</p>
+                <p className="text-xs text-gray-500 uppercase">Saídas</p>
                 <p className="text-xl font-bold text-red-600 mt-1">{money(totalOut)}</p>
               </CardBody>
             </Card>
@@ -519,7 +519,7 @@ export default function Caixa() {
           <CardBody className="text-center py-12">
             <Wallet size={40} className="mx-auto text-gray-300 mb-3" />
             <h3 className="text-lg font-medium text-gray-900">Caixa Fechado</h3>
-            <p className="text-sm text-gray-500 mt-1">Abra o caixa para iniciar as operacoes do dia.</p>
+            <p className="text-sm text-gray-500 mt-1">Abra o caixa para iniciar as operações do dia.</p>
             <Button className="mt-4" onClick={() => { resetOpenForm(); setOpenModal(true); }}>
               <Wallet size={16} /> Abrir Caixa
             </Button>
@@ -534,7 +534,7 @@ export default function Caixa() {
             <>
               <p className="text-sm text-gray-600">Identifique o operador do caixa:</p>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Matricula</label>
+                <label className="block text-sm font-medium text-gray-700">Matrícula</label>
                 <input value={operatorMatricula} onChange={(e) => setOperatorMatricula(e.target.value.replace(/\D/g, ""))}
                   placeholder="0001" className={inputClass} autoFocus />
               </div>
