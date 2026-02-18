@@ -3,7 +3,7 @@ import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from "lucide-react";
 
 const ToastContext = createContext(null);
 
-const EXIT_MS = 700; // duração do fade-out (mais devagar)
+const EXIT_MS = 900; // duração do fade-out (mais devagar)
 
 const ICONS = {
   success: CheckCircle,
@@ -91,7 +91,7 @@ export function ToastProvider({ children }) {
         }
 
         .animate-slide-in { animation: slide-in 0.25s ease-out; }
-        .animate-slide-out { animation: slide-out 0.7s cubic-bezier(0.16, 1, 0.3, 1); }
+        .animate-slide-out { animation: slide-out 0.9s cubic-bezier(0.16, 1, 0.3, 1); }
       `}</style>
 
     </ToastContext.Provider>
