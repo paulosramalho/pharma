@@ -3,6 +3,8 @@ import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from "lucide-react";
 
 const ToastContext = createContext(null);
 
+const EXIT_MS = 700; // duração do fade-out (mais devagar)
+
 const ICONS = {
   success: CheckCircle,
   error: AlertCircle,
@@ -30,15 +32,28 @@ export function ToastProvider({ children }) {
 
   const addToast = useCallback((message, type = "info", duration = 4000) => {
     const id = ++idRef.current;
-    setToasts((prev) => [...prev, { id, message, type }]);
+
+    // entra
+    setToasts((prev) => [...prev, { id, message, type, exiting: false }]);
+
     if (duration > 0) {
-      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), duration);
+      // inicia saída
+      setTimeout(() => {
+        setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
+
+        // remove depois da animação
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, EXIT_MS);
+      }, duration);
     }
+
     return id;
   }, []);
 
   const removeToast = useCallback((id) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), EXIT_MS);
   }, []);
 
   return (
@@ -48,7 +63,13 @@ export function ToastProvider({ children }) {
         {toasts.map((t) => {
           const Icon = ICONS[t.type] || Info;
           return (
-            <div key={t.id} className={`flex items-start gap-3 p-3 rounded-lg border shadow-lg animate-slide-in ${COLORS[t.type]}`}>
+            <div
+              key={t.id}
+              className={`flex items-start gap-3 p-3 rounded-lg border shadow-lg
+                ${t.exiting ? "animate-slide-out" : "animate-slide-in"}
+                ${COLORS[t.type]}
+              `}
+            >
               <Icon size={18} className={`mt-0.5 shrink-0 ${ICON_COLORS[t.type]}`} />
               <p className="text-sm flex-1">{t.message}</p>
               <button onClick={() => removeToast(t.id)} className="shrink-0 opacity-60 hover:opacity-100">
@@ -59,9 +80,20 @@ export function ToastProvider({ children }) {
         })}
       </div>
       <style>{`
-        @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slide-in {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes slide-out {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(30%); opacity: 0; }
+        }
+
         .animate-slide-in { animation: slide-in 0.25s ease-out; }
+        .animate-slide-out { animation: slide-out 0.7s cubic-bezier(0.16, 1, 0.3, 1); }
       `}</style>
+
     </ToastContext.Provider>
   );
 }
