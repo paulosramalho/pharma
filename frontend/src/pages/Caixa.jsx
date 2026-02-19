@@ -90,12 +90,14 @@ export default function Caixa() {
       .finally(() => setLoading(false));
   };
 
-  const loadPendingSales = () => {
-    setLoadingPending(true);
+  const loadPendingSales = ({ silent = false } = {}) => {
+    if (!silent) setLoadingPending(true);
     apiFetch("/api/sales?status=CONFIRMED&limit=100")
       .then((res) => setPendingSales(res.data?.sales || []))
       .catch(() => setPendingSales([]))
-      .finally(() => setLoadingPending(false));
+      .finally(() => {
+        if (!silent) setLoadingPending(false);
+      });
   };
 
   const loadPendingExchanges = () => {
@@ -105,6 +107,16 @@ export default function Caixa() {
   };
 
   useEffect(() => { loadSession(); loadPendingSales(); loadPendingExchanges(); }, []);
+
+  useEffect(() => {
+    if (!session) return undefined;
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      loadPendingSales({ silent: true });
+      loadPendingExchanges();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [session]);
 
   const submitCancelSale = async () => {
     if (!cancelReason.trim()) { addToast("Informe o motivo", "warning"); return; }
