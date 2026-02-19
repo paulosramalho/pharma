@@ -290,7 +290,7 @@ export default function Caixa() {
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-view="cashier-page">
       {/* Header with user info and clock */}
       <div className="flex items-center justify-between">
         <div>
