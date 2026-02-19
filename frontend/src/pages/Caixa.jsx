@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../lib/api";
 import { money, cpfMask, formatDateTime, formatTime } from "../lib/format";
 import { useAuth } from "../contexts/AuthContext";
@@ -270,6 +270,16 @@ export default function Caixa() {
 
   if (loading) return <PageSpinner />;
 
+  const orderedPendingSales = useMemo(
+    () =>
+      [...pendingSales].sort((a, b) => {
+        const ad = new Date(a?.createdAt || 0).getTime();
+        const bd = new Date(b?.createdAt || 0).getTime();
+        return ad - bd;
+      }),
+    [pendingSales],
+  );
+
   const movements = session?.movements || [];
   const totalIn = movements.filter((m) => ["RECEBIMENTO", "SUPRIMENTO"].includes(m.type)).reduce((s, m) => s + parseFloat(m.amount || 0), 0);
   const totalOut = movements.filter((m) => ["SANGRIA", "ESTORNO"].includes(m.type)).reduce((s, m) => s + parseFloat(m.amount || 0), 0);
@@ -373,8 +383,8 @@ export default function Caixa() {
                 <ShoppingCart size={18} className="text-gray-400" />
                 <h3 className="font-semibold text-gray-900">
                   Vendas Pendentes de Pagamento
-                  {pendingSales.length > 0 && (
-                    <Badge color="amber" className="ml-2">{pendingSales.length}</Badge>
+                  {orderedPendingSales.length > 0 && (
+                    <Badge color="amber" className="ml-2">{orderedPendingSales.length}</Badge>
                   )}
                 </h3>
               </div>
@@ -383,11 +393,11 @@ export default function Caixa() {
 
             {loadingPending ? (
               <CardBody><div className="flex items-center justify-center py-4"><div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" /></div></CardBody>
-            ) : pendingSales.length === 0 ? (
+            ) : orderedPendingSales.length === 0 ? (
               <CardBody><p className="text-sm text-gray-400 text-center py-4">Nenhuma venda pendente de pagamento</p></CardBody>
             ) : (
               <div className="divide-y divide-gray-100">
-                {pendingSales.map((s) => (
+                {orderedPendingSales.map((s) => (
                   <div key={s.id}>
                     <div className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50">
                       <div className="flex-1 min-w-0">
@@ -399,7 +409,9 @@ export default function Caixa() {
                         <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
                           {s.customer ? (
                             <>
-                              <span>{s.customer.name}</span>
+                              <span className="inline-flex items-center rounded-md bg-primary-50 px-2 py-0.5 text-sm font-semibold text-primary-700">
+                                {s.customer.name}
+                              </span>
                               {s.customer.document && <span>CPF: {cpfMask(s.customer.document)}</span>}
                             </>
                           ) : (
