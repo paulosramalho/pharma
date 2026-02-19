@@ -268,8 +268,6 @@ export default function Caixa() {
     setPaying(false);
   };
 
-  if (loading) return <PageSpinner />;
-
   const orderedPendingSales = useMemo(
     () =>
       [...pendingSales].sort((a, b) => {
@@ -279,6 +277,8 @@ export default function Caixa() {
       }),
     [pendingSales],
   );
+
+  if (loading) return <PageSpinner />;
 
   const movements = session?.movements || [];
   const totalIn = movements.filter((m) => ["RECEBIMENTO", "SUPRIMENTO"].includes(m.type)).reduce((s, m) => s + parseFloat(m.amount || 0), 0);
