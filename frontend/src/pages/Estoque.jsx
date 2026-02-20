@@ -127,6 +127,14 @@ export default function Estoque() {
   }, [tab]);
 
   useEffect(() => {
+    if (tab !== "transfers") return undefined;
+    const timer = setInterval(() => {
+      loadTransfers();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [tab]);
+
+  useEffect(() => {
     if (!transferForm.originStoreId) return;
     setTransferItems((prev) => prev
       .map((it) => {
@@ -302,9 +310,21 @@ export default function Estoque() {
       addToast("Selecione ao menos um item", "warning");
       return;
     }
-    transferSelectedIds.forEach((id) => {
-      const product = transferProducts.find((p) => p.id === id);
-      if (product) addTransferItem(product);
+    const selectedProducts = transferProducts.filter((p) => transferSelectedIds.includes(p.id));
+    setTransferItems((prev) => {
+      const next = [...prev];
+      for (const product of selectedProducts) {
+        const available = getAvailableForStore(product.stores, transferForm.originStoreId);
+        if (available < 1) continue;
+        const idx = next.findIndex((i) => i.productId === product.id);
+        if (idx >= 0) {
+          const currentAvailable = getAvailableForStore(next[idx].stores, transferForm.originStoreId);
+          next[idx] = { ...next[idx], quantity: Math.min(currentAvailable, next[idx].quantity + 1) };
+        } else {
+          next.push({ productId: product.id, productName: product.name, quantity: 1, stores: product.stores || [] });
+        }
+      }
+      return next;
     });
     setTransferSelectedIds([]);
     setTransferSearch("");
@@ -1000,9 +1020,9 @@ export default function Estoque() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge color={t.status === "RECEIVED" ? "green" : t.status === "SENT" ? "blue" : t.status === "CANCELED" ? "red" : "gray"}>{t.status}</Badge>
-                        {canFlowOperate && t.status === "DRAFT" && <Button size="sm" onClick={() => sendTransfer(t.id)}>Enviar</Button>}
-                        {canFlowOperate && t.status === "SENT" && <Button size="sm" onClick={() => receiveTransfer(t.id)}>Receber</Button>}
-                        {t.status === "DRAFT" && <Button size="sm" variant="secondary" onClick={() => cancelTransfer(t.id)}>Cancelar</Button>}
+                        {canFlowOperate && t.originStore?.id === storeId && t.status === "DRAFT" && <Button size="sm" onClick={() => sendTransfer(t.id)}>Enviar</Button>}
+                        {canFlowOperate && t.destinationStore?.id === storeId && t.status === "SENT" && <Button size="sm" onClick={() => receiveTransfer(t.id)}>Receber</Button>}
+                        {t.originStore?.id === storeId && t.status === "DRAFT" && <Button size="sm" variant="secondary" onClick={() => cancelTransfer(t.id)}>Cancelar</Button>}
                       </div>
                     </div>
                   </div>
