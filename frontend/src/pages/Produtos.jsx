@@ -46,6 +46,24 @@ export default function Produtos() {
       .finally(() => setLoading(false));
   };
 
+  const searchByBarcode = async (code) => {
+    const clean = code.replace(/\D/g, "").trim();
+    if (!/^\d{8,14}$/.test(clean)) return;
+    setSearch(clean);
+    setPage(1);
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: 1, limit: 20, search: clean });
+      const res = await apiFetch(`/api/products?${params}`);
+      setProducts(res.data.products || []);
+      setTotalPages(res.data.totalPages || 1);
+    } catch (err) {
+      addToast(err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => { load(); }, [page]);
   useEffect(() => {
     apiFetch("/api/categories").then((res) => setCategories(res.data || [])).catch(() => {});
@@ -193,10 +211,20 @@ export default function Produtos() {
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou EAN..."
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const clean = search.replace(/\D/g, "").trim();
+                if (/^\d{8,14}$/.test(clean)) {
+                  e.preventDefault();
+                  searchByBarcode(clean);
+                }
+              }
+            }}
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
         <Button type="submit" variant="secondary">Buscar</Button>
       </form>
+      <p className="text-xs text-gray-500">Leitor de codigo de barras: no campo de busca, escaneie o EAN e pressione Enter.</p>
 
       <Card>
         {loading ? <PageSpinner /> : products.length === 0 ? (
@@ -219,7 +247,7 @@ export default function Produtos() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">EAN</label>
-              <input value={form.ean} onChange={(e) => setForm({ ...form, ean: e.target.value })} className={inputClass} />
+              <input value={form.ean} onChange={(e) => setForm({ ...form, ean: e.target.value.replace(/\D/g, "").slice(0, 14) })} className={inputClass} />
             </div>
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">Marca</label>

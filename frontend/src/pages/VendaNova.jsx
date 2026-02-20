@@ -189,6 +189,38 @@ export default function VendaNova() {
     }
   };
 
+  const addItemByBarcode = async () => {
+    const code = productSearch.replace(/\D/g, "").trim();
+    if (!code) return;
+    // EAN-8/EAN-13/GTIN are numeric and usually 8-14 digits.
+    if (!/^\d{8,14}$/.test(code)) return;
+
+    try {
+      const lookup = await apiFetch(`/api/products?search=${encodeURIComponent(code)}&limit=20`);
+      const candidates = lookup.data?.products || [];
+      const exact = candidates.find((p) => String(p.ean || "") === code);
+      if (!exact) {
+        addToast("Codigo de barras nao encontrado", "warning");
+        return;
+      }
+
+      const s = await ensureDraft();
+      if (!s) return;
+      const res = await apiFetch(`/api/sales/${s.id}/items`, {
+        method: "POST",
+        body: JSON.stringify({ productId: exact.id, quantity: 1 }),
+      });
+      setSale(res.data);
+      setProductSearch("");
+      setProducts([]);
+      setHighlightIdx(-1);
+      searchRef.current?.focus();
+      addToast(`${exact.name} adicionado via codigo de barras`, "success", 1500);
+    } catch (err) {
+      addToast(err.message, "error");
+    }
+  };
+
   const removeItem = async (itemId) => {
     try {
       const res = await apiFetch(`/api/sales/${sale.id}/items/${itemId}`, { method: "DELETE" });
@@ -351,17 +383,32 @@ export default function VendaNova() {
                     value={productSearch}
                     onChange={(e) => { setProductSearch(e.target.value); searchProducts(e.target.value); setHighlightIdx(-1); }}
                     onKeyDown={(e) => {
-                      if (!products.length || selectedProduct) return;
-                      if (e.key === "ArrowDown") { e.preventDefault(); setHighlightIdx((i) => Math.min(i + 1, products.length - 1)); }
-                      else if (e.key === "ArrowUp") { e.preventDefault(); setHighlightIdx((i) => Math.max(i - 1, 0)); }
-                      else if (e.key === "Enter" && highlightIdx >= 0) { e.preventDefault(); selectProduct(products[highlightIdx]); }
-                      else if (e.key === "Escape") { setProducts([]); setHighlightIdx(-1); }
+                      if (selectedProduct) return;
+                      if (e.key === "ArrowDown" && products.length) {
+                        e.preventDefault();
+                        setHighlightIdx((i) => Math.min(i + 1, products.length - 1));
+                      } else if (e.key === "ArrowUp" && products.length) {
+                        e.preventDefault();
+                        setHighlightIdx((i) => Math.max(i - 1, 0));
+                      } else if (e.key === "Enter" && highlightIdx >= 0 && products.length) {
+                        e.preventDefault();
+                        selectProduct(products[highlightIdx]);
+                      } else if (e.key === "Enter") {
+                        e.preventDefault();
+                        addItemByBarcode();
+                      } else if (e.key === "Escape") {
+                        setProducts([]);
+                        setHighlightIdx(-1);
+                      }
                     }}
                     placeholder="Buscar produto por nome ou EAN..."
                     className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     autoFocus
                   />
                 </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  Leitor de codigo de barras: escaneie o EAN e pressione Enter para adicionar.
+                </p>
 
                 {/* Search results */}
                 {products.length > 0 && !selectedProduct && (

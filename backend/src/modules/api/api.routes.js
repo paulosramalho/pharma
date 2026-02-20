@@ -388,7 +388,14 @@ function buildApiRoutes({ prisma, log }) {
 
     // Get all active lots
     const lotWhere = { active: true, quantity: { gt: 0 } };
-    if (search) lotWhere.product = { name: { contains: search, mode: "insensitive" } };
+    if (search) {
+      lotWhere.product = {
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { ean: { contains: search } },
+        ],
+      };
+    }
 
     const lots = await prisma.inventoryLot.findMany({
       where: lotWhere,
@@ -554,7 +561,12 @@ function buildApiRoutes({ prisma, log }) {
     if (storeId) where.storeId = storeId;
     if (productId) where.productId = productId;
     if (search) {
-      where.product = { name: { contains: search, mode: "insensitive" } };
+      where.product = {
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { ean: { contains: search } },
+        ],
+      };
     }
     if (expiring === "true") {
       const thirtyDays = new Date();

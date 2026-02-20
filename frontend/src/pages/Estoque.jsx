@@ -122,6 +122,26 @@ export default function Estoque() {
     } catch { /* ignore */ }
   };
 
+  const selectReceiveProductByBarcode = async () => {
+    const code = productSearch.replace(/\D/g, "").trim();
+    if (!/^\d{8,14}$/.test(code)) return;
+    try {
+      const res = await apiFetch(`/api/products?search=${encodeURIComponent(code)}&limit=20`);
+      const list = res.data?.products || [];
+      const exact = list.find((p) => String(p.ean || "") === code);
+      if (!exact) {
+        addToast("Codigo de barras nao encontrado", "warning");
+        return;
+      }
+      setReceiveForm((prev) => ({ ...prev, productId: exact.id }));
+      setProductSearch(exact.name);
+      setProducts([]);
+      addToast(`Produto selecionado: ${exact.name}`, "success", 1200);
+    } catch (err) {
+      addToast(err.message, "error");
+    }
+  };
+
   const handleReceive = async () => {
     setSubmitting(true);
     try {
@@ -442,9 +462,16 @@ export default function Estoque() {
               <input
                 value={productSearch}
                 onChange={(e) => { setProductSearch(e.target.value); searchProducts(e.target.value); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectReceiveProductByBarcode();
+                  }
+                }}
                 placeholder="Buscar produto..."
                 className={inputClass}
               />
+              <p className="text-xs text-gray-500">Leitor de codigo de barras: escaneie o EAN e pressione Enter.</p>
               {products.length > 0 && (
                 <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
                   {products.map((p) => (
