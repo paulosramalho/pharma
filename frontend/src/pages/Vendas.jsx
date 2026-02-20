@@ -11,7 +11,7 @@ import Table, { Pagination } from "../components/ui/Table";
 import EmptyState from "../components/ui/EmptyState";
 import Modal from "../components/ui/Modal";
 import { PageSpinner } from "../components/ui/Spinner";
-import { Plus, ShoppingCart, Search, RefreshCw, X, Tag, XCircle, Play, Trash2 } from "lucide-react";
+import { Plus, ShoppingCart, Search, RefreshCw, X, Tag, XCircle, Play, Trash2, PackageSearch } from "lucide-react";
 
 const STATUS_TABS = [
   { key: "", label: "Todas" },
@@ -51,6 +51,10 @@ export default function Vendas() {
   const [newItems, setNewItems] = useState([]); // [{productId, productName, priceUnit, quantity, discount}]
   const [newItemHighlight, setNewItemHighlight] = useState(-1);
   const newSearchRef = useRef(null);
+  const [lookupModal, setLookupModal] = useState(false);
+  const [lookupSearch, setLookupSearch] = useState("");
+  const [lookupResults, setLookupResults] = useState([]);
+  const [lookupLoading, setLookupLoading] = useState(false);
 
   const load = ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -196,6 +200,20 @@ export default function Vendas() {
     setNewItems((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const searchLookup = async (q) => {
+    const term = String(q || "").trim();
+    if (term.length < 2) { setLookupResults([]); return; }
+    setLookupLoading(true);
+    try {
+      const res = await apiFetch(`/api/inventory/lookup?search=${encodeURIComponent(term)}&limit=30`);
+      setLookupResults(res.data?.products || []);
+    } catch (err) {
+      addToast(err.message, "error");
+      setLookupResults([]);
+    }
+    setLookupLoading(false);
+  };
+
   const submitExchange = async () => {
     const returnedSelected = exchangeItems.filter((i) => i.quantity > 0);
     if (returnedSelected.length === 0 && newItems.length === 0) {
@@ -278,11 +296,16 @@ export default function Vendas() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Vendas</h1>
-        {hasPermission("sales.create") && (
-          <Button onClick={() => navigate("/vendas/nova")}>
-            <Plus size={16} /> Nova Venda
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => setLookupModal(true)}>
+            <PackageSearch size={16} /> Consultar Estoque/Preco
           </Button>
-        )}
+          {hasPermission("sales.create") && (
+            <Button onClick={() => navigate("/vendas/nova")}>
+              <Plus size={16} /> Nova Venda
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -523,6 +546,48 @@ export default function Vendas() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal open={lookupModal} onClose={() => setLookupModal(false)} title="Consulta de Estoque / Preco" size="lg">
+        <div className="space-y-3">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={lookupSearch}
+              onChange={(e) => { setLookupSearch(e.target.value); searchLookup(e.target.value); }}
+              placeholder="Buscar por nome ou EAN..."
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              autoFocus
+            />
+          </div>
+          {lookupLoading ? (
+            <div className="flex items-center justify-center py-6"><div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" /></div>
+          ) : lookupResults.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">Digite ao menos 2 caracteres para consultar.</p>
+          ) : (
+            <div className="max-h-[55vh] overflow-y-auto space-y-2">
+              {lookupResults.map((p) => (
+                <div key={p.id} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                      <p className="text-xs text-gray-500">{p.ean || "Sem EAN"}</p>
+                    </div>
+                    <p className="text-sm font-bold text-primary-700">{p.price != null ? money(p.price) : "Sem preco"}</p>
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+                    {(p.stores || []).map((s) => (
+                      <div key={s.id} className="text-xs bg-gray-50 rounded px-2 py-1 flex items-center justify-between">
+                        <span className="text-gray-600">{s.name}</span>
+                        <span className="font-medium text-gray-800">Disp: {s.available} {s.reserved > 0 ? `(Res: ${s.reserved})` : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Modal>
 
       {/* Cancel Modal */}

@@ -33,6 +33,32 @@ function buildApiRoutes({ prisma, log }) {
     return links.map((s) => s.storeId);
   }
 
+  function isPharmacistOrAdmin(req) {
+    return req.user?.role === "ADMIN" || req.user?.role === "FARMACEUTICO";
+  }
+
+  function assertPharmacistOrAdmin(req) {
+    if (!isPharmacistOrAdmin(req)) {
+      throw Object.assign(new Error("Operacao permitida apenas para Farmaceutico ou Admin"), { statusCode: 403 });
+    }
+  }
+
+  async function getReservedQtyByProduct(storeId, productIds) {
+    if (!storeId || !productIds || productIds.length === 0) return {};
+    const rows = await prisma.stockReservationItem.groupBy({
+      by: ["productId"],
+      where: {
+        productId: { in: productIds },
+        reservation: { sourceStoreId: storeId, status: "APPROVED" },
+      },
+      _sum: { reservedQty: true },
+    });
+    return rows.reduce((acc, row) => {
+      acc[row.productId] = Number(row._sum.reservedQty || 0);
+      return acc;
+    }, {});
+  }
+
   // Helper: get storeId from header or default, validating user access.
   async function resolveStoreId(req) {
     const fromHeader = String(req.headers["x-store-id"] || "").trim();
@@ -218,6 +244,86 @@ function buildApiRoutes({ prisma, log }) {
     }));
 
     return sendOk(res, req, { products: cleaned, totalPages, page: Number(page), total });
+  }));
+
+  // Price + stock lookup (consultation only, no sale creation)
+  router.get("/inventory/lookup", asyncHandler(async (req, res) => {
+    const { search = "", limit = 20 } = req.query;
+    const q = String(search || "").trim();
+    if (q.length < 2) return sendOk(res, req, { products: [] });
+
+    const products = await prisma.product.findMany({
+      where: {
+        active: true,
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { ean: { contains: q } },
+        ],
+      },
+      include: {
+        prices: { where: { active: true }, take: 1, orderBy: { createdAt: "desc" } },
+      },
+      take: Number(limit) || 20,
+      orderBy: { name: "asc" },
+    });
+
+    const storeIds = (await prisma.store.findMany({ where: { active: true }, select: { id: true, name: true, type: true } }));
+    const productIds = products.map((p) => p.id);
+    const lots = productIds.length > 0
+      ? await prisma.inventoryLot.findMany({
+          where: { active: true, quantity: { gt: 0 }, productId: { in: productIds } },
+          select: { productId: true, storeId: true, quantity: true },
+        })
+      : [];
+
+    const groupedByStoreProduct = {};
+    for (const lot of lots) {
+      const key = `${lot.storeId}:${lot.productId}`;
+      groupedByStoreProduct[key] = (groupedByStoreProduct[key] || 0) + Number(lot.quantity || 0);
+    }
+
+    const reservations = productIds.length > 0
+      ? await prisma.stockReservationItem.findMany({
+          where: {
+            productId: { in: productIds },
+            reservation: { status: "APPROVED" },
+          },
+          include: { reservation: { select: { sourceStoreId: true } } },
+        })
+      : [];
+
+    const reservedByStoreProduct = {};
+    for (const row of reservations) {
+      const sourceStoreId = row.reservation?.sourceStoreId;
+      if (!sourceStoreId) continue;
+      const key = `${sourceStoreId}:${row.productId}`;
+      reservedByStoreProduct[key] = (reservedByStoreProduct[key] || 0) + Number(row.reservedQty || 0);
+    }
+
+    const result = products.map((p) => {
+      const stores = storeIds.map((s) => {
+        const key = `${s.id}:${p.id}`;
+        const qty = groupedByStoreProduct[key] || 0;
+        const reserved = reservedByStoreProduct[key] || 0;
+        return {
+          id: s.id,
+          name: s.name,
+          type: s.type,
+          quantity: qty,
+          reserved,
+          available: Math.max(0, qty - reserved),
+        };
+      });
+      return {
+        id: p.id,
+        name: p.name,
+        ean: p.ean,
+        price: p.prices?.[0]?.price != null ? Number(p.prices[0].price) : null,
+        stores,
+      };
+    });
+
+    return sendOk(res, req, { products: result });
   }));
 
   router.post("/products", asyncHandler(async (req, res) => {
@@ -532,6 +638,26 @@ function buildApiRoutes({ prisma, log }) {
 
     const products = Object.values(grouped).sort((a, b) => a.name.localeCompare(b.name));
 
+    // Subtract approved reservations from availability
+    const reservedRows = productIds.length > 0
+      ? await prisma.stockReservationItem.findMany({
+          where: {
+            productId: { in: productIds },
+            reservation: { status: "APPROVED" },
+          },
+          include: { reservation: { select: { sourceStoreId: true } } },
+        })
+      : [];
+    for (const rr of reservedRows) {
+      const p = grouped[rr.productId];
+      const sid = rr.reservation?.sourceStoreId;
+      if (!p || !sid || !p.stores[sid]) continue;
+      const reserveQty = Number(rr.reservedQty || 0);
+      p.stores[sid].reserved = (p.stores[sid].reserved || 0) + reserveQty;
+      p.stores[sid].available = Math.max(0, Number(p.stores[sid].available || 0) - reserveQty);
+      p.totalQty = Math.max(0, Number(p.totalQty || 0) - reserveQty);
+    }
+
     return sendOk(res, req, {
       stores: stores.map((s) => ({ id: s.id, name: s.name, type: s.type })),
       products,
@@ -616,6 +742,25 @@ function buildApiRoutes({ prisma, log }) {
       ...g, totalValue: Number(g.totalValue.toFixed(2)),
       nearestExpiry: g.nearestExpiry ? g.nearestExpiry.toISOString().slice(0, 10) : null,
     }));
+
+    const reservedRows = Object.keys(grouped).length > 0
+      ? await prisma.stockReservationItem.findMany({
+          where: {
+            productId: { in: Object.keys(grouped) },
+            reservation: { sourceStoreId: storeId, status: "APPROVED" },
+          },
+        })
+      : [];
+    const reservedByProduct = reservedRows.reduce((acc, rr) => {
+      acc[rr.productId] = (acc[rr.productId] || 0) + Number(rr.reservedQty || 0);
+      return acc;
+    }, {});
+    for (const it of items) {
+      const r = reservedByProduct[it.productId] || 0;
+      it.reservedQty = r;
+      it.availableQty = Math.max(0, Number(it.totalQty || 0) - r);
+      it.totalQty = it.availableQty;
+    }
 
     return sendOk(res, req, items);
   }));
@@ -743,6 +888,424 @@ function buildApiRoutes({ prisma, log }) {
     });
 
     return sendOk(res, req, { ok: true });
+  }));
+
+  // Transfers between stores (request -> send -> receive)
+  router.get("/inventory/transfers", asyncHandler(async (req, res) => {
+    const storeId = await resolveStoreId(req);
+    if (!storeId) return sendOk(res, req, { transfers: [] });
+    const transfers = await prisma.stockTransfer.findMany({
+      where: {
+        OR: [
+          { originStoreId: storeId },
+          { destinationStoreId: storeId },
+        ],
+      },
+      include: {
+        originStore: { select: { id: true, name: true } },
+        destinationStore: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true } },
+        receivedBy: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, name: true, ean: true } } } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    return sendOk(res, req, { transfers });
+  }));
+
+  router.post("/inventory/transfers", asyncHandler(async (req, res) => {
+    const destinationStoreId = await resolveStoreId(req);
+    const { originStoreId, note, items = [] } = req.body || {};
+    if (!destinationStoreId) return res.status(400).json({ error: { code: 400, message: "Loja atual nao definida" } });
+    if (!originStoreId || originStoreId === destinationStoreId) {
+      return res.status(400).json({ error: { code: 400, message: "originStoreId invalido" } });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: { code: 400, message: "Informe os itens da solicitacao" } });
+    }
+
+    const transfer = await prisma.stockTransfer.create({
+      data: {
+        originStoreId,
+        destinationStoreId,
+        status: "DRAFT",
+        note: note || null,
+        createdById: req.user?.id,
+        items: {
+          create: items.map((it) => ({
+            productId: it.productId,
+            quantity: Number(it.quantity || 0),
+            costUnit: 0,
+          })).filter((it) => it.productId && it.quantity > 0),
+        },
+      },
+      include: {
+        originStore: { select: { id: true, name: true } },
+        destinationStore: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, name: true } } } },
+      },
+    });
+
+    return sendOk(res, req, transfer, 201);
+  }));
+
+  router.post("/inventory/transfers/:id/send", asyncHandler(async (req, res) => {
+    assertPharmacistOrAdmin(req);
+    const currentStoreId = await resolveStoreId(req);
+    const transfer = await prisma.stockTransfer.findUnique({
+      where: { id: req.params.id },
+      include: { items: true },
+    });
+    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia nao encontrada" } });
+    if (transfer.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Transferencia nao pode ser enviada neste status" } });
+    if (transfer.originStoreId !== currentStoreId) return res.status(403).json({ error: { code: 403, message: "Somente a loja de origem pode enviar" } });
+
+    const itemByProduct = {};
+    for (const item of transfer.items) {
+      itemByProduct[item.productId] = (itemByProduct[item.productId] || 0) + Number(item.quantity || 0);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.stockTransferItem.deleteMany({ where: { transferId: transfer.id } });
+
+      for (const [productId, reqQtyRaw] of Object.entries(itemByProduct)) {
+        const reqQty = Number(reqQtyRaw || 0);
+        if (reqQty <= 0) continue;
+
+        const reserved = await tx.stockReservationItem.aggregate({
+          _sum: { reservedQty: true },
+          where: {
+            productId,
+            reservation: { sourceStoreId: transfer.originStoreId, status: "APPROVED" },
+          },
+        });
+        const reservedQty = Number(reserved._sum.reservedQty || 0);
+
+        const lots = await tx.inventoryLot.findMany({
+          where: { storeId: transfer.originStoreId, productId, active: true, quantity: { gt: 0 } },
+          orderBy: { expiration: "asc" },
+        });
+        const totalQty = lots.reduce((s, l) => s + Number(l.quantity || 0), 0);
+        const availableQty = Math.max(0, totalQty - reservedQty);
+        if (availableQty < reqQty) {
+          throw Object.assign(new Error("Estoque insuficiente para envio (considerando reservas)"), { statusCode: 400 });
+        }
+
+        let remaining = reqQty;
+        for (const lot of lots) {
+          if (remaining <= 0) break;
+          const take = Math.min(Number(lot.quantity || 0), remaining);
+          if (take <= 0) continue;
+
+          await tx.inventoryLot.update({
+            where: { id: lot.id },
+            data: { quantity: { decrement: take } },
+          });
+          await tx.stockTransferItem.create({
+            data: {
+              transferId: transfer.id,
+              productId,
+              originLotId: lot.id,
+              quantity: take,
+              costUnit: lot.costUnit,
+            },
+          });
+          await tx.inventoryMovement.create({
+            data: {
+              storeId: transfer.originStoreId,
+              productId,
+              lotId: lot.id,
+              transferId: transfer.id,
+              type: "TRANSFER_OUT",
+              quantity: take,
+              reason: `Transferencia para loja ${transfer.destinationStoreId}`,
+              createdById: req.user?.id,
+            },
+          });
+          remaining -= take;
+        }
+      }
+
+      await tx.stockTransfer.update({
+        where: { id: transfer.id },
+        data: { status: "SENT", sentAt: new Date() },
+      });
+    });
+
+    const updated = await prisma.stockTransfer.findUnique({
+      where: { id: transfer.id },
+      include: {
+        originStore: { select: { id: true, name: true } },
+        destinationStore: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, name: true } } } },
+      },
+    });
+    return sendOk(res, req, updated);
+  }));
+
+  router.post("/inventory/transfers/:id/receive", asyncHandler(async (req, res) => {
+    assertPharmacistOrAdmin(req);
+    const currentStoreId = await resolveStoreId(req);
+    const transfer = await prisma.stockTransfer.findUnique({
+      where: { id: req.params.id },
+      include: { items: true },
+    });
+    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia nao encontrada" } });
+    if (transfer.status !== "SENT") return res.status(400).json({ error: { code: 400, message: "Transferencia nao pode ser recebida neste status" } });
+    if (transfer.destinationStoreId !== currentStoreId) return res.status(403).json({ error: { code: 403, message: "Somente a loja destino pode receber" } });
+
+    await prisma.$transaction(async (tx) => {
+      for (const item of transfer.items) {
+        let lotNumber = `TR-${transfer.id.slice(0, 8)}`;
+        let expiration = new Date();
+        expiration.setFullYear(expiration.getFullYear() + 2);
+
+        if (item.originLotId) {
+          const originLot = await tx.inventoryLot.findUnique({ where: { id: item.originLotId } });
+          if (originLot) {
+            lotNumber = originLot.lotNumber;
+            expiration = originLot.expiration;
+          }
+        }
+
+        const lot = await tx.inventoryLot.upsert({
+          where: {
+            storeId_productId_lotNumber_expiration: {
+              storeId: transfer.destinationStoreId,
+              productId: item.productId,
+              lotNumber,
+              expiration,
+            },
+          },
+          update: {
+            quantity: { increment: Number(item.quantity || 0) },
+            costUnit: item.costUnit,
+          },
+          create: {
+            storeId: transfer.destinationStoreId,
+            productId: item.productId,
+            lotNumber,
+            expiration,
+            costUnit: item.costUnit,
+            quantity: Number(item.quantity || 0),
+            active: true,
+          },
+        });
+
+        await tx.inventoryMovement.create({
+          data: {
+            storeId: transfer.destinationStoreId,
+            productId: item.productId,
+            lotId: lot.id,
+            transferId: transfer.id,
+            type: "TRANSFER_IN",
+            quantity: Number(item.quantity || 0),
+            reason: `Recebimento de transferencia ${transfer.id}`,
+            createdById: req.user?.id,
+          },
+        });
+      }
+
+      await tx.stockTransfer.update({
+        where: { id: transfer.id },
+        data: { status: "RECEIVED", receivedAt: new Date(), receivedById: req.user?.id },
+      });
+    });
+
+    const updated = await prisma.stockTransfer.findUnique({
+      where: { id: transfer.id },
+      include: {
+        originStore: { select: { id: true, name: true } },
+        destinationStore: { select: { id: true, name: true } },
+        receivedBy: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, name: true } } } },
+      },
+    });
+    return sendOk(res, req, updated);
+  }));
+
+  router.post("/inventory/transfers/:id/cancel", asyncHandler(async (req, res) => {
+    const transfer = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
+    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia nao encontrada" } });
+    if (transfer.status === "RECEIVED") return res.status(400).json({ error: { code: 400, message: "Transferencia recebida nao pode ser cancelada" } });
+    if (transfer.status === "SENT") return res.status(400).json({ error: { code: 400, message: "Transferencia enviada deve ser recebida ou tratada por ajuste" } });
+
+    await prisma.stockTransfer.update({
+      where: { id: transfer.id },
+      data: { status: "CANCELED" },
+    });
+    return sendOk(res, req, { canceled: true });
+  }));
+
+  // Reservation flow between stores
+  router.get("/inventory/reservations", asyncHandler(async (req, res) => {
+    const storeId = await resolveStoreId(req);
+    if (!storeId) return sendOk(res, req, { reservations: [] });
+    const rows = await prisma.stockReservation.findMany({
+      where: {
+        OR: [
+          { requestStoreId: storeId },
+          { sourceStoreId: storeId },
+        ],
+      },
+      include: {
+        requestStore: { select: { id: true, name: true } },
+        sourceStore: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true, document: true } },
+        requestedBy: { select: { id: true, name: true } },
+        reviewedBy: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, name: true, ean: true } } } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    return sendOk(res, req, { reservations: rows });
+  }));
+
+  router.post("/inventory/reservations", asyncHandler(async (req, res) => {
+    assertPharmacistOrAdmin(req);
+    const requestStoreId = await resolveStoreId(req);
+    const { sourceStoreId, customerId, note, items = [] } = req.body || {};
+    if (!requestStoreId) return res.status(400).json({ error: { code: 400, message: "Loja solicitante nao definida" } });
+    if (!sourceStoreId || sourceStoreId === requestStoreId) {
+      return res.status(400).json({ error: { code: 400, message: "sourceStoreId invalido" } });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: { code: 400, message: "Informe os itens da reserva" } });
+    }
+
+    const reservation = await prisma.stockReservation.create({
+      data: {
+        requestStoreId,
+        sourceStoreId,
+        customerId: customerId || null,
+        note: note || null,
+        status: "REQUESTED",
+        requestedById: req.user?.id,
+        items: {
+          create: items
+            .map((it) => ({ productId: it.productId, quantity: Number(it.quantity || 0), reservedQty: 0 }))
+            .filter((it) => it.productId && it.quantity > 0),
+        },
+      },
+      include: {
+        requestStore: { select: { id: true, name: true } },
+        sourceStore: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, name: true } } } },
+      },
+    });
+
+    return sendOk(res, req, reservation, 201);
+  }));
+
+  router.post("/inventory/reservations/:id/approve", asyncHandler(async (req, res) => {
+    assertPharmacistOrAdmin(req);
+    const storeId = await resolveStoreId(req);
+    const reservation = await prisma.stockReservation.findUnique({
+      where: { id: req.params.id },
+      include: { items: true },
+    });
+    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
+    if (reservation.status !== "REQUESTED") return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser aprovada neste status" } });
+    if (reservation.sourceStoreId !== storeId) return res.status(403).json({ error: { code: 403, message: "Somente a loja origem pode aprovar" } });
+
+    await prisma.$transaction(async (tx) => {
+      for (const item of reservation.items) {
+        const total = await tx.inventoryLot.aggregate({
+          _sum: { quantity: true },
+          where: { storeId: reservation.sourceStoreId, productId: item.productId, active: true, quantity: { gt: 0 } },
+        });
+        const totalQty = Number(total._sum.quantity || 0);
+
+        const reserved = await tx.stockReservationItem.aggregate({
+          _sum: { reservedQty: true },
+          where: {
+            productId: item.productId,
+            reservation: { sourceStoreId: reservation.sourceStoreId, status: "APPROVED" },
+          },
+        });
+        const reservedQty = Number(reserved._sum.reservedQty || 0);
+
+        const available = Math.max(0, totalQty - reservedQty);
+        if (available < Number(item.quantity || 0)) {
+          throw Object.assign(new Error("Estoque indisponivel para aprovar reserva"), { statusCode: 400 });
+        }
+
+        await tx.stockReservationItem.update({
+          where: { id: item.id },
+          data: { reservedQty: Number(item.quantity || 0) },
+        });
+      }
+
+      await tx.stockReservation.update({
+        where: { id: reservation.id },
+        data: {
+          status: "APPROVED",
+          reviewedById: req.user?.id,
+          reviewedAt: new Date(),
+          rejectReason: null,
+        },
+      });
+    });
+
+    return sendOk(res, req, { approved: true });
+  }));
+
+  router.post("/inventory/reservations/:id/reject", asyncHandler(async (req, res) => {
+    assertPharmacistOrAdmin(req);
+    const storeId = await resolveStoreId(req);
+    const { reason } = req.body || {};
+    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatorio" } });
+    const reservation = await prisma.stockReservation.findUnique({ where: { id: req.params.id } });
+    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
+    if (reservation.sourceStoreId !== storeId) return res.status(403).json({ error: { code: 403, message: "Somente a loja origem pode rejeitar" } });
+    if (reservation.status !== "REQUESTED") return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser rejeitada neste status" } });
+
+    await prisma.stockReservation.update({
+      where: { id: reservation.id },
+      data: {
+        status: "REJECTED",
+        rejectReason: reason,
+        reviewedById: req.user?.id,
+        reviewedAt: new Date(),
+      },
+    });
+    return sendOk(res, req, { rejected: true });
+  }));
+
+  router.post("/inventory/reservations/:id/cancel", asyncHandler(async (req, res) => {
+    const storeId = await resolveStoreId(req);
+    const reservation = await prisma.stockReservation.findUnique({ where: { id: req.params.id } });
+    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
+    if (![reservation.requestStoreId, reservation.sourceStoreId].includes(storeId)) {
+      return res.status(403).json({ error: { code: 403, message: "Sem permissao para cancelar reserva" } });
+    }
+    if (!["REQUESTED", "APPROVED"].includes(reservation.status)) {
+      return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser cancelada neste status" } });
+    }
+
+    await prisma.stockReservation.update({
+      where: { id: reservation.id },
+      data: { status: "CANCELED", canceledAt: new Date() },
+    });
+    return sendOk(res, req, { canceled: true });
+  }));
+
+  router.post("/inventory/reservations/:id/fulfill", asyncHandler(async (req, res) => {
+    assertPharmacistOrAdmin(req);
+    const storeId = await resolveStoreId(req);
+    const reservation = await prisma.stockReservation.findUnique({ where: { id: req.params.id } });
+    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
+    if (reservation.requestStoreId !== storeId) return res.status(403).json({ error: { code: 403, message: "Somente loja solicitante pode finalizar" } });
+    if (reservation.status !== "APPROVED") return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser finalizada neste status" } });
+
+    await prisma.stockReservation.update({
+      where: { id: reservation.id },
+      data: { status: "FULFILLED", fulfilledAt: new Date() },
+    });
+    return sendOk(res, req, { fulfilled: true });
   }));
 
   // ─── INVENTORY EDIT (correct wrong entry) ───
@@ -1219,6 +1782,25 @@ function buildApiRoutes({ prisma, log }) {
 
     // FEFO + COGS for each item
     for (const item of sale.items) {
+      const reserved = await prisma.stockReservationItem.aggregate({
+        _sum: { reservedQty: true },
+        where: {
+          productId: item.productId,
+          reservation: { sourceStoreId: sale.storeId, status: "APPROVED" },
+        },
+      });
+      const reservedQty = Number(reserved._sum.reservedQty || 0);
+
+      const totalStock = await prisma.inventoryLot.aggregate({
+        _sum: { quantity: true },
+        where: { productId: item.productId, storeId: sale.storeId, active: true, quantity: { gt: 0 } },
+      });
+      const totalQty = Number(totalStock._sum.quantity || 0);
+      const availableQty = Math.max(0, totalQty - reservedQty);
+      if (availableQty < Number(item.quantity || 0)) {
+        return res.status(400).json({ error: { code: 400, message: `Estoque indisponivel para ${item.product?.name || "produto"} (reservas ativas)` } });
+      }
+
       const lots = await prisma.inventoryLot.findMany({
         where: { productId: item.productId, storeId: sale.storeId, active: true, quantity: { gt: 0 } },
         orderBy: { expiration: "asc" },
@@ -1379,6 +1961,23 @@ function buildApiRoutes({ prisma, log }) {
       });
 
       // Deduct from inventory
+      const reserved = await prisma.stockReservationItem.aggregate({
+        _sum: { reservedQty: true },
+        where: {
+          productId: ni.productId,
+          reservation: { sourceStoreId: sale.storeId, status: "APPROVED" },
+        },
+      });
+      const reservedQty = Number(reserved._sum.reservedQty || 0);
+      const totalStock = await prisma.inventoryLot.aggregate({
+        _sum: { quantity: true },
+        where: { productId: ni.productId, storeId: sale.storeId, active: true, quantity: { gt: 0 } },
+      });
+      const availableQty = Math.max(0, Number(totalStock._sum.quantity || 0) - reservedQty);
+      if (availableQty < Number(ni.quantity || 0)) {
+        return res.status(400).json({ error: { code: 400, message: "Estoque insuficiente para novo item da troca (reservas ativas)" } });
+      }
+
       const lot = await prisma.inventoryLot.findFirst({
         where: { productId: ni.productId, storeId: sale.storeId, active: true, quantity: { gt: 0 } },
         orderBy: { expiration: "asc" },

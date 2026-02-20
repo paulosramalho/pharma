@@ -64,6 +64,14 @@ enum TransferStatus {
   CANCELED
 }
 
+enum ReservationStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  CANCELED
+  FULFILLED
+}
+
 // ------------------------------
 // CORE: LOJAS
 // ------------------------------
@@ -97,6 +105,8 @@ model Store {
   deliveries      Delivery[]
   transfersOrigin StockTransfer[]     @relation("TransferOrigin")
   transfersDest   StockTransfer[]     @relation("TransferDestination")
+  reservationsRequested StockReservation[] @relation("ReservationRequestedStore")
+  reservationsSource    StockReservation[] @relation("ReservationSourceStore")
 
   fiscalConfig    FiscalConfig?
   fiscalDocs      FiscalDocument[]
@@ -149,6 +159,8 @@ model User {
   cashMovementsCreated   CashMovement[]      @relation("CashMovementCreatedBy")
   stockTransfersCreated  StockTransfer[]     @relation("StockTransferCreatedBy")
   stockTransfersReceived StockTransfer[]     @relation("StockTransferReceivedBy")
+  stockReservationsRequested StockReservation[] @relation("StockReservationRequestedBy")
+  stockReservationsReviewed  StockReservation[] @relation("StockReservationReviewedBy")
 
   stores StoreUser[]
   audit  AuditLog[]
@@ -235,6 +247,7 @@ model Product {
   inventoryMoves InventoryMovement[]
   saleItems      SaleItem[]
   transferItems  StockTransferItem[]
+  reservationItems StockReservationItem[]
   discounts      Discount[]
 
   @@index([active])
@@ -476,6 +489,7 @@ model Customer {
 
   addresses Address[]
   sales     Sale[]
+  reservations StockReservation[]
 
   @@index([name])
 }
@@ -559,6 +573,52 @@ model StockTransferItem {
   @@index([transferId])
   @@index([productId])
   @@index([originLotId])
+}
+
+model StockReservation {
+  id            String @id @default(uuid())
+  requestStore  Store  @relation("ReservationRequestedStore", fields: [requestStoreId], references: [id])
+  requestStoreId String
+  sourceStore   Store  @relation("ReservationSourceStore", fields: [sourceStoreId], references: [id])
+  sourceStoreId String
+
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  customerId String?
+
+  status ReservationStatus @default(REQUESTED)
+  note   String?
+  rejectReason String?
+
+  createdAt  DateTime @default(now())
+  reviewedAt DateTime?
+  fulfilledAt DateTime?
+  canceledAt DateTime?
+
+  requestedBy   User? @relation("StockReservationRequestedBy", fields: [requestedById], references: [id])
+  requestedById String?
+  reviewedBy   User? @relation("StockReservationReviewedBy", fields: [reviewedById], references: [id])
+  reviewedById String?
+
+  items StockReservationItem[]
+
+  @@index([requestStoreId, createdAt])
+  @@index([sourceStoreId, createdAt])
+  @@index([status])
+}
+
+model StockReservationItem {
+  id            String @id @default(uuid())
+  reservation   StockReservation @relation(fields: [reservationId], references: [id])
+  reservationId String
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  quantity   Int
+  reservedQty Int @default(0)
+
+  @@index([reservationId])
+  @@index([productId])
 }
 
 // === PATCH: Módulo Fiscal / NFC-e (mínimo) ===

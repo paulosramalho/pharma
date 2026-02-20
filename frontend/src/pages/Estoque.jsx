@@ -12,7 +12,7 @@ import { PageSpinner } from "../components/ui/Spinner";
 import {
   Package, Plus, ArrowDownUp, AlertTriangle, Search, Pencil,
   ArrowDown, ArrowUp, ChevronDown, ChevronRight, Warehouse, Store,
-  BarChart3, DollarSign, Tag,
+  BarChart3, DollarSign, Tag, Truck, BookmarkCheck,
 } from "lucide-react";
 
 const TABS = [
@@ -20,6 +20,8 @@ const TABS = [
   { key: "receive", label: "Entrada" },
   { key: "adjust", label: "Ajuste" },
   { key: "valuation", label: "Valoração" },
+  { key: "transfers", label: "Transferencias" },
+  { key: "reservations", label: "Reservas" },
 ];
 
 const TYPE_ICON = { CENTRAL: Warehouse, LOJA: Store };
@@ -27,7 +29,7 @@ const TYPE_LABEL = { CENTRAL: "Depósito", LOJA: "Loja" };
 const MOV_LABELS = { IN: "Entrada", OUT: "Saída", ADJUST_POS: "Ajuste +", ADJUST_NEG: "Ajuste -", TRANSFER_IN: "Transf. Entrada", TRANSFER_OUT: "Transf. Saída" };
 
 export default function Estoque() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const { addToast } = useToast();
   const [tab, setTab] = useState("overview");
 
@@ -65,6 +67,20 @@ export default function Estoque() {
   const [priceModal, setPriceModal] = useState(null); // product from valuation
   const [markup, setMarkup] = useState("");
   const [pricingResult, setPricingResult] = useState(null);
+  const [transfers, setTransfers] = useState([]);
+  const [reservations, setReservations] = useState([]);
+  const [flowLoading, setFlowLoading] = useState(false);
+  const [transferForm, setTransferForm] = useState({ originStoreId: "", note: "" });
+  const [transferItems, setTransferItems] = useState([]);
+  const [transferSearch, setTransferSearch] = useState("");
+  const [transferProducts, setTransferProducts] = useState([]);
+  const [reservationForm, setReservationForm] = useState({ sourceStoreId: "", customerId: "", note: "" });
+  const [reservationItems, setReservationItems] = useState([]);
+  const [reservationSearch, setReservationSearch] = useState("");
+  const [reservationProducts, setReservationProducts] = useState([]);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerResults, setCustomerResults] = useState([]);
+  const canFlowOperate = user?.role === "ADMIN" || user?.role === "FARMACEUTICO";
 
   const loadOverview = () => {
     setLoading(true);
@@ -92,6 +108,15 @@ export default function Estoque() {
   useEffect(() => {
     if (tab === "overview") loadOverview();
     else if (tab === "valuation") loadValuation();
+    else if (tab === "transfers") {
+      setLoading(false);
+      loadTransfers();
+      if (allStores.length === 0) apiFetch("/api/stores").then((res) => setAllStores(res.data || [])).catch(() => {});
+    } else if (tab === "reservations") {
+      setLoading(false);
+      loadReservations();
+      if (allStores.length === 0) apiFetch("/api/stores").then((res) => setAllStores(res.data || [])).catch(() => {});
+    }
     else {
       setLoading(false);
       if (allStores.length === 0) {
@@ -120,6 +145,48 @@ export default function Estoque() {
       const res = await apiFetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`);
       setProducts(res.data.products || []);
     } catch { /* ignore */ }
+  };
+
+  const searchTransferProducts = async (q) => {
+    if (q.length < 2) { setTransferProducts([]); return; }
+    try {
+      const res = await apiFetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`);
+      setTransferProducts(res.data.products || []);
+    } catch { setTransferProducts([]); }
+  };
+
+  const searchReservationProducts = async (q) => {
+    if (q.length < 2) { setReservationProducts([]); return; }
+    try {
+      const res = await apiFetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`);
+      setReservationProducts(res.data.products || []);
+    } catch { setReservationProducts([]); }
+  };
+
+  const searchCustomers = async (q) => {
+    if (q.length < 3) { setCustomerResults([]); return; }
+    try {
+      const res = await apiFetch(`/api/customers?search=${encodeURIComponent(q)}`);
+      setCustomerResults(res.data?.customers || []);
+    } catch { setCustomerResults([]); }
+  };
+
+  const loadTransfers = async () => {
+    setFlowLoading(true);
+    try {
+      const res = await apiFetch("/api/inventory/transfers");
+      setTransfers(res.data?.transfers || []);
+    } catch (err) { addToast(err.message, "error"); }
+    setFlowLoading(false);
+  };
+
+  const loadReservations = async () => {
+    setFlowLoading(true);
+    try {
+      const res = await apiFetch("/api/inventory/reservations");
+      setReservations(res.data?.reservations || []);
+    } catch (err) { addToast(err.message, "error"); }
+    setFlowLoading(false);
   };
 
   const selectReceiveProductByBarcode = async () => {
@@ -184,6 +251,132 @@ export default function Estoque() {
     } catch (err) {
       addToast(err.message, "error");
     }
+    setSubmitting(false);
+  };
+
+  const addTransferItem = (product) => {
+    if (!product?.id) return;
+    setTransferItems((prev) => {
+      const idx = prev.findIndex((i) => i.productId === product.id);
+      if (idx >= 0) return prev.map((i, k) => k === idx ? { ...i, quantity: i.quantity + 1 } : i);
+      return [...prev, { productId: product.id, productName: product.name, quantity: 1 }];
+    });
+    setTransferSearch("");
+    setTransferProducts([]);
+  };
+
+  const createTransfer = async () => {
+    if (!transferForm.originStoreId || transferItems.length === 0) {
+      addToast("Selecione loja origem e itens", "warning");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiFetch("/api/inventory/transfers", {
+        method: "POST",
+        body: JSON.stringify({
+          originStoreId: transferForm.originStoreId,
+          note: transferForm.note || null,
+          items: transferItems,
+        }),
+      });
+      setTransferForm({ originStoreId: "", note: "" });
+      setTransferItems([]);
+      addToast("Solicitacao de transferencia criada", "success");
+      loadTransfers();
+    } catch (err) { addToast(err.message, "error"); }
+    setSubmitting(false);
+  };
+
+  const sendTransfer = async (id) => {
+    setSubmitting(true);
+    try { await apiFetch(`/api/inventory/transfers/${id}/send`, { method: "POST" }); addToast("Transferencia enviada", "success"); loadTransfers(); }
+    catch (err) { addToast(err.message, "error"); }
+    setSubmitting(false);
+  };
+
+  const receiveTransfer = async (id) => {
+    setSubmitting(true);
+    try { await apiFetch(`/api/inventory/transfers/${id}/receive`, { method: "POST" }); addToast("Transferencia recebida", "success"); loadTransfers(); loadOverview(); }
+    catch (err) { addToast(err.message, "error"); }
+    setSubmitting(false);
+  };
+
+  const cancelTransfer = async (id) => {
+    setSubmitting(true);
+    try { await apiFetch(`/api/inventory/transfers/${id}/cancel`, { method: "POST" }); addToast("Transferencia cancelada", "warning"); loadTransfers(); }
+    catch (err) { addToast(err.message, "error"); }
+    setSubmitting(false);
+  };
+
+  const addReservationItem = (product) => {
+    if (!product?.id) return;
+    setReservationItems((prev) => {
+      const idx = prev.findIndex((i) => i.productId === product.id);
+      if (idx >= 0) return prev.map((i, k) => k === idx ? { ...i, quantity: i.quantity + 1 } : i);
+      return [...prev, { productId: product.id, productName: product.name, quantity: 1 }];
+    });
+    setReservationSearch("");
+    setReservationProducts([]);
+  };
+
+  const createReservation = async () => {
+    if (!reservationForm.sourceStoreId || reservationItems.length === 0) {
+      addToast("Selecione loja origem e itens", "warning");
+      return;
+    }
+    if (!reservationForm.customerId) {
+      addToast("Selecione o cliente", "warning");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiFetch("/api/inventory/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          sourceStoreId: reservationForm.sourceStoreId,
+          customerId: reservationForm.customerId,
+          note: reservationForm.note || null,
+          items: reservationItems,
+        }),
+      });
+      setReservationForm({ sourceStoreId: "", customerId: "", note: "" });
+      setReservationItems([]);
+      setCustomerSearch("");
+      setCustomerResults([]);
+      addToast("Solicitacao de reserva enviada", "success");
+      loadReservations();
+    } catch (err) { addToast(err.message, "error"); }
+    setSubmitting(false);
+  };
+
+  const approveReservation = async (id) => {
+    setSubmitting(true);
+    try { await apiFetch(`/api/inventory/reservations/${id}/approve`, { method: "POST" }); addToast("Reserva aprovada", "success"); loadReservations(); loadOverview(); }
+    catch (err) { addToast(err.message, "error"); }
+    setSubmitting(false);
+  };
+
+  const rejectReservation = async (id) => {
+    const reason = window.prompt("Motivo da rejeicao:");
+    if (!reason) return;
+    setSubmitting(true);
+    try { await apiFetch(`/api/inventory/reservations/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); addToast("Reserva rejeitada", "warning"); loadReservations(); }
+    catch (err) { addToast(err.message, "error"); }
+    setSubmitting(false);
+  };
+
+  const cancelReservation = async (id) => {
+    setSubmitting(true);
+    try { await apiFetch(`/api/inventory/reservations/${id}/cancel`, { method: "POST" }); addToast("Reserva cancelada", "warning"); loadReservations(); loadOverview(); }
+    catch (err) { addToast(err.message, "error"); }
+    setSubmitting(false);
+  };
+
+  const fulfillReservation = async (id) => {
+    setSubmitting(true);
+    try { await apiFetch(`/api/inventory/reservations/${id}/fulfill`, { method: "POST" }); addToast("Reserva finalizada", "success"); loadReservations(); loadOverview(); }
+    catch (err) { addToast(err.message, "error"); }
     setSubmitting(false);
   };
 
@@ -641,6 +834,173 @@ export default function Estoque() {
             )}
           </Card>
         </>
+      )}
+
+      {tab === "transfers" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="flex items-center gap-2">
+              <Truck size={18} className="text-gray-400" />
+              <h3 className="font-semibold text-gray-900">Solicitar Transferencia</h3>
+            </CardHeader>
+            <CardBody className="space-y-3 max-w-2xl">
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Loja origem</label>
+                <select value={transferForm.originStoreId} onChange={(e) => setTransferForm({ ...transferForm, originStoreId: e.target.value })} className={inputClass}>
+                  <option value="">Selecione...</option>
+                  {allStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Itens</label>
+                <input value={transferSearch} onChange={(e) => { setTransferSearch(e.target.value); searchTransferProducts(e.target.value); }} placeholder="Buscar produto..." className={inputClass} />
+                {transferProducts.length > 0 && (
+                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-36 overflow-y-auto">
+                    {transferProducts.map((p) => (
+                      <button key={p.id} onClick={() => addTransferItem(p)} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">{p.name}</button>
+                    ))}
+                  </div>
+                )}
+                {transferItems.length > 0 && (
+                  <div className="space-y-1">
+                    {transferItems.map((it, idx) => (
+                      <div key={it.productId} className="flex items-center gap-2">
+                        <span className="flex-1 text-sm">{it.productName}</span>
+                        <input type="number" min="1" value={it.quantity} onChange={(e) => setTransferItems((prev) => prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, parseInt(e.target.value) || 1) } : x))} className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center" />
+                        <button onClick={() => setTransferItems((prev) => prev.filter((_, i) => i !== idx))} className="text-xs text-red-600">remover</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Observacao</label>
+                <input value={transferForm.note} onChange={(e) => setTransferForm({ ...transferForm, note: e.target.value })} className={inputClass} />
+              </div>
+              <Button loading={submitting} onClick={createTransfer} disabled={!transferForm.originStoreId || transferItems.length === 0}>
+                <Plus size={16} /> Solicitar Transferencia
+              </Button>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Transferencias</h3>
+              <Button variant="secondary" onClick={loadTransfers}>Atualizar</Button>
+            </CardHeader>
+            {flowLoading ? <PageSpinner /> : (
+              <div className="divide-y divide-gray-100">
+                {transfers.map((t) => (
+                  <div key={t.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{t.originStore?.name} → {t.destinationStore?.name}</p>
+                        <p className="text-xs text-gray-500">{formatDateTime(t.createdAt)} • {t.items?.length || 0} item(ns)</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge color={t.status === "RECEIVED" ? "green" : t.status === "SENT" ? "blue" : t.status === "CANCELED" ? "red" : "gray"}>{t.status}</Badge>
+                        {canFlowOperate && t.status === "DRAFT" && <Button size="sm" onClick={() => sendTransfer(t.id)}>Enviar</Button>}
+                        {canFlowOperate && t.status === "SENT" && <Button size="sm" onClick={() => receiveTransfer(t.id)}>Receber</Button>}
+                        {t.status === "DRAFT" && <Button size="sm" variant="secondary" onClick={() => cancelTransfer(t.id)}>Cancelar</Button>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {transfers.length === 0 && <div className="px-4 py-6 text-sm text-gray-400 text-center">Nenhuma transferencia</div>}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {tab === "reservations" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="flex items-center gap-2">
+              <BookmarkCheck size={18} className="text-gray-400" />
+              <h3 className="font-semibold text-gray-900">Solicitar Reserva</h3>
+            </CardHeader>
+            <CardBody className="space-y-3 max-w-2xl">
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Loja que vai reservar</label>
+                <select value={reservationForm.sourceStoreId} onChange={(e) => setReservationForm({ ...reservationForm, sourceStoreId: e.target.value })} className={inputClass}>
+                  <option value="">Selecione...</option>
+                  {allStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Cliente</label>
+                <input value={customerSearch} onChange={(e) => { setCustomerSearch(e.target.value); searchCustomers(e.target.value); }} placeholder="Buscar cliente por nome/CPF..." className={inputClass} />
+                {customerResults.length > 0 && (
+                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-32 overflow-y-auto">
+                    {customerResults.map((c) => (
+                      <button key={c.id} onClick={() => { setReservationForm({ ...reservationForm, customerId: c.id }); setCustomerSearch(c.name); setCustomerResults([]); }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">{c.name}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Itens</label>
+                <input value={reservationSearch} onChange={(e) => { setReservationSearch(e.target.value); searchReservationProducts(e.target.value); }} placeholder="Buscar produto..." className={inputClass} />
+                {reservationProducts.length > 0 && (
+                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-36 overflow-y-auto">
+                    {reservationProducts.map((p) => (
+                      <button key={p.id} onClick={() => addReservationItem(p)} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">{p.name}</button>
+                    ))}
+                  </div>
+                )}
+                {reservationItems.length > 0 && (
+                  <div className="space-y-1">
+                    {reservationItems.map((it, idx) => (
+                      <div key={it.productId} className="flex items-center gap-2">
+                        <span className="flex-1 text-sm">{it.productName}</span>
+                        <input type="number" min="1" value={it.quantity} onChange={(e) => setReservationItems((prev) => prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, parseInt(e.target.value) || 1) } : x))} className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center" />
+                        <button onClick={() => setReservationItems((prev) => prev.filter((_, i) => i !== idx))} className="text-xs text-red-600">remover</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Button loading={submitting} onClick={createReservation} disabled={!reservationForm.sourceStoreId || !reservationForm.customerId || reservationItems.length === 0}>
+                <Plus size={16} /> Solicitar Reserva
+              </Button>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Reservas</h3>
+              <Button variant="secondary" onClick={loadReservations}>Atualizar</Button>
+            </CardHeader>
+            {flowLoading ? <PageSpinner /> : (
+              <div className="divide-y divide-gray-100">
+                {reservations.map((r) => (
+                  <div key={r.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{r.customer?.name || "Sem cliente"} • {r.sourceStore?.name}</p>
+                        <p className="text-xs text-gray-500">{formatDateTime(r.createdAt)} • {r.items?.length || 0} item(ns)</p>
+                        {r.rejectReason && <p className="text-xs text-red-600">Motivo rejeicao: {r.rejectReason}</p>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge color={r.status === "APPROVED" ? "green" : r.status === "REQUESTED" ? "yellow" : r.status === "REJECTED" ? "red" : "gray"}>{r.status}</Badge>
+                        {canFlowOperate && r.status === "REQUESTED" && (
+                          <>
+                            <Button size="sm" onClick={() => approveReservation(r.id)}>Aprovar</Button>
+                            <Button size="sm" variant="secondary" onClick={() => rejectReservation(r.id)}>Rejeitar</Button>
+                          </>
+                        )}
+                        {r.status === "APPROVED" && <Button size="sm" variant="secondary" onClick={() => fulfillReservation(r.id)}>Finalizar</Button>}
+                        {["REQUESTED", "APPROVED"].includes(r.status) && <Button size="sm" variant="secondary" onClick={() => cancelReservation(r.id)}>Cancelar</Button>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {reservations.length === 0 && <div className="px-4 py-6 text-sm text-gray-400 text-center">Nenhuma reserva</div>}
+              </div>
+            )}
+          </Card>
+        </div>
       )}
 
       {/* Edit Lot Modal */}

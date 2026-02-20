@@ -11,7 +11,7 @@ import Badge from "../components/ui/Badge";
 import { PageSpinner } from "../components/ui/Spinner";
 import {
   Wallet, ArrowDownCircle, ArrowUpCircle, DollarSign,
-  CreditCard, ShoppingCart, ChevronDown, ChevronUp, Clock, User, XCircle, RefreshCw,
+  CreditCard, ShoppingCart, ChevronDown, ChevronUp, Clock, User, XCircle, RefreshCw, PackageSearch, Search,
 } from "lucide-react";
 
 const MOVEMENT_LABELS = {
@@ -77,6 +77,10 @@ export default function Caixa() {
   // Pending exchanges
   const [pendingExchanges, setPendingExchanges] = useState([]);
   const [settlingExchange, setSettlingExchange] = useState(null);
+  const [lookupModal, setLookupModal] = useState(false);
+  const [lookupSearch, setLookupSearch] = useState("");
+  const [lookupResults, setLookupResults] = useState([]);
+  const [lookupLoading, setLookupLoading] = useState(false);
 
   // Clock update every second
   useEffect(() => {
@@ -290,6 +294,19 @@ export default function Caixa() {
   const troco = payMethod === "DINHEIRO" && payAmount > payTotal ? payAmount - payTotal : 0;
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
+  const searchLookup = async (q) => {
+    const term = String(q || "").trim();
+    if (term.length < 2) { setLookupResults([]); return; }
+    setLookupLoading(true);
+    try {
+      const res = await apiFetch(`/api/inventory/lookup?search=${encodeURIComponent(term)}&limit=30`);
+      setLookupResults(res.data?.products || []);
+    } catch (err) {
+      addToast(err.message, "error");
+      setLookupResults([]);
+    }
+    setLookupLoading(false);
+  };
   const getPendingSaleAging = (sale) => {
     const baseDate = sale?.updatedAt || sale?.createdAt;
     const elapsedMs = Math.max(0, now.getTime() - new Date(baseDate || 0).getTime());
@@ -397,6 +414,9 @@ export default function Caixa() {
                 </Button>
                 <Button variant="secondary" onClick={() => setMovModal("SUPRIMENTO")}>
                   <ArrowDownCircle size={16} /> Suprimento
+                </Button>
+                <Button variant="secondary" onClick={() => setLookupModal(true)}>
+                  <PackageSearch size={16} /> Consultar Estoque
                 </Button>
                 <Button variant="danger" onClick={() => setCloseModal(true)}>
                   Fechar Caixa
@@ -620,6 +640,48 @@ export default function Caixa() {
                 <Button className="flex-1" loading={submitting} onClick={openSessionFn}>Abrir Caixa</Button>
               </div>
             </>
+          )}
+        </div>
+      </Modal>
+
+      <Modal open={lookupModal} onClose={() => setLookupModal(false)} title="Consulta de Estoque / Preco" size="lg">
+        <div className="space-y-3">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={lookupSearch}
+              onChange={(e) => { setLookupSearch(e.target.value); searchLookup(e.target.value); }}
+              placeholder="Buscar por nome ou EAN..."
+              className={inputClass + " pl-9"}
+              autoFocus
+            />
+          </div>
+          {lookupLoading ? (
+            <div className="flex items-center justify-center py-6"><div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" /></div>
+          ) : lookupResults.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">Digite ao menos 2 caracteres para consultar.</p>
+          ) : (
+            <div className="max-h-[55vh] overflow-y-auto space-y-2">
+              {lookupResults.map((p) => (
+                <div key={p.id} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                      <p className="text-xs text-gray-500">{p.ean || "Sem EAN"}</p>
+                    </div>
+                    <p className="text-sm font-bold text-primary-700">{p.price != null ? money(p.price) : "Sem preco"}</p>
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+                    {(p.stores || []).map((s) => (
+                      <div key={s.id} className="text-xs bg-gray-50 rounded px-2 py-1 flex items-center justify-between">
+                        <span className="text-gray-600">{s.name}</span>
+                        <span className="font-medium text-gray-800">Disp: {s.available} {s.reserved > 0 ? `(Res: ${s.reserved})` : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </Modal>
