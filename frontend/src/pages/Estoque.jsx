@@ -128,14 +128,6 @@ export default function Estoque() {
   }, [tab]);
 
   useEffect(() => {
-    if (tab !== "transfers") return undefined;
-    const timer = setInterval(() => {
-      loadTransfers();
-    }, 15000);
-    return () => clearInterval(timer);
-  }, [tab]);
-
-  useEffect(() => {
     if (!transferForm.originStoreId) return;
     setTransferItems((prev) => prev
       .map((it) => {
@@ -355,15 +347,22 @@ export default function Estoque() {
     setSubmitting(false);
   };
 
-  const sendTransfer = async (id, draftItems = []) => {
-    let sendRows = Object.entries(transferSendDraft)
+  const sendTransfer = async (id) => {
+    const sendRows = Object.entries(transferSendDraft)
       .filter(([key, row]) => key.startsWith(`${id}:`) && row?.selected && Number(row.quantity || 0) > 0)
       .map(([key, row]) => ({ productId: key.split(":")[1], quantity: Number(row.quantity || 0) }));
-    if (sendRows.length === 0 && draftItems.length > 0) {
-      sendRows = draftItems.map((it) => ({ productId: it.productId, quantity: Number(it.quantity || 0) })).filter((it) => it.productId && it.quantity > 0);
-    }
     if (sendRows.length === 0) {
-      addToast("Selecione ao menos um item com quantidade para envio", "warning");
+      addToast("Nenhum item com quantidade maior que zero para envio", "warning");
+      return;
+    }
+    const transfer = transfers.find((t) => t.id === id);
+    const itemMap = (summarizeTransferItems(transfer?.items || []) || []).reduce((acc, it) => {
+      acc[it.productId] = it.productName;
+      return acc;
+    }, {});
+    const summaryLines = sendRows.map((row) => `- ${itemMap[row.productId] || row.productId}: ${row.quantity}`).join("\n");
+    const confirmed = window.confirm(`Confirmar envio com as quantidades abaixo?\n\n${summaryLines}`);
+    if (!confirmed) {
       return;
     }
     setSubmitting(true);
@@ -1062,7 +1061,7 @@ export default function Estoque() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge color={t.status === "RECEIVED" ? "green" : t.status === "SENT" ? "blue" : t.status === "CANCELED" ? "red" : "gray"}>{transferStatusLabel[t.status] || t.status}</Badge>
-                        {canFlowOperate && t.originStore?.id === storeId && t.status === "DRAFT" && <Button size="sm" onClick={() => sendTransfer(t.id, summarizeTransferItems(t.items || []))}>Enviar</Button>}
+                        {canFlowOperate && t.originStore?.id === storeId && t.status === "DRAFT" && <Button size="sm" onClick={() => sendTransfer(t.id)}>Enviar</Button>}
                         {canFlowOperate && t.destinationStore?.id === storeId && t.status === "SENT" && <Button size="sm" onClick={() => receiveTransfer(t.id)}>Receber</Button>}
                         {t.originStore?.id === storeId && t.status === "DRAFT" && <Button size="sm" variant="secondary" onClick={() => cancelTransfer(t.id)}>Cancelar</Button>}
                       </div>
@@ -1111,11 +1110,11 @@ export default function Estoque() {
                               <span className="text-xs text-gray-500">Solic.: {it.quantity}</span>
                               <input
                                 type="number"
-                                min="1"
+                                min="0"
                                 max={Math.max(1, Number(it.quantity || 0))}
                                 value={row.quantity}
                                 onChange={(e) => {
-                                  const next = Math.max(1, Math.min(Number(it.quantity || 0), parseInt(e.target.value, 10) || 1));
+                                  const next = Math.max(0, Math.min(Number(it.quantity || 0), parseInt(e.target.value, 10) || 0));
                                   setTransferSendDraft((prev) => ({
                                     ...prev,
                                     [key]: { ...row, quantity: next },
