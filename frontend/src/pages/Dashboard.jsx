@@ -34,6 +34,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [storeOptions, setStoreOptions] = useState([]);
   const [filters, setFilters] = useState(() => {
     const end = new Date();
     const start = new Date();
@@ -66,6 +67,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadDashboard();
+    apiFetch("/api/stores")
+      .then((res) => {
+        const stores = res.data || [];
+        setStoreOptions(stores);
+        setFilters((prev) => (prev.storeIds.length > 0 ? prev : { ...prev, storeIds: stores.map((s) => s.id) }));
+      })
+      .catch(() => {});
   }, []);
 
   if (loading && !data) return <PageSpinner />;
@@ -141,7 +149,7 @@ export default function Dashboard() {
               }}
               className="w-full h-[84px] px-3 py-2 text-sm border border-gray-300 rounded-lg"
             >
-              {(data?.filters?.stores || []).map((s) => (
+              {(storeOptions.length > 0 ? storeOptions : (data?.filters?.stores || [])).map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
