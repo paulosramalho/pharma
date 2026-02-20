@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../lib/api";
-import { money, cpfMask, formatDate, whatsappMask } from "../lib/format";
+import { money, cpfMask, formatDate, whatsappMask, parseDateNoon } from "../lib/format";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
@@ -165,8 +165,8 @@ export default function VendaNova() {
     const base = Number(product.prices?.[0]?.price ?? product.price ?? 0);
     const d = product.discounts?.[0];
     if (!d || !d.active) return { base, final: base, discount: null };
-    const now = new Date();
-    if (d.endDate && new Date(d.endDate) < now) return { base, final: base, discount: null };
+    const now = parseDateNoon(new Date());
+    if (d.endDate && parseDateNoon(d.endDate) < now) return { base, final: base, discount: null };
     const discounted = d.type === "PERCENT"
       ? base * (1 - Number(d.value) / 100)
       : Math.max(0, base - Number(d.value));

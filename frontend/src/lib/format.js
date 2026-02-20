@@ -95,6 +95,16 @@ export function whatsappMask(v) {
 }
 
 // ─── Date ───
+export function parseDateNoon(v) {
+  if (!v) return null;
+  if (v instanceof Date) {
+    return new Date(v.getFullYear(), v.getMonth(), v.getDate(), 12, 0, 0, 0);
+  }
+  const s = String(v);
+  if (s.includes("T")) return new Date(s);
+  return new Date(`${s}T12:00:00`);
+}
+
 export function formatDate(v) {
   if (!v) return "—";
   return new Date(v).toLocaleDateString("pt-BR");

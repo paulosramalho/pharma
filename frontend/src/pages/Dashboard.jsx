@@ -25,7 +25,11 @@ const STATUS_LABEL = {
 const PIE_COLORS = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#6b7280"];
 
 function toInputDate(v) {
-  return new Date(v).toISOString().slice(0, 10);
+  const d = new Date(v);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 export default function Dashboard() {

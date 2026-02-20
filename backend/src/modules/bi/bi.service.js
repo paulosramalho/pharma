@@ -9,8 +9,8 @@ function toDateISO(d) {
 
 function parseRange({ from, to, days }) {
   const today = new Date();
-  const dTo = to ? new Date(to) : today;
-  const dFrom = from ? new Date(from) : new Date(dTo.getTime() - (Number(days || 30) * 86400000));
+  const dTo = to ? new Date(String(to).includes("T") ? to : `${to}T12:00:00Z`) : today;
+  const dFrom = from ? new Date(String(from).includes("T") ? from : `${from}T12:00:00Z`) : new Date(dTo.getTime() - (Number(days || 30) * 86400000));
   return { fromISO: toDateISO(dFrom), toISO: toDateISO(dTo) };
 }
 
@@ -105,8 +105,8 @@ async function topDemandSeries({ prisma, storeId, days = 30, top = 20, rankBy = 
     map.get(pid).set(day, { qty, revenue });
   }
 
-  const start = new Date(fromISO + "T00:00:00Z");
-  const end = new Date(toISO + "T00:00:00Z");
+  const start = new Date(fromISO + "T12:00:00Z");
+  const end = new Date(toISO + "T12:00:00Z");
   const daysList = [];
   for (let t = start.getTime(); t <= end.getTime(); t += 86400000) {
     const d = new Date(t);

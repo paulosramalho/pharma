@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../lib/api";
-import { money, formatDate } from "../lib/format";
+import { money, formatDate, parseDateNoon } from "../lib/format";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import Card from "../components/ui/Card";
@@ -157,8 +157,8 @@ export default function Vendas() {
     const base = Number(product.prices?.[0]?.price || 0);
     const d = product.discounts?.[0];
     if (!d || !d.active) return { base, final: base, discount: null };
-    const now = new Date();
-    if (d.endDate && new Date(d.endDate) < now) return { base, final: base, discount: null };
+    const now = parseDateNoon(new Date());
+    if (d.endDate && parseDateNoon(d.endDate) < now) return { base, final: base, discount: null };
     const discounted = d.type === "PERCENT"
       ? base * (1 - Number(d.value) / 100)
       : Math.max(0, base - Number(d.value));

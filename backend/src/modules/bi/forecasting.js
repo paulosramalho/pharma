@@ -43,7 +43,7 @@ function forecastNext({ series, method = "SMA", window = 7, horizonDays = 14 }) 
 
   // naive horizon: repeat last smoothed value
   const forecast = [];
-  const d0 = new Date(lastDate + "T00:00:00Z");
+  const d0 = new Date(lastDate + "T12:00:00Z");
   for (let i = 1; i <= horizon; i++) {
     const di = new Date(d0.getTime() + i * 86400000);
     const yyyy = di.getUTCFullYear();

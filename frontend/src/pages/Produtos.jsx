@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../lib/api";
-import { money, formatDate, moneyMask, parseMoney } from "../lib/format";
+import { money, formatDate, moneyMask, parseMoney, parseDateNoon } from "../lib/format";
 import { useToast } from "../contexts/ToastContext";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -163,8 +163,8 @@ export default function Produtos() {
   const getActiveDiscount = (product) => {
     const d = product.discounts?.[0];
     if (!d || !d.active) return null;
-    const now = new Date();
-    if (d.endDate && new Date(d.endDate) < now) return null;
+    const now = parseDateNoon(new Date());
+    if (d.endDate && parseDateNoon(d.endDate) < now) return null;
     return d;
   };
 
@@ -336,7 +336,7 @@ export default function Produtos() {
               ) : (
                 <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
                   {discountHistory.map((d) => {
-                    const isActive = d.active && (!d.endDate || new Date(d.endDate) >= new Date());
+                    const isActive = d.active && (!d.endDate || parseDateNoon(d.endDate) >= parseDateNoon(new Date()));
                     return (
                       <div key={d.id} className={`flex items-center gap-3 px-4 py-2.5 ${isActive ? "bg-amber-50" : ""}`}>
                         <div className="flex-1 min-w-0">
