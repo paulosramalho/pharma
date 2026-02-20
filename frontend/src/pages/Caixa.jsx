@@ -28,6 +28,8 @@ const PAY_METHODS = [
   { key: "CARTAO_DEBITO", label: "Cartão de Debito" },
   { key: "PIX", label: "PIX" },
 ];
+const SALE_WAIT_WARNING_MINUTES = 5;
+const SALE_WAIT_CRITICAL_MINUTES = 10;
 
 export default function Caixa() {
   const { addToast } = useToast();
@@ -288,6 +290,33 @@ export default function Caixa() {
   const troco = payMethod === "DINHEIRO" && payAmount > payTotal ? payAmount - payTotal : 0;
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
+  const getPendingSaleAging = (sale) => {
+    const baseDate = sale?.updatedAt || sale?.createdAt;
+    const elapsedMs = Math.max(0, now.getTime() - new Date(baseDate || 0).getTime());
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+
+    if (elapsedMinutes >= SALE_WAIT_CRITICAL_MINUTES) {
+      return {
+        rowClass: "bg-red-50 hover:bg-red-100/80",
+        badgeColor: "red",
+        label: `Aguardando ${elapsedMinutes} min`,
+      };
+    }
+
+    if (elapsedMinutes >= SALE_WAIT_WARNING_MINUTES) {
+      return {
+        rowClass: "bg-amber-50 hover:bg-amber-100/70",
+        badgeColor: "yellow",
+        label: `Aguardando ${elapsedMinutes} min`,
+      };
+    }
+
+    return {
+      rowClass: "hover:bg-gray-50",
+      badgeColor: "gray",
+      label: `Aguardando ${elapsedMinutes} min`,
+    };
+  };
 
   return (
     <div className="space-y-4" data-view="cashier-page">
@@ -397,13 +426,16 @@ export default function Caixa() {
               <CardBody><p className="text-sm text-gray-400 text-center py-4">Nenhuma venda pendente de pagamento</p></CardBody>
             ) : (
               <div className="divide-y divide-gray-100">
-                {orderedPendingSales.map((s) => (
+                {orderedPendingSales.map((s) => {
+                  const aging = getPendingSaleAging(s);
+                  return (
                   <div key={s.id}>
-                    <div className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50">
+                    <div className={`flex items-center gap-3 px-5 py-3 transition-colors ${aging.rowClass}`}>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-gray-900">#{s.number}</span>
                           <Badge color="amber">Confirmada</Badge>
+                          <Badge color={aging.badgeColor}>{aging.label}</Badge>
                           <span className="text-xs text-gray-400">{s._count?.items || 0} itens</span>
                         </div>
                         <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
@@ -454,7 +486,7 @@ export default function Caixa() {
                       </div>
                     )}
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </Card>
