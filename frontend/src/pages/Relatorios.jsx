@@ -46,6 +46,7 @@ export default function Relatorios() {
   const [cashPage, setCashPage] = useState(1);
   const [transferData, setTransferData] = useState(null);
   const [transferPage, setTransferPage] = useState(1);
+  const [selectedTransferId, setSelectedTransferId] = useState("");
   const [originStoreId, setOriginStoreId] = useState("");
   const [destinationStoreId, setDestinationStoreId] = useState("");
   const [requesterId, setRequesterId] = useState("");
@@ -96,6 +97,15 @@ export default function Relatorios() {
   };
 
   useEffect(() => { handleFilter(); }, [tab]);
+
+  useEffect(() => {
+    if (!transferData?.transfers?.length) {
+      setSelectedTransferId("");
+      return;
+    }
+    const exists = transferData.transfers.some((t) => t.id === selectedTransferId);
+    if (!exists) setSelectedTransferId(transferData.transfers[0].id);
+  }, [transferData]);
 
   return (
     <div className="space-y-4">
@@ -428,6 +438,7 @@ export default function Relatorios() {
                         <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase text-right">Pedida</th>
                         <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase text-right">Enviada</th>
                         <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Itens</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -445,19 +456,52 @@ export default function Relatorios() {
                               {t.status === "RECEIVED" ? "Recebido" : t.status === "SENT" ? "Enviado" : t.status === "CANCELED" ? "Cancelado" : "Rascunho"}
                             </Badge>
                           </td>
+                          <td className="px-4 py-2">
+                            <button
+                              onClick={() => setSelectedTransferId(t.id)}
+                              className={`text-xs font-medium ${selectedTransferId === t.id ? "text-primary-700" : "text-primary-600 hover:text-primary-700"}`}
+                            >
+                              {selectedTransferId === t.id ? "Selecionada" : "Ver itens"}
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <div className="px-4 pb-4 space-y-2">
-                  {(transferData.transfers || []).map((t) => (
-                    <div key={`${t.id}-items`} className="text-xs text-gray-600 bg-gray-50 rounded px-3 py-2">
-                      <span className="font-medium text-gray-700">Itens:</span>{" "}
-                      {(t.items || []).map((it) => `${it.productName} (Ped: ${it.requestedQty} / Env: ${it.sentQty})`).join(" | ")}
+                {(() => {
+                  const selected = (transferData.transfers || []).find((t) => t.id === selectedTransferId);
+                  if (!selected) return null;
+                  return (
+                    <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+                      <p className="text-sm font-medium text-gray-800">
+                        Itens da transferencia {selected.originStore?.name || "—"} → {selected.destinationStore?.name || "—"}
+                      </p>
+                      <div className="mt-2 overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left text-gray-500 border-b border-gray-200">
+                              <th className="py-1 pr-2 font-medium">Item</th>
+                              <th className="py-1 pr-2 font-medium">EAN</th>
+                              <th className="py-1 pr-2 font-medium text-right">Pedida</th>
+                              <th className="py-1 pr-2 font-medium text-right">Enviada</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {(selected.items || []).map((it) => (
+                              <tr key={`${selected.id}-${it.productId}`}>
+                                <td className="py-1.5 pr-2 text-gray-800">{it.productName}</td>
+                                <td className="py-1.5 pr-2 text-gray-500 font-mono">{it.ean || "—"}</td>
+                                <td className="py-1.5 pr-2 text-right text-gray-900">{it.requestedQty}</td>
+                                <td className="py-1.5 pr-2 text-right text-gray-900">{it.sentQty}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
                 {transferData.totalPages > 1 && (
                   <div className="flex items-center justify-center gap-2 py-3 border-t border-gray-100">
                     <button onClick={() => loadTransfersReport(transferPage - 1)} disabled={transferPage <= 1}
