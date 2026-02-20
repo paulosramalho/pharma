@@ -38,12 +38,20 @@ async function login(email, password) {
 
   const roleName = user.role?.name || "USER";
   const permissions = (user.role?.perms || []).map((p) => p.permissionKey);
-  const stores = user.stores.map((su) => ({
+  let stores = user.stores.map((su) => ({
     id: su.store.id,
     name: su.store.name,
     type: su.store.type,
     isDefault: su.isDefault,
   }));
+  if (roleName === "ADMIN") {
+    const allStores = await prisma.store.findMany({
+      where: { active: true },
+      select: { id: true, name: true, type: true, isDefault: true },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+    });
+    stores = allStores.map((s) => ({ id: s.id, name: s.name, type: s.type, isDefault: s.isDefault }));
+  }
 
   const accessToken = signAccess(user, roleName);
   const refreshToken = signRefresh(user.id);
@@ -93,12 +101,20 @@ async function getMe(userId) {
 
   const roleName = user.role?.name || "USER";
   const permissions = (user.role?.perms || []).map((p) => p.permissionKey);
-  const stores = user.stores.map((su) => ({
+  let stores = user.stores.map((su) => ({
     id: su.store.id,
     name: su.store.name,
     type: su.store.type,
     isDefault: su.isDefault,
   }));
+  if (roleName === "ADMIN") {
+    const allStores = await prisma.store.findMany({
+      where: { active: true },
+      select: { id: true, name: true, type: true, isDefault: true },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+    });
+    stores = allStores.map((s) => ({ id: s.id, name: s.name, type: s.type, isDefault: s.isDefault }));
+  }
 
   return {
     user: { id: user.id, name: user.name, email: user.email, role: roleName },

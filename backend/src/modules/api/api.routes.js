@@ -13,15 +13,64 @@ function safeDate(v) {
 function buildApiRoutes({ prisma, log }) {
   const router = express.Router();
 
-  // Helper: get storeId from header or default
-  async function resolveStoreId(req) {
-    const fromHeader = req.headers["x-store-id"];
-    if (fromHeader) return fromHeader;
-    if (!req.user) return null;
-    const su = await prisma.storeUser.findFirst({
-      where: { userId: req.user.id, isDefault: true },
+  function isAdmin(req) {
+    return req.user?.role === "ADMIN";
+  }
+
+  async function getUserStoreIds(req) {
+    if (!req.user) return [];
+    if (isAdmin(req)) {
+      const stores = await prisma.store.findMany({
+        where: { active: true },
+        select: { id: true },
+      });
+      return stores.map((s) => s.id);
+    }
+    const links = await prisma.storeUser.findMany({
+      where: { userId: req.user.id, store: { active: true } },
+      select: { storeId: true },
     });
-    return su?.storeId || null;
+    return links.map((s) => s.storeId);
+  }
+
+  // Helper: get storeId from header or default, validating user access.
+  async function resolveStoreId(req) {
+    const fromHeader = String(req.headers["x-store-id"] || "").trim();
+    if (fromHeader) {
+      if (isAdmin(req)) return fromHeader;
+      const allowed = await prisma.storeUser.findFirst({
+        where: { userId: req.user?.id, storeId: fromHeader, store: { active: true } },
+        select: { storeId: true },
+      });
+      if (!allowed) {
+        throw Object.assign(new Error("Usuario sem acesso a loja informada"), { statusCode: 403 });
+      }
+      return fromHeader;
+    }
+    if (!req.user) return null;
+    if (isAdmin(req)) {
+      const defaultStore = await prisma.store.findFirst({
+        where: { active: true, isDefault: true },
+        select: { id: true },
+      });
+      if (defaultStore?.id) return defaultStore.id;
+      const firstStore = await prisma.store.findFirst({
+        where: { active: true },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      });
+      return firstStore?.id || null;
+    }
+    const su = await prisma.storeUser.findFirst({
+      where: { userId: req.user.id, isDefault: true, store: { active: true } },
+      select: { storeId: true },
+    });
+    if (su?.storeId) return su.storeId;
+    const fallback = await prisma.storeUser.findFirst({
+      where: { userId: req.user.id, store: { active: true } },
+      select: { storeId: true },
+    });
+    return fallback?.storeId || null;
   }
 
   // Helper: load full sale with includes (used by multiple endpoints)
@@ -78,6 +127,9 @@ function buildApiRoutes({ prisma, log }) {
   router.get("/stores", asyncHandler(async (req, res) => {
     const { all } = req.query; // ?all=true to include inactive
     const where = all === "true" ? {} : { active: true };
+    if (!isAdmin(req)) {
+      where.accessUsers = { some: { userId: req.user?.id } };
+    }
     const stores = await prisma.store.findMany({
       where,
       orderBy: { name: "asc" },
@@ -302,9 +354,9 @@ function buildApiRoutes({ prisma, log }) {
       data: { name, email, passwordHash, active: true, roleId: role.id },
     });
 
-    // If storeIds provided, use those; otherwise default to first active store
-    let assignedStoreIds = storeIds && storeIds.length > 0 ? storeIds : [];
-    if (assignedStoreIds.length === 0) {
+    // ADMIN has global access and does not require store link.
+    let assignedStoreIds = Array.isArray(storeIds) ? storeIds.filter(Boolean) : [];
+    if (roleName !== "ADMIN" && assignedStoreIds.length === 0) {
       const defaultStore = await prisma.store.findFirst({ where: { active: true, type: "LOJA" }, orderBy: { createdAt: "asc" } });
       if (defaultStore) assignedStoreIds = [defaultStore.id];
     }
@@ -319,24 +371,41 @@ function buildApiRoutes({ prisma, log }) {
   router.put("/users/:id", asyncHandler(async (req, res) => {
     const bcrypt = require("bcryptjs");
     const { name, email, password, roleName, active, storeIds } = req.body;
+    const currentUser = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      include: { role: { select: { name: true } } },
+    });
+    if (!currentUser) {
+      return res.status(404).json({ error: { code: 404, message: "Usuario nao encontrado" } });
+    }
 
     const data = {};
     if (name !== undefined) data.name = name;
     if (email !== undefined) data.email = email;
     if (active !== undefined) data.active = active;
     if (password) data.passwordHash = await bcrypt.hash(password, 10);
+    let targetRoleName = currentUser.role?.name || "USER";
     if (roleName) {
       const role = await prisma.role.findUnique({ where: { name: roleName } });
       if (role) data.roleId = role.id;
+      targetRoleName = roleName;
     }
 
     const user = await prisma.user.update({ where: { id: req.params.id }, data });
 
-    // Update store access if provided
-    if (storeIds) {
+    // Update store access when requested, or clear links when user becomes ADMIN.
+    if (storeIds !== undefined || targetRoleName === "ADMIN") {
+      const requestedStoreIds = Array.isArray(storeIds) ? storeIds.filter(Boolean) : [];
       await prisma.storeUser.deleteMany({ where: { userId: user.id } });
-      for (const sid of storeIds) {
-        await prisma.storeUser.create({ data: { storeId: sid, userId: user.id, isDefault: storeIds[0] === sid } });
+      if (targetRoleName !== "ADMIN") {
+        let finalStoreIds = requestedStoreIds;
+        if (finalStoreIds.length === 0) {
+          const defaultStore = await prisma.store.findFirst({ where: { active: true, type: "LOJA" }, orderBy: { createdAt: "asc" } });
+          if (defaultStore) finalStoreIds = [defaultStore.id];
+        }
+        for (const sid of finalStoreIds) {
+          await prisma.storeUser.create({ data: { storeId: sid, userId: user.id, isDefault: finalStoreIds[0] === sid } });
+        }
       }
     }
 
@@ -713,10 +782,18 @@ function buildApiRoutes({ prisma, log }) {
   // ─── STOCK VALUATION ───
   router.get("/inventory/valuation", asyncHandler(async (req, res) => {
     const storeId = req.query.storeId || null;
+    const allowedStoreIds = await getUserStoreIds(req);
+    if (!isAdmin(req) && allowedStoreIds.length === 0) {
+      return res.status(403).json({ error: { code: 403, message: "Usuario sem loja vinculada" } });
+    }
+    if (!isAdmin(req) && storeId && !allowedStoreIds.includes(storeId)) {
+      return res.status(403).json({ error: { code: 403, message: "Sem acesso a loja informada" } });
+    }
 
     // Get all active lots grouped by product
     const lotsWhere = { active: true };
     if (storeId) lotsWhere.storeId = storeId;
+    else if (!isAdmin(req)) lotsWhere.storeId = { in: allowedStoreIds };
 
     const lots = await prisma.inventoryLot.findMany({
       where: lotsWhere,
@@ -726,6 +803,7 @@ function buildApiRoutes({ prisma, log }) {
     // Get sales data for sold value calculation
     const salesWhere = { status: "PAID" };
     if (storeId) salesWhere.storeId = storeId;
+    else if (!isAdmin(req)) salesWhere.storeId = { in: allowedStoreIds };
     const saleItems = await prisma.saleItem.findMany({
       where: { sale: salesWhere },
       include: { product: { select: { id: true, name: true } } },
