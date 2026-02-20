@@ -52,8 +52,8 @@ export default function Vendas() {
   const [newItemHighlight, setNewItemHighlight] = useState(-1);
   const newSearchRef = useRef(null);
 
-  const load = () => {
-    setLoading(true);
+  const load = ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     const params = new URLSearchParams({ page, limit: 20 });
     if (statusFilter) params.set("status", statusFilter);
     if (search) params.set("search", search);
@@ -63,10 +63,20 @@ export default function Vendas() {
         setTotalPages(res.data.totalPages || 1);
       })
       .catch((err) => addToast(err.message, "error"))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   };
 
   useEffect(() => { load(); }, [page, statusFilter]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      load({ silent: true });
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [page, statusFilter, search]);
 
   const handleSearch = (e) => {
     e.preventDefault();
