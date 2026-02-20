@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../lib/api";
 import { money, cpfMask, formatDate, whatsappMask } from "../lib/format";
 import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/AuthContext";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Badge from "../components/ui/Badge";
@@ -11,6 +12,7 @@ import { Search, Trash2, ShoppingCart, X, UserPlus, User, Plus, Tag, Pencil, Che
 
 export default function VendaNova() {
   const { addToast } = useToast();
+  const { storeId } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const searchRef = useRef(null);
@@ -144,14 +146,23 @@ export default function VendaNova() {
   const searchProducts = async (q) => {
     if (q.length < 2) { setProducts([]); return; }
     try {
-      const res = await apiFetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`);
+      const res = await apiFetch(`/api/inventory/lookup?search=${encodeURIComponent(q)}&limit=12`);
       setProducts(res.data.products || []);
     } catch { /* ignore */ }
   };
 
+  const getStoreStock = (product) => {
+    const stores = product?.stores || [];
+    const current = stores.find((s) => s.id === storeId);
+    return {
+      currentAvailable: Number(current?.available || 0),
+      storesWithStock: stores.filter((s) => Number(s.available || 0) > 0),
+    };
+  };
+
   // Compute final price considering active discount
   const getDiscountedPrice = (product) => {
-    const base = Number(product.prices?.[0]?.price || 0);
+    const base = Number(product.prices?.[0]?.price ?? product.price ?? 0);
     const d = product.discounts?.[0];
     if (!d || !d.active) return { base, final: base, discount: null };
     const now = new Date();
@@ -163,6 +174,11 @@ export default function VendaNova() {
   };
 
   const selectProduct = (product) => {
+    const stock = getStoreStock(product);
+    if (stock.currentAvailable <= 0) {
+      addToast("Sem estoque na loja selecionada. Veja onde ha disponibilidade.", "warning");
+      return;
+    }
     setSelectedProduct(product);
     setAddQty(1);
     setProductSearch("");
@@ -172,6 +188,11 @@ export default function VendaNova() {
 
   const addItem = async () => {
     if (!selectedProduct || addQty < 1) return;
+    const stock = getStoreStock(selectedProduct);
+    if (stock.currentAvailable < addQty) {
+      addToast("Sem estoque suficiente na loja selecionada.", "warning");
+      return;
+    }
     try {
       const s = await ensureDraft();
       if (!s) return;
@@ -197,10 +218,21 @@ export default function VendaNova() {
 
     try {
       const lookup = await apiFetch(`/api/products?search=${encodeURIComponent(code)}&limit=20`);
-      const candidates = lookup.data?.products || [];
+      const candidates = (lookup.data?.products || []).map((p) => ({
+        ...p,
+        stores: [],
+      }));
+      const stockLookup = await apiFetch(`/api/inventory/lookup?search=${encodeURIComponent(code)}&limit=20`);
+      const stocksById = (stockLookup.data?.products || []).reduce((acc, p) => { acc[p.id] = p.stores || []; return acc; }, {});
+      for (const c of candidates) c.stores = stocksById[c.id] || [];
       const exact = candidates.find((p) => String(p.ean || "") === code);
       if (!exact) {
         addToast("Codigo de barras nao encontrado", "warning");
+        return;
+      }
+      const stock = getStoreStock(exact);
+      if (stock.currentAvailable < 1) {
+        addToast("Sem estoque nesta loja. Verifique outra loja/deposito.", "warning");
         return;
       }
 
@@ -415,12 +447,19 @@ export default function VendaNova() {
                   <div className="mt-2 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-60 overflow-y-auto">
                     {products.map((p, idx) => {
                       const dp = getDiscountedPrice(p);
+                      const stock = getStoreStock(p);
+                      const outOfStock = stock.currentAvailable <= 0;
                       return (
                         <button
                           key={p.id}
                           onClick={() => selectProduct(p)}
+                          disabled={outOfStock}
                           className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors text-left ${
-                            idx === highlightIdx ? "bg-primary-50" : "hover:bg-gray-50"
+                            outOfStock
+                              ? "bg-red-50 text-red-900 cursor-not-allowed"
+                              : idx === highlightIdx
+                                ? "bg-primary-50"
+                                : "hover:bg-gray-50"
                           }`}
                         >
                           <div className="flex items-center gap-2">
@@ -432,6 +471,9 @@ export default function VendaNova() {
                                 {dp.discount.type === "PERCENT" ? `${Number(dp.discount.value)}%` : money(dp.discount.value)}
                               </span>
                             )}
+                            <span className={`text-[10px] font-medium ${outOfStock ? "text-red-700" : "text-emerald-700"}`}>
+                              Loja atual: {stock.currentAvailable}
+                            </span>
                           </div>
                           <div className="text-right">
                             {dp.discount ? (
@@ -441,6 +483,11 @@ export default function VendaNova() {
                               </div>
                             ) : (
                               <span className="text-primary-600 font-medium">{money(dp.base)}</span>
+                            )}
+                            {outOfStock && stock.storesWithStock.length > 0 && (
+                              <p className="text-[10px] text-red-700 mt-0.5">
+                                Tem em: {stock.storesWithStock.map((s) => `${s.name} (${s.available})`).join(" | ")}
+                              </p>
                             )}
                           </div>
                         </button>
@@ -491,7 +538,7 @@ export default function VendaNova() {
                         <span className="text-sm text-gray-500">
                           = {money(dp.final * addQty)}
                         </span>
-                        <Button size="sm" onClick={addItem} className="ml-auto">
+                        <Button size="sm" onClick={addItem} className="ml-auto" disabled={getStoreStock(selectedProduct).currentAvailable < addQty}>
                           <Plus size={14} /> Adicionar
                         </Button>
                       </div>

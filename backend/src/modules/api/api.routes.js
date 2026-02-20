@@ -59,6 +59,23 @@ function buildApiRoutes({ prisma, log }) {
     }, {});
   }
 
+  async function getAvailableQtyInStore(storeId, productId) {
+    const total = await prisma.inventoryLot.aggregate({
+      _sum: { quantity: true },
+      where: { storeId, productId, active: true, quantity: { gt: 0 } },
+    });
+    const totalQty = Number(total._sum.quantity || 0);
+    const reserved = await prisma.stockReservationItem.aggregate({
+      _sum: { reservedQty: true },
+      where: {
+        productId,
+        reservation: { sourceStoreId: storeId, status: "APPROVED" },
+      },
+    });
+    const reservedQty = Number(reserved._sum.reservedQty || 0);
+    return Math.max(0, totalQty - reservedQty);
+  }
+
   // Helper: get storeId from header or default, validating user access.
   async function resolveStoreId(req) {
     const fromHeader = String(req.headers["x-store-id"] || "").trim();
@@ -1681,6 +1698,22 @@ function buildApiRoutes({ prisma, log }) {
     const { productId, quantity } = req.body;
     if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatórios" } });
 
+    const saleCtx = await prisma.sale.findUnique({ where: { id: req.params.id }, select: { id: true, storeId: true, status: true } });
+    if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (saleCtx.status !== "DRAFT" && saleCtx.status !== "CONFIRMED") {
+      return res.status(400).json({ error: { code: 400, message: "Nao e possivel incluir itens neste status" } });
+    }
+    const qtyRequested = Number(quantity || 0);
+    const availableQty = await getAvailableQtyInStore(saleCtx.storeId, productId);
+    if (availableQty < qtyRequested) {
+      return res.status(400).json({
+        error: {
+          code: 400,
+          message: `Produto sem estoque suficiente na loja selecionada (disponivel: ${availableQty})`,
+        },
+      });
+    }
+
     const price = await prisma.productPrice.findFirst({ where: { productId, active: true }, orderBy: { createdAt: "desc" } });
     if (!price) return res.status(400).json({ error: { code: 400, message: "Produto sem preço" } });
 
@@ -1708,15 +1741,15 @@ function buildApiRoutes({ prisma, log }) {
 
     await prisma.saleItem.create({
       data: {
-        saleId: req.params.id, productId,
+        saleId: saleCtx.id, productId,
         quantity: Number(quantity), priceUnit, priceOriginal, subtotal,
       },
     });
 
     // Recalculate sale total
-    const items = await prisma.saleItem.findMany({ where: { saleId: req.params.id } });
+    const items = await prisma.saleItem.findMany({ where: { saleId: saleCtx.id } });
     const total = items.reduce((s, i) => s + Number(i.subtotal), 0);
-    await prisma.sale.update({ where: { id: req.params.id }, data: { total } });
+    await prisma.sale.update({ where: { id: saleCtx.id }, data: { total } });
 
     // Return full sale
     const sale = await loadFullSale(req.params.id);
@@ -1730,6 +1763,26 @@ function buildApiRoutes({ prisma, log }) {
 
     const item = await prisma.saleItem.findUnique({ where: { id: req.params.itemId } });
     if (!item) return res.status(404).json({ error: { code: 404, message: "Item não encontrado" } });
+
+    const saleCtx = await prisma.sale.findUnique({ where: { id: req.params.saleId }, select: { id: true, storeId: true, status: true } });
+    if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (saleCtx.status !== "DRAFT" && saleCtx.status !== "CONFIRMED") {
+      return res.status(400).json({ error: { code: 400, message: "Nao e possivel alterar itens neste status" } });
+    }
+    const qtyRequested = Number(quantity || 0);
+    const currentQty = Number(item.quantity || 0);
+    const delta = qtyRequested - currentQty;
+    if (delta > 0) {
+      const availableQty = await getAvailableQtyInStore(saleCtx.storeId, item.productId);
+      if (availableQty < delta) {
+        return res.status(400).json({
+          error: {
+            code: 400,
+            message: `Produto sem estoque suficiente na loja selecionada (disponivel para adicionar: ${availableQty})`,
+          },
+        });
+      }
+    }
 
     const subtotal = Number(item.priceUnit) * Number(quantity);
     await prisma.saleItem.update({ where: { id: req.params.itemId }, data: { quantity: Number(quantity), subtotal } });

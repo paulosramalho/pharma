@@ -29,7 +29,7 @@ const TYPE_LABEL = { CENTRAL: "Depósito", LOJA: "Loja" };
 const MOV_LABELS = { IN: "Entrada", OUT: "Saída", ADJUST_POS: "Ajuste +", ADJUST_NEG: "Ajuste -", TRANSFER_IN: "Transf. Entrada", TRANSFER_OUT: "Transf. Saída" };
 
 export default function Estoque() {
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, user, storeId } = useAuth();
   const { addToast } = useToast();
   const [tab, setTab] = useState("overview");
 
@@ -74,6 +74,7 @@ export default function Estoque() {
   const [transferItems, setTransferItems] = useState([]);
   const [transferSearch, setTransferSearch] = useState("");
   const [transferProducts, setTransferProducts] = useState([]);
+  const [transferSelectedIds, setTransferSelectedIds] = useState([]);
   const [reservationForm, setReservationForm] = useState({ sourceStoreId: "", customerId: "", note: "" });
   const [reservationItems, setReservationItems] = useState([]);
   const [reservationSearch, setReservationSearch] = useState("");
@@ -125,6 +126,17 @@ export default function Estoque() {
     }
   }, [tab]);
 
+  useEffect(() => {
+    if (!transferForm.originStoreId) return;
+    setTransferItems((prev) => prev
+      .map((it) => {
+        const available = getAvailableForStore(it.stores, transferForm.originStoreId);
+        if (available < 1) return null;
+        return { ...it, quantity: Math.min(it.quantity, available) };
+      })
+      .filter(Boolean));
+  }, [transferForm.originStoreId]);
+
   const loadProductMovements = async (productId) => {
     if (expandedProduct === productId) {
       setExpandedProduct(null);
@@ -148,10 +160,11 @@ export default function Estoque() {
   };
 
   const searchTransferProducts = async (q) => {
-    if (q.length < 2) { setTransferProducts([]); return; }
+    if (q.length < 2) { setTransferProducts([]); setTransferSelectedIds([]); return; }
     try {
-      const res = await apiFetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`);
+      const res = await apiFetch(`/api/inventory/lookup?search=${encodeURIComponent(q)}&limit=20`);
       setTransferProducts(res.data.products || []);
+      setTransferSelectedIds([]);
     } catch { setTransferProducts([]); }
   };
 
@@ -254,13 +267,46 @@ export default function Estoque() {
     setSubmitting(false);
   };
 
+  const getAvailableForStore = (storesList, originStoreId) => {
+    if (!originStoreId) return 0;
+    const storeStock = (storesList || []).find((s) => s.id === originStoreId);
+    return Number(storeStock?.available || 0);
+  };
+
   const addTransferItem = (product) => {
     if (!product?.id) return;
+    const available = getAvailableForStore(product.stores, transferForm.originStoreId);
+    if (available < 1) {
+      addToast("Sem saldo disponivel na loja de origem selecionada", "warning");
+      return;
+    }
     setTransferItems((prev) => {
       const idx = prev.findIndex((i) => i.productId === product.id);
-      if (idx >= 0) return prev.map((i, k) => k === idx ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { productId: product.id, productName: product.name, quantity: 1 }];
+      if (idx >= 0) {
+        return prev.map((i, k) => {
+          if (k !== idx) return i;
+          const currentAvailable = getAvailableForStore(i.stores, transferForm.originStoreId);
+          return { ...i, quantity: Math.min(currentAvailable, i.quantity + 1) };
+        });
+      }
+      return [...prev, { productId: product.id, productName: product.name, quantity: 1, stores: product.stores || [] }];
     });
+  };
+
+  const addSelectedTransferItems = () => {
+    if (!transferForm.originStoreId) {
+      addToast("Selecione a loja de origem", "warning");
+      return;
+    }
+    if (transferSelectedIds.length === 0) {
+      addToast("Selecione ao menos um item", "warning");
+      return;
+    }
+    transferSelectedIds.forEach((id) => {
+      const product = transferProducts.find((p) => p.id === id);
+      if (product) addTransferItem(product);
+    });
+    setTransferSelectedIds([]);
     setTransferSearch("");
     setTransferProducts([]);
   };
@@ -441,6 +487,7 @@ export default function Estoque() {
 
   const stores = overview?.stores || [];
   const overviewProducts = overview?.products || [];
+  const transferOriginStores = allStores.filter((s) => !storeId || s.id !== storeId);
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
 
@@ -846,19 +893,58 @@ export default function Estoque() {
             <CardBody className="space-y-3 max-w-2xl">
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">Loja origem</label>
-                <select value={transferForm.originStoreId} onChange={(e) => setTransferForm({ ...transferForm, originStoreId: e.target.value })} className={inputClass}>
+                <select
+                  value={transferForm.originStoreId}
+                  onChange={(e) => {
+                    setTransferForm({ ...transferForm, originStoreId: e.target.value });
+                    setTransferSelectedIds([]);
+                  }}
+                  className={inputClass}
+                >
                   <option value="">Selecione...</option>
-                  {allStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {transferOriginStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">Itens</label>
-                <input value={transferSearch} onChange={(e) => { setTransferSearch(e.target.value); searchTransferProducts(e.target.value); }} placeholder="Buscar produto..." className={inputClass} />
+                <input
+                  value={transferSearch}
+                  onChange={(e) => { setTransferSearch(e.target.value); searchTransferProducts(e.target.value); }}
+                  placeholder="Buscar produto..."
+                  className={inputClass}
+                />
                 {transferProducts.length > 0 && (
-                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-36 overflow-y-auto">
-                    {transferProducts.map((p) => (
-                      <button key={p.id} onClick={() => addTransferItem(p)} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">{p.name}</button>
-                    ))}
+                  <div className="space-y-2">
+                    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-44 overflow-y-auto">
+                      {transferProducts.map((p) => {
+                        const available = getAvailableForStore(p.stores, transferForm.originStoreId);
+                        const checked = transferSelectedIds.includes(p.id);
+                        const disabled = !transferForm.originStoreId || available < 1;
+                        return (
+                          <label key={p.id} className={`flex items-center gap-2 px-3 py-2 text-sm ${disabled ? "bg-gray-50 text-gray-400" : "hover:bg-gray-50 cursor-pointer"}`}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={disabled}
+                              onChange={(e) => {
+                                setTransferSelectedIds((prev) => e.target.checked
+                                  ? [...prev, p.id]
+                                  : prev.filter((id) => id !== p.id));
+                              }}
+                            />
+                            <span className="flex-1">{p.name}</span>
+                            <span className={`text-xs ${available > 0 ? "text-emerald-700" : "text-red-600"}`}>
+                              Disp.: {available}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-end">
+                      <Button size="sm" onClick={addSelectedTransferItems} disabled={transferSelectedIds.length === 0 || !transferForm.originStoreId}>
+                        <Plus size={14} /> Adicionar selecionados
+                      </Button>
+                    </div>
                   </div>
                 )}
                 {transferItems.length > 0 && (
@@ -866,7 +952,22 @@ export default function Estoque() {
                     {transferItems.map((it, idx) => (
                       <div key={it.productId} className="flex items-center gap-2">
                         <span className="flex-1 text-sm">{it.productName}</span>
-                        <input type="number" min="1" value={it.quantity} onChange={(e) => setTransferItems((prev) => prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, parseInt(e.target.value) || 1) } : x))} className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center" />
+                        <span className="text-xs text-gray-500">Disp.: {getAvailableForStore(it.stores, transferForm.originStoreId)}</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max={Math.max(1, getAvailableForStore(it.stores, transferForm.originStoreId))}
+                          value={it.quantity}
+                          onChange={(e) => {
+                            const requested = Math.max(1, parseInt(e.target.value, 10) || 1);
+                            setTransferItems((prev) => prev.map((x, i) => {
+                              if (i !== idx) return x;
+                              const available = getAvailableForStore(x.stores, transferForm.originStoreId);
+                              return { ...x, quantity: Math.min(available || 1, requested) };
+                            }));
+                          }}
+                          className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center"
+                        />
                         <button onClick={() => setTransferItems((prev) => prev.filter((_, i) => i !== idx))} className="text-xs text-red-600">remover</button>
                       </div>
                     ))}
