@@ -348,15 +348,24 @@ export default function Estoque() {
   };
 
   const sendTransfer = async (id) => {
-    const sendRows = Object.entries(transferSendDraft)
-      .filter(([key, row]) => key.startsWith(`${id}:`) && row?.selected && Number(row.quantity || 0) > 0)
-      .map(([key, row]) => ({ productId: key.split(":")[1], quantity: Number(row.quantity || 0) }));
+    const transfer = transfers.find((t) => t.id === id);
+    const transferItems = summarizeTransferItems(transfer?.items || []);
+    const sendRows = transferItems
+      .map((it) => {
+        const row = getTransferSendRow(id, it);
+        return {
+          productId: it.productId,
+          selected: !!row.selected,
+          quantity: Number(row.quantity || 0),
+        };
+      })
+      .filter((row) => row.selected && row.quantity > 0)
+      .map((row) => ({ productId: row.productId, quantity: row.quantity }));
     if (sendRows.length === 0) {
       addToast("Nenhum item com quantidade maior que zero para envio", "warning");
       return;
     }
-    const transfer = transfers.find((t) => t.id === id);
-    const itemMap = (summarizeTransferItems(transfer?.items || []) || []).reduce((acc, it) => {
+    const itemMap = (transferItems || []).reduce((acc, it) => {
       acc[it.productId] = it.productName;
       return acc;
     }, {});
