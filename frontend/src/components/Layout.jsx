@@ -143,7 +143,7 @@ export default function Layout() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <Outlet />
+          <Outlet key={storeId || "no-store"} />
         </main>
       </div>
     </div>

@@ -5,7 +5,6 @@ import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { money, formatDateTime, formatDate } from "../lib/format";
 import Card, { CardBody } from "../components/ui/Card";
-import Button from "../components/ui/Button";
 import { PageSpinner } from "../components/ui/Spinner";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart as RePieChart, Pie, Cell, CartesianGrid, Legend,
@@ -33,7 +32,7 @@ function toInputDate(v) {
 }
 
 export default function Dashboard() {
-  const { user, hasPermission } = useAuth();
+  const { user, hasPermission, storeId } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -46,7 +45,7 @@ export default function Dashboard() {
     return {
       startDate: toInputDate(start),
       endDate: toInputDate(end),
-      storeIds: [],
+      storeId: storeId || "",
     };
   });
 
@@ -56,13 +55,10 @@ export default function Dashboard() {
       const params = new URLSearchParams();
       params.set("startDate", currentFilters.startDate);
       params.set("endDate", currentFilters.endDate);
-      if (currentFilters.storeIds.length > 0) params.set("storeIds", currentFilters.storeIds.join(","));
+      if (currentFilters.storeId) params.set("storeIds", currentFilters.storeId);
       const res = await apiFetch(`/api/dashboard?${params}`);
       const payload = res.data || {};
       setData(payload);
-      if (currentFilters.storeIds.length === 0 && payload?.filters?.selectedStoreIds?.length > 0) {
-        setFilters((prev) => ({ ...prev, storeIds: payload.filters.selectedStoreIds }));
-      }
     } catch (err) {
       addToast(err.message, "error");
     }
@@ -70,15 +66,21 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    loadDashboard();
     apiFetch("/api/stores")
       .then((res) => {
         const stores = res.data || [];
         setStoreOptions(stores);
-        setFilters((prev) => (prev.storeIds.length > 0 ? prev : { ...prev, storeIds: stores.map((s) => s.id) }));
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadDashboard(filters);
+  }, [filters.startDate, filters.endDate, filters.storeId]);
+
+  useEffect(() => {
+    setFilters((prev) => ({ ...prev, storeId: storeId || "" }));
+  }, [storeId]);
 
   if (loading && !data) return <PageSpinner />;
 
@@ -123,7 +125,7 @@ export default function Dashboard() {
       </div>
 
       <Card>
-        <CardBody className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+        <CardBody className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Periodo inicio</label>
             <input
@@ -145,21 +147,15 @@ export default function Dashboard() {
           <div className="md:col-span-2">
             <label className="block text-xs font-medium text-gray-600 mb-1">Lojas</label>
             <select
-              multiple
-              value={filters.storeIds}
-              onChange={(e) => {
-                const ids = Array.from(e.target.selectedOptions).map((o) => o.value);
-                setFilters((prev) => ({ ...prev, storeIds: ids }));
-              }}
-              className="w-full h-[84px] px-3 py-2 text-sm border border-gray-300 rounded-lg"
+              value={filters.storeId}
+              onChange={(e) => setFilters((prev) => ({ ...prev, storeId: e.target.value }))}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
             >
+              <option value="">Todas as lojas</option>
               {(storeOptions.length > 0 ? storeOptions : (data?.filters?.stores || [])).map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
-          </div>
-          <div>
-            <Button loading={loading} onClick={() => loadDashboard(filters)} className="w-full">Aplicar</Button>
           </div>
         </CardBody>
       </Card>
