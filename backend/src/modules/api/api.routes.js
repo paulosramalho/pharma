@@ -130,28 +130,88 @@ function buildApiRoutes({ prisma, log }) {
 
   // ─── DASHBOARD ───
   router.get("/dashboard", asyncHandler(async (req, res) => {
-    const storeId = await resolveStoreId(req);
-    if (!storeId) return sendOk(res, req, { salesToday: 0, grossRevenue: 0, avgTicket: 0, itemsSold: 0, cashSession: null });
+    const userStoreIds = await getUserStoreIds(req);
+    if (userStoreIds.length === 0) {
+      return sendOk(res, req, {
+        filters: { stores: [], selectedStoreIds: [], startDate: null, endDate: null },
+        salesToday: 0,
+        grossRevenue: 0,
+        avgTicket: 0,
+        itemsSold: 0,
+        cashSession: null,
+        stockEvolution: { quantityDelta: 0, transferDelta: 0, currentValue: 0 },
+        profitabilityByProduct: [],
+        charts: { salesByDay: [], stockByStore: [], transferStatus: [] },
+      });
+    }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const sales = await prisma.sale.findMany({
-      where: { storeId, status: "PAID", createdAt: { gte: today } },
-      include: { items: true },
+    const stores = await prisma.store.findMany({
+      where: { id: { in: userStoreIds }, active: true },
+      select: { id: true, name: true, type: true },
+      orderBy: { name: "asc" },
     });
 
-    const salesToday = sales.length;
-    const grossRevenue = sales.reduce((s, sale) => s + Number(sale.total), 0);
-    const avgTicket = salesToday > 0 ? grossRevenue / salesToday : 0;
-    const itemsSold = sales.reduce((s, sale) => s + sale.items.reduce((a, i) => a + i.quantity, 0), 0);
+    const endDateRaw = safeDate(req.query.endDate) || new Date();
+    endDateRaw.setHours(23, 59, 59, 999);
+    const startDateRaw = safeDate(req.query.startDate) || (() => {
+      const d = new Date(endDateRaw);
+      d.setDate(d.getDate() - 29);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    })();
 
-    // Return full cash session object so frontend can display open/closed status
-    const openSession = await prisma.cashSession.findFirst({
-      where: { storeId, closedAt: null },
-      include: { openedBy: { select: { name: true } } },
+    const requestedStoreIds = String(req.query.storeIds || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const selectedStoreIds = requestedStoreIds.length > 0
+      ? requestedStoreIds.filter((id) => userStoreIds.includes(id))
+      : userStoreIds;
+
+    if (selectedStoreIds.length === 0) {
+      return sendOk(res, req, {
+        filters: {
+          stores,
+          selectedStoreIds: [],
+          startDate: startDateRaw,
+          endDate: endDateRaw,
+        },
+        salesToday: 0,
+        grossRevenue: 0,
+        avgTicket: 0,
+        itemsSold: 0,
+        cashSession: null,
+        stockEvolution: { quantityDelta: 0, transferDelta: 0, currentValue: 0 },
+        profitabilityByProduct: [],
+        charts: { salesByDay: [], stockByStore: [], transferStatus: [] },
+      });
+    }
+
+    const paidSales = await prisma.sale.findMany({
+      where: {
+        storeId: { in: selectedStoreIds },
+        status: "PAID",
+        createdAt: { gte: startDateRaw, lte: endDateRaw },
+      },
+      include: { items: { include: { product: { select: { id: true, name: true } } } } },
+      orderBy: { createdAt: "asc" },
     });
 
+    const salesTodayBase = new Date();
+    salesTodayBase.setHours(0, 0, 0, 0);
+    const salesToday = paidSales.filter((s) => new Date(s.createdAt) >= salesTodayBase).length;
+    const grossRevenue = paidSales.reduce((s, sale) => s + Number(sale.total || 0), 0);
+    const avgTicket = paidSales.length > 0 ? grossRevenue / paidSales.length : 0;
+    const itemsSold = paidSales.reduce((s, sale) => s + sale.items.reduce((a, i) => a + Number(i.quantity || 0), 0), 0);
+
+    const storeForCash = selectedStoreIds.length === 1 ? selectedStoreIds[0] : null;
+    const openSession = storeForCash
+      ? await prisma.cashSession.findFirst({
+          where: { storeId: storeForCash, closedAt: null },
+          include: { openedBy: { select: { name: true } } },
+        })
+      : null;
     const cashSession = openSession ? {
       id: openSession.id,
       openedBy: openSession.openedBy?.name || "—",
@@ -159,10 +219,130 @@ function buildApiRoutes({ prisma, log }) {
       initialCash: Number(openSession.initialCash),
     } : null;
 
+    const movements = await prisma.inventoryMovement.findMany({
+      where: {
+        storeId: { in: selectedStoreIds },
+        createdAt: { gte: startDateRaw, lte: endDateRaw },
+      },
+      select: { type: true, quantity: true },
+    });
+
+    const movementInTypes = new Set(["IN", "ADJUST_POS", "TRANSFER_IN"]);
+    const movementOutTypes = new Set(["OUT", "ADJUST_NEG", "TRANSFER_OUT"]);
+    let movementInQty = 0;
+    let movementOutQty = 0;
+    let transferInQty = 0;
+    let transferOutQty = 0;
+    for (const m of movements) {
+      const qty = Number(m.quantity || 0);
+      if (movementInTypes.has(m.type)) movementInQty += qty;
+      if (movementOutTypes.has(m.type)) movementOutQty += qty;
+      if (m.type === "TRANSFER_IN") transferInQty += qty;
+      if (m.type === "TRANSFER_OUT") transferOutQty += qty;
+    }
+
+    const lots = await prisma.inventoryLot.findMany({
+      where: { active: true, quantity: { gt: 0 }, storeId: { in: selectedStoreIds } },
+      select: { storeId: true, quantity: true, costUnit: true },
+    });
+    const currentValue = lots.reduce((s, lot) => s + Number(lot.quantity || 0) * Number(lot.costUnit || 0), 0);
+
+    const storeMap = stores.reduce((acc, st) => { acc[st.id] = st; return acc; }, {});
+    const stockByStoreAgg = {};
+    for (const lot of lots) {
+      const sid = lot.storeId;
+      if (!stockByStoreAgg[sid]) {
+        stockByStoreAgg[sid] = { storeId: sid, name: storeMap[sid]?.name || sid, quantity: 0, value: 0 };
+      }
+      const q = Number(lot.quantity || 0);
+      const v = q * Number(lot.costUnit || 0);
+      stockByStoreAgg[sid].quantity += q;
+      stockByStoreAgg[sid].value += v;
+    }
+    const stockByStore = Object.values(stockByStoreAgg).sort((a, b) => b.value - a.value);
+
+    const transferRows = await prisma.stockTransfer.findMany({
+      where: {
+        OR: [
+          { originStoreId: { in: selectedStoreIds } },
+          { destinationStoreId: { in: selectedStoreIds } },
+        ],
+        createdAt: { gte: startDateRaw, lte: endDateRaw },
+      },
+      select: { status: true },
+    });
+    const transferStatusAgg = transferRows.reduce((acc, t) => {
+      acc[t.status] = (acc[t.status] || 0) + 1;
+      return acc;
+    }, {});
+    const transferStatus = Object.entries(transferStatusAgg).map(([status, count]) => ({ status, count }));
+
+    const byDay = {};
+    for (const sale of paidSales) {
+      const d = new Date(sale.createdAt);
+      const key = d.toISOString().slice(0, 10);
+      if (!byDay[key]) byDay[key] = { date: key, revenue: 0, sales: 0 };
+      byDay[key].revenue += Number(sale.total || 0);
+      byDay[key].sales += 1;
+    }
+    const salesByDay = Object.values(byDay).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+    const profitabilityAgg = {};
+    for (const sale of paidSales) {
+      for (const item of sale.items) {
+        const pid = item.productId;
+        if (!profitabilityAgg[pid]) {
+          profitabilityAgg[pid] = {
+            productId: pid,
+            name: item.product?.name || "Produto",
+            qty: 0,
+            revenue: 0,
+            cogs: 0,
+          };
+        }
+        profitabilityAgg[pid].qty += Number(item.quantity || 0);
+        profitabilityAgg[pid].revenue += Number(item.subtotal || 0);
+        profitabilityAgg[pid].cogs += Number(item.cogsTotal || 0);
+      }
+    }
+    const profitabilityByProduct = Object.values(profitabilityAgg)
+      .map((p) => {
+        const profit = p.revenue - p.cogs;
+        const margin = p.revenue > 0 ? (profit / p.revenue) * 100 : 0;
+        return { ...p, profit, margin };
+      })
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, 15);
+
     return sendOk(res, req, {
-      salesToday, grossRevenue: Number(grossRevenue.toFixed(2)),
-      avgTicket: Number(avgTicket.toFixed(2)), itemsSold,
+      filters: {
+        stores,
+        selectedStoreIds,
+        startDate: startDateRaw,
+        endDate: endDateRaw,
+      },
+      salesToday,
+      grossRevenue: Number(grossRevenue.toFixed(2)),
+      avgTicket: Number(avgTicket.toFixed(2)),
+      itemsSold,
       cashSession,
+      stockEvolution: {
+        quantityDelta: movementInQty - movementOutQty,
+        transferDelta: transferInQty - transferOutQty,
+        currentValue: Number(currentValue.toFixed(2)),
+      },
+      profitabilityByProduct: profitabilityByProduct.map((p) => ({
+        ...p,
+        revenue: Number(p.revenue.toFixed(2)),
+        cogs: Number(p.cogs.toFixed(2)),
+        profit: Number(p.profit.toFixed(2)),
+        margin: Number(p.margin.toFixed(2)),
+      })),
+      charts: {
+        salesByDay: salesByDay.map((d) => ({ ...d, revenue: Number(d.revenue.toFixed(2)) })),
+        stockByStore: stockByStore.map((s) => ({ ...s, value: Number(s.value.toFixed(2)) })),
+        transferStatus,
+      },
     });
   }));
 
@@ -970,6 +1150,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/inventory/transfers/:id/send", asyncHandler(async (req, res) => {
     assertPharmacistOrAdmin(req);
     const currentStoreId = await resolveStoreId(req);
+    const requestedItems = Array.isArray(req.body?.items) ? req.body.items : null;
     const transfer = await prisma.stockTransfer.findUnique({
       where: { id: req.params.id },
       include: { items: true },
@@ -978,9 +1159,32 @@ function buildApiRoutes({ prisma, log }) {
     if (transfer.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Transferencia nao pode ser enviada neste status" } });
     if (transfer.originStoreId !== currentStoreId) return res.status(403).json({ error: { code: 403, message: "Somente a loja de origem pode enviar" } });
 
-    const itemByProduct = {};
+    const requestedByProduct = {};
     for (const item of transfer.items) {
-      itemByProduct[item.productId] = (itemByProduct[item.productId] || 0) + Number(item.quantity || 0);
+      requestedByProduct[item.productId] = (requestedByProduct[item.productId] || 0) + Number(item.quantity || 0);
+    }
+
+    const itemByProduct = {};
+    if (requestedItems) {
+      for (const item of requestedItems) {
+        const productId = item?.productId;
+        const qty = Number(item?.quantity || 0);
+        if (!productId || qty <= 0) continue;
+        if (!Object.prototype.hasOwnProperty.call(requestedByProduct, productId)) {
+          return res.status(400).json({ error: { code: 400, message: "Item fora da solicitacao original" } });
+        }
+        itemByProduct[productId] = (itemByProduct[productId] || 0) + qty;
+      }
+      if (Object.keys(itemByProduct).length === 0) {
+        return res.status(400).json({ error: { code: 400, message: "Selecione ao menos um item para envio" } });
+      }
+      for (const [productId, qty] of Object.entries(itemByProduct)) {
+        if (qty > Number(requestedByProduct[productId] || 0)) {
+          return res.status(400).json({ error: { code: 400, message: "Quantidade enviada excede a solicitada" } });
+        }
+      }
+    } else {
+      Object.assign(itemByProduct, requestedByProduct);
     }
 
     await prisma.$transaction(async (tx) => {

@@ -75,6 +75,7 @@ export default function Estoque() {
   const [transferSearch, setTransferSearch] = useState("");
   const [transferProducts, setTransferProducts] = useState([]);
   const [transferSelectedIds, setTransferSelectedIds] = useState([]);
+  const [transferSendDraft, setTransferSendDraft] = useState({});
   const [reservationForm, setReservationForm] = useState({ sourceStoreId: "", customerId: "", note: "" });
   const [reservationItems, setReservationItems] = useState([]);
   const [reservationSearch, setReservationSearch] = useState("");
@@ -354,9 +355,24 @@ export default function Estoque() {
     setSubmitting(false);
   };
 
-  const sendTransfer = async (id) => {
+  const sendTransfer = async (id, draftItems = []) => {
+    let sendRows = Object.entries(transferSendDraft)
+      .filter(([key, row]) => key.startsWith(`${id}:`) && row?.selected && Number(row.quantity || 0) > 0)
+      .map(([key, row]) => ({ productId: key.split(":")[1], quantity: Number(row.quantity || 0) }));
+    if (sendRows.length === 0 && draftItems.length > 0) {
+      sendRows = draftItems.map((it) => ({ productId: it.productId, quantity: Number(it.quantity || 0) })).filter((it) => it.productId && it.quantity > 0);
+    }
+    if (sendRows.length === 0) {
+      addToast("Selecione ao menos um item com quantidade para envio", "warning");
+      return;
+    }
     setSubmitting(true);
-    try { await apiFetch(`/api/inventory/transfers/${id}/send`, { method: "POST" }); addToast("Transferencia enviada", "success"); loadTransfers(); }
+    try {
+      await apiFetch(`/api/inventory/transfers/${id}/send`, { method: "POST", body: JSON.stringify({ items: sendRows }) });
+      addToast("Transferencia enviada", "success");
+      setTransferSendDraft((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${id}:`))));
+      loadTransfers();
+    }
     catch (err) { addToast(err.message, "error"); }
     setSubmitting(false);
   };
@@ -508,6 +524,32 @@ export default function Estoque() {
   const stores = overview?.stores || [];
   const overviewProducts = overview?.products || [];
   const transferOriginStores = allStores.filter((s) => !storeId || s.id !== storeId);
+  const transferStatusLabel = { DRAFT: "Rascunho", SENT: "Enviado", RECEIVED: "Recebido", CANCELED: "Cancelado" };
+  const summarizeTransferItems = (items = []) => {
+    const grouped = {};
+    for (const it of items) {
+      if (!it?.productId) continue;
+      const key = it.productId;
+      if (!grouped[key]) {
+        grouped[key] = {
+          productId: key,
+          productName: it.product?.name || "Produto",
+          quantity: 0,
+        };
+      }
+      grouped[key].quantity += Number(it.quantity || 0);
+    }
+    return Object.values(grouped).sort((a, b) => a.productName.localeCompare(b.productName));
+  };
+  const getTransferSendRow = (transferId, item) => {
+    const key = `${transferId}:${item.productId}`;
+    const row = transferSendDraft[key];
+    if (row) return row;
+    return {
+      selected: true,
+      quantity: Number(item.quantity || 0),
+    };
+  };
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
 
@@ -1019,12 +1061,73 @@ export default function Estoque() {
                         <p className="text-xs text-gray-500">{formatDateTime(t.createdAt)} • {t.items?.length || 0} item(ns)</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge color={t.status === "RECEIVED" ? "green" : t.status === "SENT" ? "blue" : t.status === "CANCELED" ? "red" : "gray"}>{t.status}</Badge>
-                        {canFlowOperate && t.originStore?.id === storeId && t.status === "DRAFT" && <Button size="sm" onClick={() => sendTransfer(t.id)}>Enviar</Button>}
+                        <Badge color={t.status === "RECEIVED" ? "green" : t.status === "SENT" ? "blue" : t.status === "CANCELED" ? "red" : "gray"}>{transferStatusLabel[t.status] || t.status}</Badge>
+                        {canFlowOperate && t.originStore?.id === storeId && t.status === "DRAFT" && <Button size="sm" onClick={() => sendTransfer(t.id, summarizeTransferItems(t.items || []))}>Enviar</Button>}
                         {canFlowOperate && t.destinationStore?.id === storeId && t.status === "SENT" && <Button size="sm" onClick={() => receiveTransfer(t.id)}>Receber</Button>}
                         {t.originStore?.id === storeId && t.status === "DRAFT" && <Button size="sm" variant="secondary" onClick={() => cancelTransfer(t.id)}>Cancelar</Button>}
                       </div>
                     </div>
+                    {(() => {
+                      const groupedItems = summarizeTransferItems(t.items || []);
+                      if (groupedItems.length === 0) return null;
+                      const isRequestedStore = t.originStore?.id === storeId;
+                      const isRequesterStore = t.destinationStore?.id === storeId;
+                      const label = isRequestedStore
+                        ? "Itens solicitados"
+                        : isRequesterStore
+                          ? "Itens transferidos"
+                          : "Itens";
+                      return (
+                        <div className="mt-2 pl-0.5">
+                          <p className="text-xs font-medium text-gray-600">{label}</p>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {groupedItems.map((it) => (
+                              <span key={`${t.id}-${it.productId}`} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                                <span>{it.productName}</span>
+                                <span className="font-semibold">x{it.quantity}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {canFlowOperate && t.originStore?.id === storeId && t.status === "DRAFT" && (
+                      <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2">
+                        <p className="text-xs font-medium text-gray-700">Envio: selecione itens e quantidade</p>
+                        {summarizeTransferItems(t.items || []).map((it) => {
+                          const key = `${t.id}:${it.productId}`;
+                          const row = getTransferSendRow(t.id, it);
+                          return (
+                            <div key={key} className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={!!row.selected}
+                                onChange={(e) => setTransferSendDraft((prev) => ({
+                                  ...prev,
+                                  [key]: { ...row, selected: e.target.checked },
+                                }))}
+                              />
+                              <span className="flex-1 text-sm text-gray-700">{it.productName}</span>
+                              <span className="text-xs text-gray-500">Solic.: {it.quantity}</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max={Math.max(1, Number(it.quantity || 0))}
+                                value={row.quantity}
+                                onChange={(e) => {
+                                  const next = Math.max(1, Math.min(Number(it.quantity || 0), parseInt(e.target.value, 10) || 1));
+                                  setTransferSendDraft((prev) => ({
+                                    ...prev,
+                                    [key]: { ...row, quantity: next },
+                                  }));
+                                }}
+                                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {transfers.length === 0 && <div className="px-4 py-6 text-sm text-gray-400 text-center">Nenhuma transferencia</div>}
