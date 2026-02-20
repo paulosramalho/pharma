@@ -1188,8 +1188,6 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.stockTransferItem.deleteMany({ where: { transferId: transfer.id } });
-
       for (const [productId, reqQtyRaw] of Object.entries(itemByProduct)) {
         const reqQty = Number(reqQtyRaw || 0);
         if (reqQty <= 0) continue;
@@ -1222,15 +1220,6 @@ function buildApiRoutes({ prisma, log }) {
           await tx.inventoryLot.update({
             where: { id: lot.id },
             data: { quantity: { decrement: take } },
-          });
-          await tx.stockTransferItem.create({
-            data: {
-              transferId: transfer.id,
-              productId,
-              originLotId: lot.id,
-              quantity: take,
-              costUnit: lot.costUnit,
-            },
           });
           await tx.inventoryMovement.create({
             data: {
@@ -1270,23 +1259,33 @@ function buildApiRoutes({ prisma, log }) {
     const currentStoreId = await resolveStoreId(req);
     const transfer = await prisma.stockTransfer.findUnique({
       where: { id: req.params.id },
-      include: { items: true },
+      include: {
+        movements: {
+          where: { type: "TRANSFER_OUT" },
+          orderBy: { createdAt: "asc" },
+        },
+      },
     });
     if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia nao encontrada" } });
     if (transfer.status !== "SENT") return res.status(400).json({ error: { code: 400, message: "Transferencia nao pode ser recebida neste status" } });
     if (transfer.destinationStoreId !== currentStoreId) return res.status(403).json({ error: { code: 403, message: "Somente a loja destino pode receber" } });
+    if ((transfer.movements || []).length === 0) {
+      return res.status(400).json({ error: { code: 400, message: "Transferencia sem movimentacoes de envio" } });
+    }
 
     await prisma.$transaction(async (tx) => {
-      for (const item of transfer.items) {
+      for (const mov of transfer.movements) {
         let lotNumber = `TR-${transfer.id.slice(0, 8)}`;
         let expiration = new Date();
         expiration.setFullYear(expiration.getFullYear() + 2);
+        let costUnit = 0;
 
-        if (item.originLotId) {
-          const originLot = await tx.inventoryLot.findUnique({ where: { id: item.originLotId } });
+        if (mov.lotId) {
+          const originLot = await tx.inventoryLot.findUnique({ where: { id: mov.lotId } });
           if (originLot) {
             lotNumber = originLot.lotNumber;
             expiration = originLot.expiration;
+            costUnit = Number(originLot.costUnit || 0);
           }
         }
 
@@ -1294,22 +1293,22 @@ function buildApiRoutes({ prisma, log }) {
           where: {
             storeId_productId_lotNumber_expiration: {
               storeId: transfer.destinationStoreId,
-              productId: item.productId,
+              productId: mov.productId,
               lotNumber,
               expiration,
             },
           },
           update: {
-            quantity: { increment: Number(item.quantity || 0) },
-            costUnit: item.costUnit,
+            quantity: { increment: Number(mov.quantity || 0) },
+            costUnit,
           },
           create: {
             storeId: transfer.destinationStoreId,
-            productId: item.productId,
+            productId: mov.productId,
             lotNumber,
             expiration,
-            costUnit: item.costUnit,
-            quantity: Number(item.quantity || 0),
+            costUnit,
+            quantity: Number(mov.quantity || 0),
             active: true,
           },
         });
@@ -1317,11 +1316,11 @@ function buildApiRoutes({ prisma, log }) {
         await tx.inventoryMovement.create({
           data: {
             storeId: transfer.destinationStoreId,
-            productId: item.productId,
+            productId: mov.productId,
             lotId: lot.id,
             transferId: transfer.id,
             type: "TRANSFER_IN",
-            quantity: Number(item.quantity || 0),
+            quantity: Number(mov.quantity || 0),
             reason: `Recebimento de transferencia ${transfer.id}`,
             createdById: req.user?.id,
           },
@@ -2533,6 +2532,183 @@ function buildApiRoutes({ prisma, log }) {
         totalSales: Number(agg._count.id),
         totalRevenue: Number(agg._sum?.total || 0),
         byMethod,
+      },
+      totalPages: Math.ceil(total / take) || 1,
+      page: Number(page),
+      total,
+    });
+  }));
+
+  router.get("/reports/transfers", asyncHandler(async (req, res) => {
+    const {
+      originStoreId,
+      destinationStoreId,
+      from,
+      to,
+      requesterId,
+      senderId,
+      item,
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+    const take = Number(limit) || 20;
+    const skip = (Number(page) - 1) * take;
+    const allowedStoreIds = await getUserStoreIds(req);
+    if (allowedStoreIds.length === 0) {
+      return sendOk(res, req, {
+        transfers: [],
+        summary: { totalTransfers: 0, totalRequested: 0, totalSent: 0 },
+        filters: { stores: [], users: [] },
+        totalPages: 1,
+        page: Number(page),
+        total: 0,
+      });
+    }
+
+    const andWhere = [
+      {
+        OR: [
+          { originStoreId: { in: allowedStoreIds } },
+          { destinationStoreId: { in: allowedStoreIds } },
+        ],
+      },
+    ];
+
+    if (originStoreId) andWhere.push({ originStoreId });
+    if (destinationStoreId) andWhere.push({ destinationStoreId });
+    if (requesterId) andWhere.push({ createdById: requesterId });
+    if (senderId) {
+      andWhere.push({
+        movements: {
+          some: {
+            type: "TRANSFER_OUT",
+            createdById: senderId,
+          },
+        },
+      });
+    }
+    if (from || to) {
+      const createdAt = {};
+      if (from) createdAt.gte = safeDate(from);
+      if (to) { const d = safeDate(to); d.setHours(23, 59, 59, 999); createdAt.lte = d; }
+      andWhere.push({ createdAt });
+    }
+    if (item) {
+      andWhere.push({
+        items: {
+          some: {
+            product: {
+              OR: [
+                { name: { contains: String(item), mode: "insensitive" } },
+                { ean: { contains: String(item) } },
+              ],
+            },
+          },
+        },
+      });
+    }
+
+    const where = { AND: andWhere };
+
+    const [rows, total, stores, users] = await Promise.all([
+      prisma.stockTransfer.findMany({
+        where,
+        skip,
+        take,
+        include: {
+          originStore: { select: { id: true, name: true } },
+          destinationStore: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, name: true } },
+          receivedBy: { select: { id: true, name: true } },
+          items: { include: { product: { select: { id: true, name: true, ean: true } } } },
+          movements: {
+            where: { type: "TRANSFER_OUT" },
+            include: {
+              createdBy: { select: { id: true, name: true } },
+              product: { select: { id: true, name: true, ean: true } },
+            },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.stockTransfer.count({ where }),
+      prisma.store.findMany({
+        where: { id: { in: allowedStoreIds }, active: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.user.findMany({
+        where: { active: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
+
+    let totalRequested = 0;
+    let totalSent = 0;
+    const transfers = rows.map((t) => {
+      const requestedByProduct = {};
+      for (const it of t.items || []) {
+        const pid = it.productId;
+        if (!requestedByProduct[pid]) {
+          requestedByProduct[pid] = {
+            productId: pid,
+            productName: it.product?.name || "Produto",
+            ean: it.product?.ean || null,
+            requestedQty: 0,
+            sentQty: 0,
+          };
+        }
+        requestedByProduct[pid].requestedQty += Number(it.quantity || 0);
+      }
+      for (const mv of t.movements || []) {
+        const pid = mv.productId;
+        if (!requestedByProduct[pid]) {
+          requestedByProduct[pid] = {
+            productId: pid,
+            productName: mv.product?.name || "Produto",
+            ean: mv.product?.ean || null,
+            requestedQty: 0,
+            sentQty: 0,
+          };
+        }
+        requestedByProduct[pid].sentQty += Number(mv.quantity || 0);
+      }
+      const itemsSummary = Object.values(requestedByProduct).sort((a, b) => a.productName.localeCompare(b.productName));
+      const requestedQty = itemsSummary.reduce((s, it) => s + Number(it.requestedQty || 0), 0);
+      const sentQty = itemsSummary.reduce((s, it) => s + Number(it.sentQty || 0), 0);
+      totalRequested += requestedQty;
+      totalSent += sentQty;
+      const sender = (t.movements || []).find((m) => m.createdBy)?.createdBy || null;
+      return {
+        id: t.id,
+        status: t.status,
+        createdAt: t.createdAt,
+        sentAt: t.sentAt,
+        receivedAt: t.receivedAt,
+        originStore: t.originStore,
+        destinationStore: t.destinationStore,
+        requester: t.createdBy,
+        sender,
+        receiver: t.receivedBy,
+        requestedQty,
+        sentQty,
+        items: itemsSummary,
+      };
+    });
+
+    return sendOk(res, req, {
+      transfers,
+      summary: {
+        totalTransfers: Number(total || 0),
+        totalRequested: Number(totalRequested || 0),
+        totalSent: Number(totalSent || 0),
+      },
+      filters: {
+        stores,
+        users,
       },
       totalPages: Math.ceil(total / take) || 1,
       page: Number(page),

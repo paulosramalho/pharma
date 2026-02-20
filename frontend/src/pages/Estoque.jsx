@@ -76,6 +76,7 @@ export default function Estoque() {
   const [transferProducts, setTransferProducts] = useState([]);
   const [transferSelectedIds, setTransferSelectedIds] = useState([]);
   const [transferSendDraft, setTransferSendDraft] = useState({});
+  const [transferSendConfirm, setTransferSendConfirm] = useState(null);
   const [reservationForm, setReservationForm] = useState({ sourceStoreId: "", customerId: "", note: "" });
   const [reservationItems, setReservationItems] = useState([]);
   const [reservationSearch, setReservationSearch] = useState("");
@@ -369,16 +370,29 @@ export default function Estoque() {
       acc[it.productId] = it.productName;
       return acc;
     }, {});
-    const summaryLines = sendRows.map((row) => `- ${itemMap[row.productId] || row.productId}: ${row.quantity}`).join("\n");
-    const confirmed = window.confirm(`Confirmar envio com as quantidades abaixo?\n\n${summaryLines}`);
-    if (!confirmed) {
+    setTransferSendConfirm({
+      transferId: id,
+      rows: sendRows.map((row) => ({
+        productId: row.productId,
+        productName: itemMap[row.productId] || row.productId,
+        quantity: row.quantity,
+      })),
+    });
+  };
+
+  const confirmSendTransfer = async () => {
+    if (!transferSendConfirm?.transferId || !Array.isArray(transferSendConfirm?.rows) || transferSendConfirm.rows.length === 0) {
+      setTransferSendConfirm(null);
       return;
     }
+    const id = transferSendConfirm.transferId;
+    const sendRows = transferSendConfirm.rows.map((row) => ({ productId: row.productId, quantity: row.quantity }));
     setSubmitting(true);
     try {
       await apiFetch(`/api/inventory/transfers/${id}/send`, { method: "POST", body: JSON.stringify({ items: sendRows }) });
       addToast("Transferencia enviada", "success");
       setTransferSendDraft((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${id}:`))));
+      setTransferSendConfirm(null);
       loadTransfers();
     }
     catch (err) { addToast(err.message, "error"); }
@@ -1234,6 +1248,27 @@ export default function Estoque() {
           </Card>
         </div>
       )}
+
+      {/* Edit Lot Modal */}
+      <Modal open={!!transferSendConfirm} onClose={() => setTransferSendConfirm(null)} title="Confirmar Envio de Transferencia">
+        {transferSendConfirm && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">Confirme as quantidades que serao enviadas:</p>
+            <div className="max-h-52 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+              {transferSendConfirm.rows.map((row) => (
+                <div key={row.productId} className="px-3 py-2 text-sm flex items-center justify-between">
+                  <span className="text-gray-800">{row.productName}</span>
+                  <span className="font-semibold text-gray-900">Qtd: {row.quantity}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button variant="secondary" className="flex-1" onClick={() => setTransferSendConfirm(null)}>Cancelar</Button>
+              <Button className="flex-1" loading={submitting} onClick={confirmSendTransfer}>Confirmar Envio</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Edit Lot Modal */}
       <Modal open={!!editModal} onClose={() => setEditModal(null)} title="Corrigir Lote">

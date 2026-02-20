@@ -14,6 +14,7 @@ import {
 const TABS = [
   { key: "vendas", label: "Vendas", icon: ShoppingCart },
   { key: "caixa", label: "Fechamentos de Caixa", icon: Wallet },
+  { key: "transferencias", label: "Transferencias", icon: ArrowUpCircle },
 ];
 
 const STATUS_LABELS = { DRAFT: "Rascunho", CONFIRMED: "Confirmada", PAID: "Paga", CANCELED: "Cancelada", REFUNDED: "Estornada" };
@@ -43,6 +44,13 @@ export default function Relatorios() {
   // Cash closings report
   const [cashData, setCashData] = useState(null);
   const [cashPage, setCashPage] = useState(1);
+  const [transferData, setTransferData] = useState(null);
+  const [transferPage, setTransferPage] = useState(1);
+  const [originStoreId, setOriginStoreId] = useState("");
+  const [destinationStoreId, setDestinationStoreId] = useState("");
+  const [requesterId, setRequesterId] = useState("");
+  const [senderId, setSenderId] = useState("");
+  const [itemFilter, setItemFilter] = useState("");
 
   const inputClass = "px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
 
@@ -66,9 +74,25 @@ export default function Relatorios() {
       .finally(() => setLoading(false));
   };
 
+  const loadTransfersReport = (pg = 1) => {
+    setLoading(true);
+    setTransferPage(pg);
+    const params = new URLSearchParams({ from, to, page: pg, limit: 20 });
+    if (originStoreId) params.set("originStoreId", originStoreId);
+    if (destinationStoreId) params.set("destinationStoreId", destinationStoreId);
+    if (requesterId) params.set("requesterId", requesterId);
+    if (senderId) params.set("senderId", senderId);
+    if (itemFilter) params.set("item", itemFilter);
+    apiFetch(`/api/reports/transfers?${params}`)
+      .then((res) => setTransferData(res.data))
+      .catch((err) => addToast(err.message, "error"))
+      .finally(() => setLoading(false));
+  };
+
   const handleFilter = () => {
     if (tab === "vendas") loadSalesReport(1);
-    else loadCashReport(1);
+    else if (tab === "caixa") loadCashReport(1);
+    else loadTransfersReport(1);
   };
 
   useEffect(() => { handleFilter(); }, [tab]);
@@ -105,6 +129,45 @@ export default function Relatorios() {
           </Button>
         </CardBody>
       </Card>
+
+      {tab === "transferencias" && (
+        <Card>
+          <CardBody className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600">Origem</label>
+              <select value={originStoreId} onChange={(e) => setOriginStoreId(e.target.value)} className={inputClass}>
+                <option value="">Todas</option>
+                {(transferData?.filters?.stores || []).map((s) => <option key={`o-${s.id}`} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600">Destino</label>
+              <select value={destinationStoreId} onChange={(e) => setDestinationStoreId(e.target.value)} className={inputClass}>
+                <option value="">Todos</option>
+                {(transferData?.filters?.stores || []).map((s) => <option key={`d-${s.id}`} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600">Solicitante</label>
+              <select value={requesterId} onChange={(e) => setRequesterId(e.target.value)} className={inputClass}>
+                <option value="">Todos</option>
+                {(transferData?.filters?.users || []).map((u) => <option key={`r-${u.id}`} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-600">Remetente</label>
+              <select value={senderId} onChange={(e) => setSenderId(e.target.value)} className={inputClass}>
+                <option value="">Todos</option>
+                {(transferData?.filters?.users || []).map((u) => <option key={`s-${u.id}`} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="block text-xs font-medium text-gray-600">Item</label>
+              <input value={itemFilter} onChange={(e) => setItemFilter(e.target.value)} placeholder="Nome ou EAN do item" className={inputClass} />
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {loading && <PageSpinner />}
 
@@ -318,6 +381,96 @@ export default function Relatorios() {
             </>
           )}
         </Card>
+      )}
+
+      {tab === "transferencias" && transferData && !loading && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card>
+              <CardBody>
+                <p className="text-xs text-gray-500 uppercase">Transferencias</p>
+                <p className="text-xl font-bold text-gray-900">{transferData.summary?.totalTransfers || 0}</p>
+              </CardBody>
+            </Card>
+            <Card>
+              <CardBody>
+                <p className="text-xs text-gray-500 uppercase">Qtd Pedida</p>
+                <p className="text-xl font-bold text-gray-900">{transferData.summary?.totalRequested || 0}</p>
+              </CardBody>
+            </Card>
+            <Card>
+              <CardBody>
+                <p className="text-xs text-gray-500 uppercase">Qtd Enviada</p>
+                <p className="text-xl font-bold text-gray-900">{transferData.summary?.totalSent || 0}</p>
+              </CardBody>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="flex items-center gap-2">
+              <ArrowUpCircle size={18} className="text-gray-400" />
+              <h3 className="font-semibold text-gray-900">Relatorio de Transferencias</h3>
+              <span className="text-xs text-gray-400 ml-2">{transferData.total || 0} registros</span>
+            </CardHeader>
+            {(transferData.transfers || []).length === 0 ? (
+              <CardBody><p className="text-sm text-gray-400 text-center py-4">Nenhuma transferencia encontrada no periodo</p></CardBody>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-left">
+                        <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Data</th>
+                        <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Origem</th>
+                        <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Destino</th>
+                        <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Solicitante</th>
+                        <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Remetente</th>
+                        <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase text-right">Pedida</th>
+                        <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase text-right">Enviada</th>
+                        <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(transferData.transfers || []).map((t) => (
+                        <tr key={t.id} className="hover:bg-gray-50 align-top">
+                          <td className="px-4 py-2 text-gray-500">{formatDateTime(t.createdAt)}</td>
+                          <td className="px-4 py-2 text-gray-900">{t.originStore?.name || "—"}</td>
+                          <td className="px-4 py-2 text-gray-900">{t.destinationStore?.name || "—"}</td>
+                          <td className="px-4 py-2 text-gray-500">{t.requester?.name || "—"}</td>
+                          <td className="px-4 py-2 text-gray-500">{t.sender?.name || "—"}</td>
+                          <td className="px-4 py-2 text-right font-medium text-gray-900">{t.requestedQty || 0}</td>
+                          <td className="px-4 py-2 text-right font-medium text-gray-900">{t.sentQty || 0}</td>
+                          <td className="px-4 py-2">
+                            <Badge color={t.status === "RECEIVED" ? "green" : t.status === "SENT" ? "blue" : t.status === "CANCELED" ? "red" : "gray"}>
+                              {t.status === "RECEIVED" ? "Recebido" : t.status === "SENT" ? "Enviado" : t.status === "CANCELED" ? "Cancelado" : "Rascunho"}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-4 pb-4 space-y-2">
+                  {(transferData.transfers || []).map((t) => (
+                    <div key={`${t.id}-items`} className="text-xs text-gray-600 bg-gray-50 rounded px-3 py-2">
+                      <span className="font-medium text-gray-700">Itens:</span>{" "}
+                      {(t.items || []).map((it) => `${it.productName} (Ped: ${it.requestedQty} / Env: ${it.sentQty})`).join(" | ")}
+                    </div>
+                  ))}
+                </div>
+                {transferData.totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 py-3 border-t border-gray-100">
+                    <button onClick={() => loadTransfersReport(transferPage - 1)} disabled={transferPage <= 1}
+                      className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded disabled:opacity-40">Anterior</button>
+                    <span className="text-sm text-gray-500">{transferPage} / {transferData.totalPages}</span>
+                    <button onClick={() => loadTransfersReport(transferPage + 1)} disabled={transferPage >= transferData.totalPages}
+                      className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded disabled:opacity-40">Proximo</button>
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+        </>
       )}
     </div>
   );
