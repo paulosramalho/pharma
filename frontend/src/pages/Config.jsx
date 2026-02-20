@@ -23,7 +23,7 @@ const ROLE_COLORS = { ADMIN: "purple", CAIXA: "blue", VENDEDOR: "green", FARMACU
 const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "Farmacêutico" };
 
 const emptyStoreForm = { name: "", type: "LOJA", cnpj: "", phone: "", email: "", street: "", number: "", complement: "", district: "", city: "", state: "", zipCode: "" };
-const emptyUserForm = { name: "", email: "", password: "", passwordConfirm: "", roleName: "VENDEDOR" };
+const emptyUserForm = { name: "", email: "", password: "", passwordConfirm: "", roleName: "VENDEDOR", storeIds: [] };
 const emptyCustomerForm = { name: "", document: "", birthDate: "", whatsapp: "", phone: "", email: "" };
 
 const PERMISSIONS = [
@@ -79,7 +79,16 @@ export default function Config() {
     if (tab === "lojas") {
       apiFetch("/api/stores?all=true").then((res) => setStores(res.data || [])).catch((err) => addToast(err.message, "error")).finally(() => setLoading(false));
     } else if (tab === "usuarios") {
-      apiFetch("/api/users").then((res) => setUsers(res.data || [])).catch((err) => addToast(err.message, "error")).finally(() => setLoading(false));
+      Promise.all([
+        apiFetch("/api/users"),
+        apiFetch("/api/stores?all=true"),
+      ])
+        .then(([usersRes, storesRes]) => {
+          setUsers(usersRes.data || []);
+          setStores(storesRes.data || []);
+        })
+        .catch((err) => addToast(err.message, "error"))
+        .finally(() => setLoading(false));
     } else if (tab === "clientes") {
       loadCustomers();
     } else {
@@ -136,16 +145,28 @@ export default function Config() {
   // ─── USER HANDLERS ───
   const openCreateUser = () => { setUserForm(emptyUserForm); setUserEditId(null); setUserModal(true); };
   const openEditUser = (u) => {
-    setUserForm({ name: u.name, email: u.email, password: "", passwordConfirm: "", roleName: u.role?.name || "VENDEDOR" });
+    setUserForm({
+      name: u.name,
+      email: u.email,
+      password: "",
+      passwordConfirm: "",
+      roleName: u.role?.name || "VENDEDOR",
+      storeIds: (u.stores || []).map((s) => s.storeId || s.store?.id).filter(Boolean),
+    });
     setUserEditId(u.id); setUserModal(true);
   };
   const submitUser = async () => {
     if (userForm.password && userForm.password !== userForm.passwordConfirm) {
       addToast("As senhas não coincidem", "error"); return;
     }
+    if (userForm.roleName !== "ADMIN" && (!userForm.storeIds || userForm.storeIds.length === 0)) {
+      addToast("Selecione ao menos uma loja para este perfil", "warning");
+      return;
+    }
     setSubmitting(true);
     try {
       const body = { name: userForm.name, email: userForm.email, roleName: userForm.roleName };
+      if (userForm.roleName !== "ADMIN") body.storeIds = userForm.storeIds;
       if (userForm.password) body.password = userForm.password;
       if (userEditId) {
         await apiFetch(`/api/users/${userEditId}`, { method: "PUT", body: JSON.stringify(body) });
@@ -406,10 +427,35 @@ export default function Config() {
             <p className="text-xs text-red-600">As senhas não coincidem</p>
           )}
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Perfil</label>
-            <select value={userForm.roleName} onChange={(e) => setUserForm({ ...userForm, roleName: e.target.value })} className={inputClass}>
+            <select value={userForm.roleName} onChange={(e) => setUserForm({ ...userForm, roleName: e.target.value, storeIds: e.target.value === "ADMIN" ? [] : userForm.storeIds })} className={inputClass}>
               <option value="ADMIN">Administrador</option><option value="VENDEDOR">Vendedor</option><option value="CAIXA">Caixa</option><option value="FARMACEUTICO">Farmacêutico</option>
             </select>
           </div>
+          {userForm.roleName !== "ADMIN" ? (
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Lojas vinculadas *</label>
+              <div className="max-h-44 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                {stores.map((s) => (
+                  <label key={s.id} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={(userForm.storeIds || []).includes(s.id)}
+                      onChange={(e) => {
+                        const curr = userForm.storeIds || [];
+                        const next = e.target.checked ? [...curr, s.id] : curr.filter((id) => id !== s.id);
+                        setUserForm({ ...userForm, storeIds: next });
+                      }}
+                      className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                    />
+                    <span>{s.name}</span>
+                  </label>
+                ))}
+                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponível</p>}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">Administrador tem acesso a todas as lojas automaticamente.</p>
+          )}
           <div className="flex gap-2 pt-2">
             <Button variant="secondary" className="flex-1" onClick={() => setUserModal(false)}>Cancelar</Button>
             <Button className="flex-1" loading={submitting} onClick={submitUser} disabled={!userForm.name || !userForm.email || (userForm.password && userForm.password !== userForm.passwordConfirm)}>{userEditId ? "Salvar" : "Criar"}</Button>

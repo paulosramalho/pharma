@@ -13,11 +13,12 @@ import { Users, Plus, Pencil } from "lucide-react";
 
 const ROLE_COLORS = { ADMIN: "purple", CAIXA: "blue", VENDEDOR: "green", FARMACEUTICO: "yellow" };
 const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "Farmacêutico" };
-const emptyForm = { name: "", email: "", password: "", roleName: "VENDEDOR" };
+const emptyForm = { name: "", email: "", password: "", roleName: "VENDEDOR", storeIds: [] };
 
 export default function UsuariosPage() {
   const { addToast } = useToast();
   const [users, setUsers] = useState([]);
+  const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -26,8 +27,11 @@ export default function UsuariosPage() {
 
   const load = () => {
     setLoading(true);
-    apiFetch("/api/users")
-      .then((res) => setUsers(res.data || []))
+    Promise.all([apiFetch("/api/users"), apiFetch("/api/stores?all=true")])
+      .then(([usersRes, storesRes]) => {
+        setUsers(usersRes.data || []);
+        setStores(storesRes.data || []);
+      })
       .catch((err) => addToast(err.message, "error"))
       .finally(() => setLoading(false));
   };
@@ -41,15 +45,26 @@ export default function UsuariosPage() {
   };
 
   const openEdit = (user) => {
-    setForm({ name: user.name, email: user.email, password: "", roleName: user.role?.name || "VENDEDOR" });
+    setForm({
+      name: user.name,
+      email: user.email,
+      password: "",
+      roleName: user.role?.name || "VENDEDOR",
+      storeIds: (user.stores || []).map((s) => s.storeId || s.store?.id).filter(Boolean),
+    });
     setEditId(user.id);
     setModal(true);
   };
 
   const handleSubmit = async () => {
+    if (form.roleName !== "ADMIN" && (!form.storeIds || form.storeIds.length === 0)) {
+      addToast("Selecione ao menos uma loja para este perfil", "warning");
+      return;
+    }
     setSubmitting(true);
     try {
       const body = { name: form.name, email: form.email, roleName: form.roleName };
+      if (form.roleName !== "ADMIN") body.storeIds = form.storeIds;
       if (form.password) body.password = form.password;
       if (editId) {
         await apiFetch(`/api/users/${editId}`, { method: "PUT", body: JSON.stringify(body) });
@@ -133,7 +148,7 @@ export default function UsuariosPage() {
           </div>
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">Perfil</label>
-            <select value={form.roleName} onChange={(e) => setForm({ ...form, roleName: e.target.value })}
+            <select value={form.roleName} onChange={(e) => setForm({ ...form, roleName: e.target.value, storeIds: e.target.value === "ADMIN" ? [] : form.storeIds })}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500">
               <option value="ADMIN">Administrador</option>
               <option value="VENDEDOR">Vendedor</option>
@@ -141,6 +156,31 @@ export default function UsuariosPage() {
               <option value="FARMACEUTICO">Farmaceutico</option>
             </select>
           </div>
+          {form.roleName !== "ADMIN" ? (
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Lojas vinculadas *</label>
+              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                {stores.map((s) => (
+                  <label key={s.id} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={(form.storeIds || []).includes(s.id)}
+                      onChange={(e) => {
+                        const curr = form.storeIds || [];
+                        const next = e.target.checked ? [...curr, s.id] : curr.filter((id) => id !== s.id);
+                        setForm({ ...form, storeIds: next });
+                      }}
+                      className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                    />
+                    <span>{s.name}</span>
+                  </label>
+                ))}
+                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponivel</p>}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">Administrador tem acesso a todas as lojas automaticamente.</p>
+          )}
           <div className="flex gap-2 pt-2">
             <Button variant="secondary" className="flex-1" onClick={() => setModal(false)}>Cancelar</Button>
             <Button className="flex-1" loading={submitting} onClick={handleSubmit} disabled={!form.name || !form.email}>
