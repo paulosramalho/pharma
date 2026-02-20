@@ -69,7 +69,9 @@ async function main() {
       create: { name: u.name, email: u.email, passwordHash, active: true, roleId: role.id },
     });
 
-    for (const store of [central, loja1]) {
+    // Vendedor/Caixa only get Loja access; Admin/Farmaceutico get both (Central + Loja)
+    const userStores = ["VENDEDOR", "CAIXA"].includes(u.roleName) ? [loja1] : [central, loja1];
+    for (const store of userStores) {
       await prisma.storeUser.upsert({
         where: { storeId_userId: { storeId: store.id, userId: user.id } },
         update: {},
