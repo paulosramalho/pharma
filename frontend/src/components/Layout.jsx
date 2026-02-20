@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { to: "/caixa", label: "Caixa", icon: Wallet, perm: "cash.open" },
   { to: "/estoque", label: "Estoque", icon: Package, perm: "inventory.receive" },
   { to: "/produtos", label: "Produtos", icon: Pill, perm: "products.manage" },
-  { to: "/relatorios", label: "Relatorios", icon: BarChart3, perm: "reports.view" },
+  { to: "/relatorios", label: "Relatórios", icon: BarChart3, perm: "reports.view" },
   { to: "/config", label: "Configurações", icon: Settings, perm: "users.manage" },
   { to: "/perfil", label: "Meu Perfil", icon: UserCircle, perm: null, restrictedOnly: true },
 ];

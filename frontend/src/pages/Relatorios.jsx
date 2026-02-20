@@ -75,7 +75,7 @@ export default function Relatorios() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">Relatoóios</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Relatórios</h1>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
