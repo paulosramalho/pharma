@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
-import { Pill, Eye, EyeOff, LogIn } from "lucide-react";
+import { Eye, EyeOff, LogIn } from "lucide-react";
 
 export default function Login() {
   const { login } = useAuth();
@@ -36,9 +36,7 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-600 rounded-2xl shadow-lg mb-4">
-            <Pill size={32} className="text-white" />
-          </div>
+          <img src="/logo-pharma.svg" alt="Pharma" className="w-16 h-16 rounded-2xl shadow-lg mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900">Pharma</h1>
           <p className="text-sm text-gray-500 mt-1">Sistema de Gestao Farmaceutica</p>
         </div>

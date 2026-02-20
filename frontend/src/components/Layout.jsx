@@ -61,9 +61,7 @@ export default function Layout() {
         {/* Logo */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <Pill size={18} className="text-white" />
-            </div>
+            <img src="/logo-pharma.svg" alt="Pharma" className="w-8 h-8 rounded-lg" />
             <span className="text-lg font-bold text-gray-900">Pharma</span>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1 text-gray-400 hover:text-gray-600">
@@ -135,9 +133,7 @@ export default function Layout() {
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-primary-600 rounded flex items-center justify-center">
-              <Pill size={12} className="text-white" />
-            </div>
+            <img src="/logo-pharma.svg" alt="Pharma" className="w-6 h-6 rounded" />
             <span className="font-bold text-gray-900">Pharma</span>
           </div>
         </header>

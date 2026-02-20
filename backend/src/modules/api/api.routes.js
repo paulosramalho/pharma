@@ -1,6 +1,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
+const { makeReportSamplePdfBuffer } = require("../reports/reportPdfTemplate");
 
 /** Converts "YYYY-MM-DD" to noon UTC to avoid timezone day-shift */
 function safeDate(v) {
@@ -2537,6 +2538,22 @@ function buildApiRoutes({ prisma, log }) {
       page: Number(page),
       total,
     });
+  }));
+
+  router.get("/reports/sample-pdf", asyncHandler(async (req, res) => {
+    const reportName = String(req.query.reportName || "Relatorio de Amostra");
+    const emittedBy = req.user?.name || "Usuario";
+    const pdfBuf = await makeReportSamplePdfBuffer({
+      reportName,
+      emittedBy,
+      systemName: "Pharma",
+      emittedAt: new Date(),
+    });
+
+    const safeName = reportName.replace(/[^a-zA-Z0-9_-]+/g, "_");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename=\"${safeName || "relatorio"}-amostra.pdf\"`);
+    return res.status(200).send(pdfBuf);
   }));
 
   router.get("/reports/transfers", asyncHandler(async (req, res) => {
