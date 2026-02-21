@@ -1,7 +1,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
-const { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer } = require("../reports/reportPdfTemplate");
+const { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer, makeReportCustomPdfBuffer } = require("../reports/reportPdfTemplate");
 
 /** Converts "YYYY-MM-DD" to noon UTC to avoid timezone day-shift */
 function safeDate(v) {
@@ -3314,54 +3314,179 @@ function buildApiRoutes({ prisma, log }) {
         orderBy: { createdAt: "desc" },
         take: 500,
       });
+      const [originStore, destinationStore, requesterUser, senderUser] = await Promise.all([
+        originStoreId ? prisma.store.findUnique({ where: { id: originStoreId }, select: { name: true } }) : Promise.resolve(null),
+        destinationStoreId ? prisma.store.findUnique({ where: { id: destinationStoreId }, select: { name: true } }) : Promise.resolve(null),
+        requesterId ? prisma.user.findUnique({ where: { id: requesterId }, select: { name: true } }) : Promise.resolve(null),
+        senderId ? prisma.user.findUnique({ where: { id: senderId }, select: { name: true } }) : Promise.resolve(null),
+      ]);
 
-      const lines = [];
-      for (const t of transfers) {
-        const requested = (t.items || []).reduce((sum, i) => sum + Number(i.quantity || 0), 0);
-        const sent = (t.movements || []).reduce((sum, m) => sum + Number(m.quantity || 0), 0);
-        const senderName = (t.movements || []).find((m) => m.createdBy?.name)?.createdBy?.name || "-";
+      const dateOnly = (v) => {
+        const d = v ? new Date(v) : null;
+        if (!d || Number.isNaN(d.getTime())) return "-";
+        const pad = (n) => String(n).padStart(2, "0");
+        return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+      };
+      const transferStatusPt = (status) => {
+        const map = {
+          DRAFT: "Rascunho",
+          SENT: "Enviado",
+          RECEIVED: "Recebido",
+          CANCELED: "Cancelado",
+        };
+        return map[String(status || "").toUpperCase()] || String(status || "-");
+      };
+      const truncate = (v, max = 24) => {
+        const s = String(v || "-");
+        if (s.length <= max) return s;
+        return `${s.slice(0, Math.max(0, max - 1))}…`;
+      };
 
-        lines.push("Data | Origem | Destino | Solicitante | Remetente | Qtd Pedida | Qtd Enviada | Status");
-        lines.push(`${dateTime(t.createdAt)} | ${t.originStore?.name || "-"} | ${t.destinationStore?.name || "-"} | ${t.createdBy?.name || "-"} | ${senderName} | ${requested} | ${sent} | ${t.status}`);
-        lines.push("Item | Qtd Pedida | Qtd Enviada");
+      const pdfBuf = await makeReportCustomPdfBuffer({
+        reportName,
+        emittedBy,
+        systemName: "Pharma",
+        emittedAt: new Date(),
+        render: (doc, layout) => {
+          const { left, contentTop, contentBottom } = layout;
+          let y = contentTop;
 
-        const byProduct = {};
-        for (const it of t.items || []) {
-          if (!byProduct[it.productId]) {
-            byProduct[it.productId] = {
-              item: it.product?.name || "Item",
-              requestedQty: 0,
-              sentQty: 0,
+          const ensureSpace = (needed) => {
+            if (y + needed <= contentBottom) return;
+            doc.addPage();
+            y = contentTop;
+          };
+
+          const filterLines = [
+            `Periodo: ${dateOnly(from)} a ${dateOnly(to)} (considerando 00:00:00 ate 23:59:59)`,
+            `Origem: ${originStore?.name || "Todas"}`,
+            `Destino: ${destinationStore?.name || "Todos"}`,
+            `Solicitante: ${requesterUser?.name || "Todos"}`,
+            `Remetente: ${senderUser?.name || "Todos"}`,
+            `Item: ${item || "Todos"}`,
+          ];
+
+          ensureSpace(14 + (filterLines.length * 12) + 8);
+          doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827").text("Filtros", left, y);
+          y += 14;
+          doc.font("Helvetica").fontSize(9.5).fillColor("#111827");
+          for (const line of filterLines) {
+            doc.text(line, left, y);
+            y += 12;
+          }
+          y += 8;
+
+          const cols = [
+            { key: "date", label: "Data", width: 56, align: "left" },
+            { key: "origin", label: "Origem", width: 66, align: "left" },
+            { key: "destination", label: "Destino", width: 66, align: "left" },
+            { key: "requester", label: "Solicitante", width: 70, align: "left" },
+            { key: "sender", label: "Remetente", width: 70, align: "left" },
+            { key: "requested", label: "Qtd Pedida", width: 52, align: "right" },
+            { key: "sent", label: "Qtd Enviada", width: 56, align: "right" },
+            { key: "status", label: "Status", width: 54, align: "left" },
+          ];
+          const itemIndent = 24;
+          const itemCols = [
+            { key: "item", label: "Item", width: 280, align: "left" },
+            { key: "requested", label: "Qtd Pedida", width: 90, align: "right" },
+            { key: "sent", label: "Qtd Enviada", width: 90, align: "right" },
+          ];
+
+          for (const t of transfers) {
+            const requested = (t.items || []).reduce((sum, i) => sum + Number(i.quantity || 0), 0);
+            const sent = (t.movements || []).reduce((sum, m) => sum + Number(m.quantity || 0), 0);
+            const senderName = (t.movements || []).find((m) => m.createdBy?.name)?.createdBy?.name || "-";
+
+            const byProduct = {};
+            for (const it of t.items || []) {
+              if (!byProduct[it.productId]) {
+                byProduct[it.productId] = {
+                  item: it.product?.name || "Item",
+                  requestedQty: 0,
+                  sentQty: 0,
+                };
+              }
+              byProduct[it.productId].requestedQty += Number(it.quantity || 0);
+            }
+            for (const mv of t.movements || []) {
+              if (!byProduct[mv.productId]) {
+                byProduct[mv.productId] = {
+                  item: "Item",
+                  requestedQty: 0,
+                  sentQty: 0,
+                };
+              }
+              byProduct[mv.productId].sentQty += Number(mv.quantity || 0);
+            }
+            const rows = Object.values(byProduct);
+            const blockHeight = 13 + 13 + 12 + Math.max(1, rows.length) * 12 + 10;
+            ensureSpace(blockHeight);
+
+            let x = left;
+            doc.font("Helvetica-Bold").fontSize(8.2).fillColor("#111827");
+            for (const c of cols) {
+              doc.text(c.label, x, y, { width: c.width, align: c.align });
+              x += c.width;
+            }
+            y += 13;
+
+            const values = {
+              date: dateOnly(t.createdAt),
+              origin: truncate(t.originStore?.name || "-", 18),
+              destination: truncate(t.destinationStore?.name || "-", 18),
+              requester: truncate(t.createdBy?.name || "-", 18),
+              sender: truncate(senderName, 18),
+              requested: String(requested),
+              sent: String(sent),
+              status: transferStatusPt(t.status),
             };
-          }
-          byProduct[it.productId].requestedQty += Number(it.quantity || 0);
-        }
-        for (const mv of t.movements || []) {
-          if (!byProduct[mv.productId]) {
-            byProduct[mv.productId] = {
-              item: "Item",
-              requestedQty: 0,
-              sentQty: 0,
-            };
-          }
-          byProduct[mv.productId].sentQty += Number(mv.quantity || 0);
-        }
+            x = left;
+            doc.font("Helvetica").fontSize(8.4).fillColor("#111827");
+            for (const c of cols) {
+              doc.text(values[c.key], x, y, { width: c.width, align: c.align });
+              x += c.width;
+            }
+            y += 13;
 
-        const rows = Object.values(byProduct);
-        if (rows.length === 0) {
-          lines.push("- | 0 | 0");
-        } else {
-          for (const row of rows) {
-            lines.push(`${row.item} | ${row.requestedQty} | ${row.sentQty}`);
-          }
-        }
-        lines.push(" ");
-      }
+            x = left + itemIndent;
+            doc.font("Helvetica-Bold").fontSize(8.1).fillColor("#374151");
+            for (const c of itemCols) {
+              doc.text(c.label, x, y, { width: c.width, align: c.align });
+              x += c.width;
+            }
+            y += 12;
 
-      sections = [
-        { title: "Filtros", lines: [`Periodo: ${from ? dateTime(from) : "-"} ate ${to ? dateTime(to) : "-"}`] },
-        { title: `Registros (${transfers.length})`, lines: lines.length > 0 ? lines : ["Nenhuma transferencia encontrada."] },
-      ];
+            doc.font("Helvetica").fontSize(8.4).fillColor("#111827");
+            if (rows.length === 0) {
+              x = left + itemIndent;
+              doc.text("-", x, y, { width: itemCols[0].width, align: "left" });
+              doc.text("0", x + itemCols[0].width, y, { width: itemCols[1].width, align: "right" });
+              doc.text("0", x + itemCols[0].width + itemCols[1].width, y, { width: itemCols[2].width, align: "right" });
+              y += 12;
+            } else {
+              for (const r of rows) {
+                x = left + itemIndent;
+                doc.text(truncate(r.item, 58), x, y, { width: itemCols[0].width, align: "left" });
+                doc.text(String(r.requestedQty), x + itemCols[0].width, y, { width: itemCols[1].width, align: "right" });
+                doc.text(String(r.sentQty), x + itemCols[0].width + itemCols[1].width, y, { width: itemCols[2].width, align: "right" });
+                y += 12;
+              }
+            }
+            y += 8;
+          }
+
+          if (transfers.length === 0) {
+            ensureSpace(16);
+            doc.font("Helvetica").fontSize(10).fillColor("#6b7280").text("Nenhuma transferencia encontrada.", left, y);
+          }
+        },
+      });
+
+      const safeName = reportName.replace(/[^a-zA-Z0-9_-]+/g, "_");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename=\"${safeName || "relatorio"}.pdf\"`);
+      return res.status(200).send(pdfBuf);
     } else {
       reportName = "Relatorio de Vendas";
       const storeId = await resolveStoreId(req);

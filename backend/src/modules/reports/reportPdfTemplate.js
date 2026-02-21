@@ -229,4 +229,52 @@ function makeReportLinesPdfBuffer({ reportName, emittedBy, sections = [], system
   });
 }
 
-module.exports = { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer };
+function makeReportCustomPdfBuffer({ reportName, emittedBy, systemName = "Pharma", emittedAt = new Date(), render }) {
+  const pdf = new PDFDocument({
+    size: PAGE.size,
+    margins: {
+      top: PAGE.marginTop,
+      right: PAGE.marginRight,
+      bottom: PAGE.marginBottom,
+      left: PAGE.marginLeft,
+    },
+    bufferPages: true,
+  });
+
+  const chunks = [];
+  pdf.on("data", (c) => chunks.push(c));
+
+  return new Promise((resolve, reject) => {
+    pdf.on("end", () => resolve(Buffer.concat(chunks)));
+    pdf.on("error", reject);
+
+    const layout = {
+      left: PAGE.marginLeft,
+      right: pdf.page.width - PAGE.marginRight,
+      contentTop: HEADER.separatorY + 14,
+      contentBottom: pdf.page.height - FOOTER.separatorYFromBottom - 10,
+    };
+    layout.usableWidth = layout.right - layout.left;
+
+    if (typeof render === "function") {
+      render(pdf, layout);
+    }
+
+    const range = pdf.bufferedPageRange();
+    const totalPages = range.count;
+    for (let i = 0; i < totalPages; i += 1) {
+      pdf.switchToPage(i);
+      drawHeader(pdf, { reportName, systemName });
+      drawFooter(pdf, {
+        emittedAt,
+        emittedBy,
+        pageNumber: i + 1,
+        totalPages,
+      });
+    }
+
+    pdf.end();
+  });
+}
+
+module.exports = { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer, makeReportCustomPdfBuffer };
