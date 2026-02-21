@@ -68,7 +68,7 @@ export default function Layout() {
               muted
               loop
               playsInline
-              className="w-8 h-8 rounded-lg object-cover"
+              className="w-8 h-8 object-contain bg-transparent mix-blend-multiply"
             />
             <span className="text-lg font-bold text-gray-900">Pharma</span>
           </div>
@@ -148,7 +148,7 @@ export default function Layout() {
               muted
               loop
               playsInline
-              className="w-6 h-6 rounded object-cover"
+              className="w-6 h-6 object-contain bg-transparent mix-blend-multiply"
             />
             <span className="font-bold text-gray-900">Pharma</span>
           </div>

@@ -36,17 +36,21 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <video
-            src="/brand/LogoPharma.MP4"
-            poster="/brand/LogoPharma.PNG"
-            autoPlay
-            muted
-            loop
-            playsInline
-            className="w-16 h-16 rounded-2xl shadow-lg mx-auto mb-4 object-cover"
-          />
-          <h1 className="text-2xl font-bold text-gray-900">Pharma</h1>
-          <p className="text-sm text-gray-500 mt-1">Sistema de Gestao Farmaceutica</p>
+          <div className="inline-flex items-center gap-4 text-left">
+            <video
+              src="/brand/LogoPharma.MP4"
+              poster="/brand/LogoPharma.PNG"
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="w-16 h-16 object-contain bg-transparent mix-blend-multiply"
+            />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Pharma</h1>
+              <p className="text-sm text-gray-500 mt-1">Sistema de Gestao Farmaceutica</p>
+            </div>
+          </div>
         </div>
 
         {/* Card */}
