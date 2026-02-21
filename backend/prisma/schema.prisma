@@ -144,6 +144,7 @@ model User {
   // 2FA (TOTP)
   twoFactorEnabled   Boolean   @default(false)
   twoFactorSecretEnc Json?
+  lastSeenAt         DateTime?
 
   createdAt    DateTime @default(now())
 
@@ -168,6 +169,7 @@ model User {
   audit  AuditLog[]
 
   @@index([active])
+  @@index([lastSeenAt])
 }
 
 model Role {

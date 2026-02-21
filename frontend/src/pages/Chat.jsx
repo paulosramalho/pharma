@@ -62,6 +62,14 @@ export default function Chat() {
     }
   };
 
+  const pingPresence = async () => {
+    try {
+      await apiFetch("/api/chat/presence", { method: "POST" });
+    } catch {
+      // silent
+    }
+  };
+
   const loadMessages = async (userId) => {
     if (!userId) return;
     try {
@@ -74,6 +82,7 @@ export default function Chat() {
   };
 
   useEffect(() => {
+    pingPresence();
     loadConversations();
     loadUsers("");
   }, []);
@@ -85,6 +94,7 @@ export default function Chat() {
 
   useEffect(() => {
     const id = setInterval(() => {
+      pingPresence();
       loadConversations();
       if (activeUserId) loadMessages(activeUserId);
     }, 5000);
@@ -162,7 +172,10 @@ export default function Chat() {
                 className={`w-full text-left px-3 py-2 rounded-lg border ${selected ? "bg-primary-50 border-primary-200" : "bg-white border-transparent hover:bg-gray-50"}`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-gray-900 truncate">{c.user?.name}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
+                    <span className={`inline-block w-2 h-2 rounded-full ${c.user?.isOnline ? "bg-emerald-500" : "bg-gray-300"}`} />
+                    {c.user?.name}
+                  </p>
                   {!!c.unreadCount && <span className="text-[11px] bg-red-100 text-red-700 rounded-full px-2 py-0.5">{c.unreadCount}</span>}
                 </div>
                 <p className="text-xs text-gray-500 truncate">{c.lastMessage?.content || "-"}</p>
@@ -183,10 +196,13 @@ export default function Chat() {
                     className={`w-full text-left px-3 py-2 rounded-lg border ${selected ? "bg-primary-50 border-primary-200" : "bg-white border-transparent hover:bg-gray-50"}`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-gray-900 truncate">{u.name}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
+                        <span className={`inline-block w-2 h-2 rounded-full ${u.isOnline ? "bg-emerald-500" : "bg-gray-300"}`} />
+                        {u.name}
+                      </p>
                       {!!unread && <span className="text-[11px] bg-red-100 text-red-700 rounded-full px-2 py-0.5">{unread}</span>}
                     </div>
-                    <p className="text-xs text-gray-500 truncate">{u.role?.name || "-"}</p>
+                    <p className="text-xs text-gray-500 truncate">{u.role?.name || "-"} {u.isOnline ? "• online" : "• offline"}</p>
                   </button>
                 );
               })}
@@ -197,8 +213,11 @@ export default function Chat() {
 
       <Card className="flex flex-col min-h-0">
         <div className="px-4 py-3 border-b border-gray-100">
-          <p className="text-base font-semibold text-gray-900">{activeUser?.name || "Selecione um usuario"}</p>
-          <p className="text-xs text-gray-500">{activeUser?.role?.name || ""}</p>
+          <p className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <span className={`inline-block w-2.5 h-2.5 rounded-full ${activeUser?.isOnline ? "bg-emerald-500" : "bg-gray-300"}`} />
+            {activeUser?.name || "Selecione um usuario"}
+          </p>
+          <p className="text-xs text-gray-500">{activeUser?.role?.name || ""} {activeUser ? (activeUser.isOnline ? "• online" : "• offline") : ""}</p>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 bg-gray-50">

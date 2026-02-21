@@ -13,6 +13,7 @@ function safeDate(v) {
 
 function buildApiRoutes({ prisma, log }) {
   const router = express.Router();
+  const ONLINE_WINDOW_MS = 120000;
 
   function isAdmin(req) {
     return req.user?.role === "ADMIN";
@@ -41,6 +42,33 @@ function buildApiRoutes({ prisma, log }) {
   function assertPharmacistOrAdmin(req) {
     if (!isPharmacistOrAdmin(req)) {
       throw Object.assign(new Error("Operacao permitida apenas para Farmaceutico ou Admin"), { statusCode: 403 });
+    }
+  }
+
+  function isUserOnline(lastSeenAt) {
+    if (!lastSeenAt) return false;
+    const ts = new Date(lastSeenAt).getTime();
+    if (Number.isNaN(ts)) return false;
+    return (Date.now() - ts) <= ONLINE_WINDOW_MS;
+  }
+
+  function serializeChatUser(user) {
+    if (!user) return null;
+    return {
+      ...user,
+      isOnline: isUserOnline(user.lastSeenAt),
+    };
+  }
+
+  async function touchChatPresence(userId) {
+    if (!userId) return;
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { lastSeenAt: new Date() },
+      });
+    } catch {
+      // no-op
     }
   }
 
@@ -203,7 +231,7 @@ function buildApiRoutes({ prisma, log }) {
   async function sendTransferRequestChatMessages({ transfer, senderId }) {
     if (!transfer?.originStoreId || !transfer?.destinationStoreId || !senderId) return;
 
-    const [admins, pharmacists] = await Promise.all([
+    const [admins, pharmacists, sender] = await Promise.all([
       prisma.user.findMany({
         where: {
           active: true,
@@ -221,12 +249,17 @@ function buildApiRoutes({ prisma, log }) {
         },
         select: { id: true },
       }),
+      prisma.user.findUnique({
+        where: { id: senderId },
+        select: { name: true },
+      }),
     ]);
 
     const recipientIds = Array.from(new Set([...admins, ...pharmacists].map((u) => u.id).filter(Boolean)));
     if (recipientIds.length === 0) return;
 
-    const message = `Nova solicitacao de transferencia: ${transfer.destinationStore?.name || "Loja destino"} -> ${transfer.originStore?.name || "Loja origem"} (${transfer.items?.length || 0} item(ns)).`;
+    const requesterName = sender?.name || "Usuario";
+    const message = `Nova solicitacao de transferencia para ${transfer.destinationStore?.name || "Loja solicitante"} (${transfer.items?.length || 0} item(ns)). Solicitante: ${requesterName}.`;
 
     await prisma.chatMessage.createMany({
       data: recipientIds.map((recipientId) => ({
@@ -870,6 +903,7 @@ function buildApiRoutes({ prisma, log }) {
 
   // --- CHAT ---
   router.get("/chat/users", asyncHandler(async (req, res) => {
+    await touchChatPresence(req.user?.id);
     const search = String(req.query.search || "").trim();
     const limit = Math.min(Math.max(Number(req.query.limit || 30), 1), 100);
 
@@ -892,14 +926,16 @@ function buildApiRoutes({ prisma, log }) {
         id: true,
         name: true,
         email: true,
+        lastSeenAt: true,
         role: { select: { name: true } },
       },
     });
 
-    return sendOk(res, req, { users });
+    return sendOk(res, req, { users: users.map(serializeChatUser) });
   }));
 
   router.get("/chat/conversations", asyncHandler(async (req, res) => {
+    await touchChatPresence(req.user?.id);
     const currentUserId = req.user?.id;
     if (!currentUserId) return sendOk(res, req, { conversations: [] });
 
@@ -917,8 +953,8 @@ function buildApiRoutes({ prisma, log }) {
         orderBy: { createdAt: "desc" },
         take: scanLimit,
         include: {
-          sender: { select: { id: true, name: true, email: true, role: { select: { name: true } } } },
-          recipient: { select: { id: true, name: true, email: true, role: { select: { name: true } } } },
+          sender: { select: { id: true, name: true, email: true, lastSeenAt: true, role: { select: { name: true } } } },
+          recipient: { select: { id: true, name: true, email: true, lastSeenAt: true, role: { select: { name: true } } } },
         },
       }),
       prisma.chatMessage.groupBy({
@@ -939,7 +975,7 @@ function buildApiRoutes({ prisma, log }) {
       if (!otherId || convMap.has(otherId)) continue;
       const other = msg.senderId === currentUserId ? msg.recipient : msg.sender;
       convMap.set(otherId, {
-        user: other,
+        user: serializeChatUser(other),
         lastMessage: {
           id: msg.id,
           content: msg.content,
@@ -963,6 +999,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/chat/messages/:userId", asyncHandler(async (req, res) => {
+    await touchChatPresence(req.user?.id);
     const currentUserId = req.user?.id;
     const otherUserId = req.params.userId;
     if (!currentUserId) return sendOk(res, req, { messages: [] });
@@ -970,7 +1007,7 @@ function buildApiRoutes({ prisma, log }) {
 
     const otherUser = await prisma.user.findFirst({
       where: { id: otherUserId, active: true },
-      select: { id: true, name: true, email: true, role: { select: { name: true } } },
+      select: { id: true, name: true, email: true, lastSeenAt: true, role: { select: { name: true } } },
     });
     if (!otherUser) return res.status(404).json({ error: { code: 404, message: "Usuario nao encontrado" } });
 
@@ -1013,12 +1050,13 @@ function buildApiRoutes({ prisma, log }) {
     });
 
     return sendOk(res, req, {
-      user: otherUser,
+      user: serializeChatUser(otherUser),
       messages: messagesDesc.reverse(),
     });
   }));
 
   router.post("/chat/messages", asyncHandler(async (req, res) => {
+    await touchChatPresence(req.user?.id);
     const senderId = req.user?.id;
     const recipientId = String(req.body?.recipientId || "").trim();
     const content = String(req.body?.content || "").trim();
@@ -1060,6 +1098,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/chat/messages/:userId/read", asyncHandler(async (req, res) => {
+    await touchChatPresence(req.user?.id);
     const currentUserId = req.user?.id;
     const otherUserId = req.params.userId;
     if (!currentUserId || !otherUserId) return sendOk(res, req, { updated: 0 });
@@ -1074,6 +1113,11 @@ function buildApiRoutes({ prisma, log }) {
     });
 
     return sendOk(res, req, { updated: result.count || 0 });
+  }));
+
+  router.post("/chat/presence", asyncHandler(async (req, res) => {
+    await touchChatPresence(req.user?.id);
+    return sendOk(res, req, { ok: true, at: new Date() });
   }));
   // Multi-store overview: all products with per-store qty + recent entries/exits
   router.get("/inventory/overview", asyncHandler(async (req, res) => {
