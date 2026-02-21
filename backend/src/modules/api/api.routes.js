@@ -276,6 +276,50 @@ function buildApiRoutes({ prisma, log }) {
     });
   }
 
+  async function sendTransferSentChatMessage({ transferId, senderId }) {
+    if (!transferId || !senderId) return;
+
+    const transfer = await prisma.stockTransfer.findUnique({
+      where: { id: transferId },
+      include: {
+        originStore: { select: { id: true, name: true } },
+        destinationStore: { select: { id: true, name: true } },
+      },
+    });
+    if (!transfer?.createdById) return;
+    if (transfer.createdById === senderId) return;
+
+    const [sender, movements] = await Promise.all([
+      prisma.user.findUnique({ where: { id: senderId }, select: { name: true } }),
+      prisma.inventoryMovement.findMany({
+        where: { transferId, type: "TRANSFER_OUT" },
+        select: { productId: true, quantity: true },
+      }),
+    ]);
+
+    const sentItemsCount = new Set(movements.map((m) => m.productId)).size;
+    const sentUnits = movements.reduce((sum, m) => sum + Number(m.quantity || 0), 0);
+    const senderName = sender?.name || "Usuario";
+
+    const message = `Transferencia enviada para ${transfer.destinationStore?.name || "loja solicitante"}. Enviado por ${senderName}: ${sentItemsCount} item(ns), ${sentUnits} unidade(s).`;
+
+    await prisma.chatMessage.create({
+      data: {
+        senderId,
+        recipientId: transfer.createdById,
+        content: message,
+        metaType: "TRANSFER_SENT",
+        metaJson: {
+          transferId: transfer.id,
+          originStoreId: transfer.originStoreId,
+          destinationStoreId: transfer.destinationStoreId,
+          sentItemsCount,
+          sentUnits,
+        },
+      },
+    });
+  }
+
   // ─── DASHBOARD ───
   router.get("/dashboard", asyncHandler(async (req, res) => {
     const userStoreIds = await getUserStoreIds(req);
@@ -1630,6 +1674,19 @@ function buildApiRoutes({ prisma, log }) {
         items: { include: { product: { select: { id: true, name: true } } } },
       },
     });
+
+    try {
+      await sendTransferSentChatMessage({
+        transferId: transfer.id,
+        senderId: req.user?.id,
+      });
+    } catch (err) {
+      log?.warn?.("Falha ao notificar chat de transferencia enviada", {
+        transferId: transfer.id,
+        error: err?.message || String(err),
+      });
+    }
+
     return sendOk(res, req, updated);
   }));
 

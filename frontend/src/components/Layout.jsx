@@ -35,6 +35,7 @@ export default function Layout() {
   const roleRestrict = ROLE_NAV_RESTRICT[user?.role];
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (roleRestrict) return roleRestrict.includes(item.to);
+    if (item.to === "/caixa" && user?.role === "FARMACEUTICO") return true;
     if (item.restrictedOnly) return false; // only shown for restricted roles
     return !item.perm || hasPermission(item.perm);
   });

@@ -44,7 +44,7 @@ const ROLES = [
   { name: "ADMIN", perms: PERMISSIONS.map((p) => p.key) },
   { name: "CAIXA", perms: ["cash.open", "cash.close", "cash.refund", "sales.cancel", "reports.view"] },
   { name: "VENDEDOR", perms: ["sales.create", "sales.cancel", "reports.view"] },
-  { name: "FARMACEUTICO", perms: ["products.manage", "inventory.receive", "inventory.adjust", "sales.create", "reports.view"] },
+  { name: "FARMACEUTICO", perms: ["products.manage", "inventory.receive", "inventory.adjust", "sales.create", "cash.open", "cash.close", "cash.refund", "reports.view"] },
 ];
 
 export default function Config() {
