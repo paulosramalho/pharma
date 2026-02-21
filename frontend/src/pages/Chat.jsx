@@ -19,7 +19,6 @@ function sameDay(a, b) {
 
 export default function Chat() {
   const { addToast } = useToast();
-  const [loading, setLoading] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [query, setQuery] = useState("");
@@ -65,15 +64,12 @@ export default function Chat() {
 
   const loadMessages = async (userId) => {
     if (!userId) return;
-    setLoading(true);
     try {
       const res = await apiFetch(`/api/chat/messages/${userId}?limit=120`);
       setActiveUser(res.data?.user || null);
       setMessages(res.data?.messages || []);
     } catch (err) {
       addToast(err.message, "error");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -206,9 +202,8 @@ export default function Chat() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 bg-gray-50">
-          {loading && <p className="text-sm text-gray-400">Carregando...</p>}
-          {!loading && !activeUserId && <p className="text-sm text-gray-400">Escolha uma conversa para iniciar.</p>}
-          {!loading && activeUserId && groupedMessages.length === 0 && <p className="text-sm text-gray-400">Sem mensagens ainda.</p>}
+          {!activeUserId && <p className="text-sm text-gray-400">Escolha uma conversa para iniciar.</p>}
+          {activeUserId && groupedMessages.length === 0 && <p className="text-sm text-gray-400">Sem mensagens ainda.</p>}
 
           {groupedMessages.map((group, idx) => (
             <div key={`day-${idx}`} className="mb-4">

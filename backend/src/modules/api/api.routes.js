@@ -125,7 +125,78 @@ function buildApiRoutes({ prisma, log }) {
         customer: true,
         items: { include: { product: true } },
         payments: true,
+        controlledDispensation: true,
       },
+    });
+  }
+
+  function normalizeDocument(value) {
+    return String(value || "").replace(/\D/g, "");
+  }
+
+  function validateControlledDispensationInput(payload) {
+    const data = {
+      patientName: String(payload?.patientName || "").trim(),
+      patientDocument: normalizeDocument(payload?.patientDocument || ""),
+      buyerName: String(payload?.buyerName || "").trim(),
+      buyerDocument: normalizeDocument(payload?.buyerDocument || ""),
+      prescriberName: String(payload?.prescriberName || "").trim(),
+      prescriberCrm: String(payload?.prescriberCrm || "").trim().toUpperCase(),
+      prescriberUf: String(payload?.prescriberUf || "").trim().toUpperCase().slice(0, 2),
+      prescriptionNumber: String(payload?.prescriptionNumber || "").trim(),
+      prescriptionDate: safeDate(payload?.prescriptionDate),
+      signatureDataUrl: String(payload?.signatureDataUrl || "").trim(),
+      notes: payload?.notes ? String(payload.notes).trim() : null,
+    };
+
+    if (!data.patientName) throw Object.assign(new Error("Paciente obrigatorio"), { statusCode: 400 });
+    if (!data.buyerName) throw Object.assign(new Error("Comprador obrigatorio"), { statusCode: 400 });
+    if (data.buyerDocument.length !== 11) throw Object.assign(new Error("CPF do comprador invalido"), { statusCode: 400 });
+    if (!data.prescriberName) throw Object.assign(new Error("Prescritor obrigatorio"), { statusCode: 400 });
+    if (!data.prescriberCrm) throw Object.assign(new Error("CRM obrigatorio"), { statusCode: 400 });
+    if (data.prescriberUf.length !== 2) throw Object.assign(new Error("UF do CRM obrigatoria"), { statusCode: 400 });
+    if (!data.prescriptionNumber) throw Object.assign(new Error("Numero da receita obrigatorio"), { statusCode: 400 });
+    if (!data.prescriptionDate || Number.isNaN(data.prescriptionDate.getTime())) {
+      throw Object.assign(new Error("Data da receita obrigatoria"), { statusCode: 400 });
+    }
+    if (!data.signatureDataUrl.startsWith("data:image/") || data.signatureDataUrl.length < 100) {
+      throw Object.assign(new Error("Assinatura do cliente obrigatoria"), { statusCode: 400 });
+    }
+
+    if (!data.patientDocument) data.patientDocument = null;
+    return data;
+  }
+
+  async function assertControlledDispensationIfRequired(saleId) {
+    const sale = await prisma.sale.findUnique({
+      where: { id: saleId },
+      include: {
+        items: { include: { product: { select: { controlled: true } } } },
+        controlledDispensation: true,
+      },
+    });
+    if (!sale) throw Object.assign(new Error("Venda nao encontrada"), { statusCode: 404 });
+
+    const hasControlled = (sale.items || []).some((it) => Boolean(it.product?.controlled));
+    if (!hasControlled) return;
+
+    const disp = sale.controlledDispensation;
+    if (!disp) {
+      throw Object.assign(new Error("Venda com controlado exige dados da receita e assinatura"), { statusCode: 400 });
+    }
+
+    validateControlledDispensationInput({
+      patientName: disp.patientName,
+      patientDocument: disp.patientDocument,
+      buyerName: disp.buyerName,
+      buyerDocument: disp.buyerDocument,
+      prescriberName: disp.prescriberName,
+      prescriberCrm: disp.prescriberCrm,
+      prescriberUf: disp.prescriberUf,
+      prescriptionNumber: disp.prescriptionNumber,
+      prescriptionDate: disp.prescriptionDate,
+      signatureDataUrl: disp.signatureDataUrl,
+      notes: disp.notes,
     });
   }
 
@@ -2114,6 +2185,39 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, sale);
   }));
 
+  router.put("/sales/:id/controlled-dispensation", asyncHandler(async (req, res) => {
+    const sale = await prisma.sale.findUnique({
+      where: { id: req.params.id },
+      include: { items: { include: { product: { select: { controlled: true } } } } },
+    });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (sale.status !== "DRAFT" && sale.status !== "CONFIRMED") {
+      return res.status(400).json({ error: { code: 400, message: "Nao e possivel editar dados neste status" } });
+    }
+
+    const hasControlled = (sale.items || []).some((it) => Boolean(it.product?.controlled));
+    if (!hasControlled) {
+      return res.status(400).json({ error: { code: 400, message: "Venda sem item controlado" } });
+    }
+
+    const data = validateControlledDispensationInput(req.body || {});
+    await prisma.saleControlledDispensation.upsert({
+      where: { saleId: sale.id },
+      update: {
+        ...data,
+        createdById: req.user?.id || null,
+      },
+      create: {
+        saleId: sale.id,
+        ...data,
+        createdById: req.user?.id || null,
+      },
+    });
+
+    const full = await loadFullSale(sale.id);
+    return sendOk(res, req, full);
+  }));
+
   router.post("/sales", asyncHandler(async (req, res) => {
     const storeId = await resolveStoreId(req);
     if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId não definido" } });
@@ -2275,6 +2379,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/sales/:id/confirm", asyncHandler(async (req, res) => {
+    await assertControlledDispensationIfRequired(req.params.id);
     await prisma.sale.update({
       where: { id: req.params.id },
       data: { status: "CONFIRMED" },

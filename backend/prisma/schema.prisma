@@ -383,10 +383,36 @@ model Sale {
   payments  Payment[]
   movements InventoryMovement[]
   delivery  Delivery?
+  controlledDispensation SaleControlledDispensation?
 
   @@unique([storeId, number])
   @@index([storeId, createdAt])
   @@index([status])
+}
+
+model SaleControlledDispensation {
+  id     String @id @default(uuid())
+  sale   Sale   @relation(fields: [saleId], references: [id])
+  saleId String @unique
+
+  patientName      String
+  patientDocument  String?
+  buyerName        String
+  buyerDocument    String
+  prescriberName   String
+  prescriberCrm    String
+  prescriberUf     String
+  prescriptionNumber String
+  prescriptionDate DateTime
+  signatureDataUrl String
+  notes            String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([createdById])
+  @@index([prescriberCrm])
 }
 
 model SaleItem {
