@@ -142,7 +142,7 @@ export default function Layout() {
               <item.icon size={18} />
               <span>{item.label}</span>
               {item.to === "/chat" && chatUnreadCount > 0 && (
-                <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700">
+                <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 animate-pulse">
                   Nova
                 </span>
               )}
