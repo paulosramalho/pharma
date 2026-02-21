@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../lib/api";
+import { apiFetch, getStoreId, getToken } from "../lib/api";
 import { money, formatDate, formatDateTime, cpfMask } from "../lib/format";
 import { useToast } from "../contexts/ToastContext";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
@@ -9,6 +9,7 @@ import { PageSpinner } from "../components/ui/Spinner";
 import {
   BarChart3, DollarSign, ShoppingCart, Wallet, CreditCard,
   Calendar, Filter, TrendingUp, ArrowDownCircle, ArrowUpCircle,
+  Printer,
 } from "lucide-react";
 
 const TABS = [
@@ -52,8 +53,53 @@ export default function Relatorios() {
   const [requesterId, setRequesterId] = useState("");
   const [senderId, setSenderId] = useState("");
   const [itemFilter, setItemFilter] = useState("");
+  const [printing, setPrinting] = useState(false);
 
   const inputClass = "px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
+  const handlePrint = async () => {
+    setPrinting(true);
+    try {
+      const params = new URLSearchParams({ type: tab, from, to });
+      if (tab === "transferencias") {
+        if (originStoreId) params.set("originStoreId", originStoreId);
+        if (destinationStoreId) params.set("destinationStoreId", destinationStoreId);
+        if (requesterId) params.set("requesterId", requesterId);
+        if (senderId) params.set("senderId", senderId);
+        if (itemFilter) params.set("item", itemFilter);
+      }
+
+      const base = import.meta.env.VITE_API_URL || "";
+      const token = getToken();
+      const storeId = getStoreId();
+      const headers = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      if (storeId) headers["X-Store-Id"] = storeId;
+
+      const res = await fetch(`${base}/api/reports/export-pdf?${params.toString()}`, { headers });
+      if (!res.ok) {
+        let msg = `Erro ao gerar PDF (${res.status})`;
+        try {
+          const j = await res.json();
+          msg = j?.error?.message || msg;
+        } catch {}
+        throw new Error(msg);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `relatorio-${tab}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      addToast(err.message, "error");
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   const loadSalesReport = (pg = 1) => {
     setLoading(true);
@@ -136,6 +182,9 @@ export default function Relatorios() {
           </div>
           <Button onClick={handleFilter} disabled={loading}>
             <Filter size={14} /> Filtrar
+          </Button>
+          <Button variant="secondary" onClick={handlePrint} disabled={loading} loading={printing}>
+            <Printer size={14} /> Imprimir
           </Button>
         </CardBody>
       </Card>

@@ -1,7 +1,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
-const { makeReportSamplePdfBuffer } = require("../reports/reportPdfTemplate");
+const { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer } = require("../reports/reportPdfTemplate");
 
 /** Converts "YYYY-MM-DD" to noon UTC to avoid timezone day-shift */
 function safeDate(v) {
@@ -3022,6 +3022,180 @@ function buildApiRoutes({ prisma, log }) {
     const safeName = reportName.replace(/[^a-zA-Z0-9_-]+/g, "_");
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename=\"${safeName || "relatorio"}-amostra.pdf\"`);
+    return res.status(200).send(pdfBuf);
+  }));
+
+  router.get("/reports/export-pdf", asyncHandler(async (req, res) => {
+    const type = String(req.query.type || "vendas");
+    const from = req.query.from ? safeDate(req.query.from) : null;
+    const to = req.query.to ? safeDate(req.query.to) : null;
+    if (to) to.setHours(23, 59, 59, 999);
+
+    const emittedBy = req.user?.name || "Usuario";
+    const money = (v) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+    const dateTime = (v) => {
+      const d = v ? new Date(v) : null;
+      if (!d || Number.isNaN(d.getTime())) return "-";
+      return d.toLocaleString("pt-BR");
+    };
+
+    let reportName = "Relatorio";
+    let sections = [];
+
+    if (type === "caixa") {
+      reportName = "Relatorio de Fechamentos de Caixa";
+      const storeId = await resolveStoreId(req);
+      const where = { closedAt: { not: null } };
+      if (storeId) where.storeId = storeId;
+      if (from || to) {
+        where.closedAt = {};
+        if (from) where.closedAt.gte = from;
+        if (to) where.closedAt.lte = to;
+      }
+
+      const sessions = await prisma.cashSession.findMany({
+        where,
+        include: {
+          openedBy: { select: { name: true } },
+          closedBy: { select: { name: true } },
+          movements: true,
+          store: { select: { name: true } },
+        },
+        orderBy: { closedAt: "desc" },
+        take: 500,
+      });
+
+      const lines = sessions.map((s) => {
+        const movs = s.movements || [];
+        const recebido = movs.filter((m) => m.type === "RECEBIMENTO").reduce((sum, m) => sum + Number(m.amount), 0);
+        const sangria = movs.filter((m) => m.type === "SANGRIA").reduce((sum, m) => sum + Number(m.amount), 0);
+        const suprimento = movs.filter((m) => m.type === "SUPRIMENTO").reduce((sum, m) => sum + Number(m.amount), 0);
+        const expected = Number(s.initialCash) + recebido + suprimento - sangria;
+        const divergence = s.finalCash ? Number((Number(s.finalCash) - expected).toFixed(2)) : 0;
+        return `${s.store?.name || "-"} | Abertura: ${dateTime(s.openedAt)} | Fechamento: ${dateTime(s.closedAt)} | Esperado: ${money(expected)} | Final: ${money(s.finalCash)} | Divergencia: ${money(divergence)}`;
+      });
+
+      sections = [
+        { title: "Filtros", lines: [`Periodo: ${from ? dateTime(from) : "-"} ate ${to ? dateTime(to) : "-"}`] },
+        { title: `Registros (${sessions.length})`, lines: lines.length > 0 ? lines : ["Nenhum fechamento encontrado."] },
+      ];
+    } else if (type === "transferencias") {
+      reportName = "Relatorio de Transferencias";
+      const allowedStoreIds = await getUserStoreIds(req);
+      const andWhere = [
+        {
+          OR: [
+            { originStoreId: { in: allowedStoreIds } },
+            { destinationStoreId: { in: allowedStoreIds } },
+          ],
+        },
+      ];
+
+      const originStoreId = req.query.originStoreId ? String(req.query.originStoreId) : "";
+      const destinationStoreId = req.query.destinationStoreId ? String(req.query.destinationStoreId) : "";
+      const requesterId = req.query.requesterId ? String(req.query.requesterId) : "";
+      const senderId = req.query.senderId ? String(req.query.senderId) : "";
+      const item = req.query.item ? String(req.query.item) : "";
+      if (originStoreId) andWhere.push({ originStoreId });
+      if (destinationStoreId) andWhere.push({ destinationStoreId });
+      if (requesterId) andWhere.push({ createdById: requesterId });
+      if (senderId) {
+        andWhere.push({
+          movements: {
+            some: {
+              type: "TRANSFER_OUT",
+              createdById: senderId,
+            },
+          },
+        });
+      }
+      if (from || to) {
+        const createdAt = {};
+        if (from) createdAt.gte = from;
+        if (to) createdAt.lte = to;
+        andWhere.push({ createdAt });
+      }
+      if (item) {
+        andWhere.push({
+          items: {
+            some: {
+              product: {
+                OR: [
+                  { name: { contains: item, mode: "insensitive" } },
+                  { ean: { contains: item } },
+                ],
+              },
+            },
+          },
+        });
+      }
+
+      const transfers = await prisma.stockTransfer.findMany({
+        where: { AND: andWhere },
+        include: {
+          originStore: { select: { name: true } },
+          destinationStore: { select: { name: true } },
+          createdBy: { select: { name: true } },
+          movements: { where: { type: "TRANSFER_OUT" }, select: { quantity: true } },
+          items: { select: { quantity: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      });
+
+      const lines = transfers.map((t) => {
+        const requested = (t.items || []).reduce((sum, i) => sum + Number(i.quantity || 0), 0);
+        const sent = (t.movements || []).reduce((sum, m) => sum + Number(m.quantity || 0), 0);
+        return `${dateTime(t.createdAt)} | ${t.destinationStore?.name || "-"} -> ${t.originStore?.name || "-"} | Solicitante: ${t.createdBy?.name || "-"} | Solicitado: ${requested} | Enviado: ${sent} | Status: ${t.status}`;
+      });
+
+      sections = [
+        { title: "Filtros", lines: [`Periodo: ${from ? dateTime(from) : "-"} ate ${to ? dateTime(to) : "-"}`] },
+        { title: `Registros (${transfers.length})`, lines: lines.length > 0 ? lines : ["Nenhuma transferencia encontrada."] },
+      ];
+    } else {
+      reportName = "Relatorio de Vendas";
+      const storeId = await resolveStoreId(req);
+      const where = { status: "PAID" };
+      if (storeId) where.storeId = storeId;
+      if (from || to) {
+        where.createdAt = {};
+        if (from) where.createdAt.gte = from;
+        if (to) where.createdAt.lte = to;
+      }
+
+      const sales = await prisma.sale.findMany({
+        where,
+        include: {
+          customer: { select: { name: true } },
+          payments: { select: { method: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      });
+
+      const totalRevenue = sales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+      const lines = sales.map((s) =>
+        `#${s.number} | ${dateTime(s.createdAt)} | Cliente: ${s.customer?.name || "-"} | Total: ${money(s.total)} | Pagto: ${s.payments?.[0]?.method || "-"}`,
+      );
+
+      sections = [
+        { title: "Resumo", lines: [`Total de vendas: ${sales.length}`, `Receita total: ${money(totalRevenue)}`] },
+        { title: "Registros", lines: lines.length > 0 ? lines : ["Nenhuma venda encontrada."] },
+      ];
+    }
+
+    const pdfBuf = await makeReportLinesPdfBuffer({
+      reportName,
+      emittedBy,
+      sections,
+      systemName: "Pharma",
+      emittedAt: new Date(),
+    });
+
+    const safeName = reportName.replace(/[^a-zA-Z0-9_-]+/g, "_");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=\"${safeName || "relatorio"}.pdf\"`);
     return res.status(200).send(pdfBuf);
   }));
 

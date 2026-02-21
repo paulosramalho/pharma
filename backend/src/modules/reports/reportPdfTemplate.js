@@ -119,6 +119,40 @@ function buildSampleBody(doc) {
   }
 }
 
+function buildLinesBody(doc, { sections = [] }) {
+  const left = PAGE.marginLeft;
+  const right = doc.page.width - PAGE.marginRight;
+  const contentTop = HEADER.separatorY + 14;
+  const contentBottom = doc.page.height - FOOTER.separatorYFromBottom - 10;
+  const usableWidth = right - left;
+
+  doc.y = contentTop;
+  for (const section of sections) {
+    const title = String(section?.title || "").trim();
+    if (title) {
+      if (doc.y > contentBottom - 20) {
+        doc.addPage();
+        doc.y = contentTop;
+      }
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827").text(title, left, doc.y, { width: usableWidth });
+      doc.moveDown(0.4);
+    }
+
+    const lines = Array.isArray(section?.lines) ? section.lines : [];
+    for (const raw of lines) {
+      const line = String(raw || "").trim();
+      if (!line) continue;
+      if (doc.y > contentBottom - 14) {
+        doc.addPage();
+        doc.y = contentTop;
+      }
+      doc.font("Helvetica").fontSize(9.5).fillColor("#111827").text(line, left, doc.y, { width: usableWidth });
+    }
+
+    doc.moveDown(0.6);
+  }
+}
+
 function makeReportSamplePdfBuffer({ reportName, emittedBy, systemName = "Pharma", emittedAt = new Date() }) {
   const pdf = new PDFDocument({
     size: PAGE.size,
@@ -157,4 +191,42 @@ function makeReportSamplePdfBuffer({ reportName, emittedBy, systemName = "Pharma
   });
 }
 
-module.exports = { makeReportSamplePdfBuffer };
+function makeReportLinesPdfBuffer({ reportName, emittedBy, sections = [], systemName = "Pharma", emittedAt = new Date() }) {
+  const pdf = new PDFDocument({
+    size: PAGE.size,
+    margins: {
+      top: PAGE.marginTop,
+      right: PAGE.marginRight,
+      bottom: PAGE.marginBottom,
+      left: PAGE.marginLeft,
+    },
+    bufferPages: true,
+  });
+
+  const chunks = [];
+  pdf.on("data", (c) => chunks.push(c));
+
+  return new Promise((resolve, reject) => {
+    pdf.on("end", () => resolve(Buffer.concat(chunks)));
+    pdf.on("error", reject);
+
+    buildLinesBody(pdf, { sections });
+
+    const range = pdf.bufferedPageRange();
+    const totalPages = range.count;
+    for (let i = 0; i < totalPages; i += 1) {
+      pdf.switchToPage(i);
+      drawHeader(pdf, { reportName, systemName });
+      drawFooter(pdf, {
+        emittedAt,
+        emittedBy,
+        pageNumber: i + 1,
+        totalPages,
+      });
+    }
+
+    pdf.end();
+  });
+}
+
+module.exports = { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer };
