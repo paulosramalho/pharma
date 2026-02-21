@@ -214,6 +214,9 @@ model ChatMessage {
   recipientId String
 
   content   String
+  replyToId String?
+  replyTo   ChatMessage?  @relation("ChatMessageReply", fields: [replyToId], references: [id])
+  replies   ChatMessage[] @relation("ChatMessageReply")
   metaType  String?
   metaJson  Json?
   createdAt DateTime @default(now())
@@ -222,6 +225,7 @@ model ChatMessage {
   @@index([senderId, createdAt])
   @@index([recipientId, createdAt])
   @@index([recipientId, readAt])
+  @@index([replyToId])
 }
 
 model AuditLog {
@@ -383,6 +387,7 @@ model Sale {
 
   items     SaleItem[]
   payments  Payment[]
+  posTransactions PosTransaction[]
   movements InventoryMovement[]
   delivery  Delivery?
   controlledDispensation SaleControlledDispensation?
@@ -451,9 +456,36 @@ model Payment {
   method    PaymentMethod
   amount    Decimal       @db.Decimal(14, 2)
   createdAt DateTime      @default(now())
+  posTransaction PosTransaction?
 
   @@index([saleId])
   @@index([createdAt])
+}
+
+model PosTransaction {
+  id String @id @default(uuid())
+
+  sale   Sale   @relation(fields: [saleId], references: [id])
+  saleId String
+
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+  paymentId String?  @unique
+
+  provider          String
+  method            PaymentMethod
+  amount            Decimal  @db.Decimal(14, 2)
+  status            String   // PENDING, APPROVED, DECLINED, CANCELED, ERROR
+  transactionId     String?
+  nsu               String?
+  authorizationCode String?
+  cardBrand         String?
+  rawPayload        Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([saleId, createdAt])
+  @@index([status, createdAt])
+  @@index([provider, createdAt])
 }
 
 // ------------------------------

@@ -153,6 +153,7 @@ function buildApiRoutes({ prisma, log }) {
         customer: true,
         items: { include: { product: true } },
         payments: true,
+        posTransactions: { orderBy: { createdAt: "desc" } },
         controlledDispensation: true,
       },
     });
@@ -1023,6 +1024,7 @@ function buildApiRoutes({ prisma, log }) {
         lastMessage: {
           id: msg.id,
           content: msg.content,
+          replyToId: msg.replyToId || null,
           createdAt: msg.createdAt,
           senderId: msg.senderId,
           recipientId: msg.recipientId,
@@ -1077,6 +1079,14 @@ function buildApiRoutes({ prisma, log }) {
         senderId: true,
         recipientId: true,
         content: true,
+        replyToId: true,
+        replyTo: {
+          select: {
+            id: true,
+            senderId: true,
+            content: true,
+          },
+        },
         metaType: true,
         metaJson: true,
         createdAt: true,
@@ -1104,6 +1114,7 @@ function buildApiRoutes({ prisma, log }) {
     const senderId = req.user?.id;
     const recipientId = String(req.body?.recipientId || "").trim();
     const content = String(req.body?.content || "").trim();
+    const replyToMessageId = req.body?.replyToMessageId ? String(req.body.replyToMessageId).trim() : null;
     const metaType = req.body?.metaType ? String(req.body.metaType) : null;
     const metaJson = req.body?.metaJson ?? null;
 
@@ -1118,11 +1129,28 @@ function buildApiRoutes({ prisma, log }) {
     });
     if (!recipient) return res.status(404).json({ error: { code: 404, message: "Destinatario nao encontrado" } });
 
+    let replyToId = null;
+    if (replyToMessageId) {
+      const replied = await prisma.chatMessage.findUnique({
+        where: { id: replyToMessageId },
+        select: { id: true, senderId: true, recipientId: true },
+      });
+      if (!replied) return res.status(400).json({ error: { code: 400, message: "Mensagem respondida nao encontrada" } });
+      const belongsToConversation =
+        (replied.senderId === senderId && replied.recipientId === recipientId)
+        || (replied.senderId === recipientId && replied.recipientId === senderId);
+      if (!belongsToConversation) {
+        return res.status(400).json({ error: { code: 400, message: "Mensagem respondida invalida para esta conversa" } });
+      }
+      replyToId = replied.id;
+    }
+
     const message = await prisma.chatMessage.create({
       data: {
         senderId,
         recipientId,
         content,
+        replyToId,
         metaType,
         metaJson,
       },
@@ -1131,6 +1159,14 @@ function buildApiRoutes({ prisma, log }) {
         senderId: true,
         recipientId: true,
         content: true,
+        replyToId: true,
+        replyTo: {
+          select: {
+            id: true,
+            senderId: true,
+            content: true,
+          },
+        },
         metaType: true,
         metaJson: true,
         createdAt: true,
@@ -2490,7 +2526,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/sales/:id/pay", asyncHandler(async (req, res) => {
-    const { method } = req.body;
+    const { method, pos } = req.body || {};
     if (!method) return res.status(400).json({ error: { code: 400, message: "method obrigatório (DINHEIRO, PIX, CARTAO_CREDITO, CARTAO_DEBITO)" } });
 
     const sale = await prisma.sale.findUnique({
@@ -2559,7 +2595,26 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     // Create payment
-    await prisma.payment.create({ data: { saleId: sale.id, method, amount: sale.total } });
+    const payment = await prisma.payment.create({ data: { saleId: sale.id, method, amount: sale.total } });
+
+    // Optional POS metadata for card/PIX payments
+    if (pos && (method === "CARTAO_CREDITO" || method === "CARTAO_DEBITO" || method === "PIX")) {
+      await prisma.posTransaction.create({
+        data: {
+          saleId: sale.id,
+          paymentId: payment.id,
+          provider: String(pos.provider || "MANUAL").trim().toUpperCase(),
+          method,
+          amount: sale.total,
+          status: String(pos.status || "APPROVED").trim().toUpperCase(),
+          transactionId: pos.transactionId ? String(pos.transactionId) : null,
+          nsu: pos.nsu ? String(pos.nsu) : null,
+          authorizationCode: pos.authorizationCode ? String(pos.authorizationCode) : null,
+          cardBrand: pos.cardBrand ? String(pos.cardBrand) : null,
+          rawPayload: pos.rawPayload ?? null,
+        },
+      });
+    }
 
     // Create cash movement
     await prisma.cashMovement.create({
@@ -2775,6 +2830,110 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   // ─── CASH OPERATOR AUTH ───
+  // --- POS TRANSACTIONS (base integration) ---
+  router.post("/pos/transactions", asyncHandler(async (req, res) => {
+    const {
+      saleId,
+      method,
+      amount,
+      provider,
+      status = "PENDING",
+      transactionId,
+      nsu,
+      authorizationCode,
+      cardBrand,
+      rawPayload,
+      paymentId,
+    } = req.body || {};
+
+    if (!saleId || !method || !amount || !provider) {
+      return res.status(400).json({ error: { code: 400, message: "saleId, method, amount e provider obrigatorios" } });
+    }
+
+    const sale = await prisma.sale.findUnique({ where: { id: String(saleId) }, select: { id: true, storeId: true } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+
+    const currentStoreId = await resolveStoreId(req);
+    if (!isAdmin(req) && currentStoreId && sale.storeId !== currentStoreId) {
+      return res.status(403).json({ error: { code: 403, message: "Sem acesso a venda informada" } });
+    }
+
+    const trx = await prisma.posTransaction.create({
+      data: {
+        saleId: sale.id,
+        paymentId: paymentId ? String(paymentId) : null,
+        provider: String(provider).trim().toUpperCase(),
+        method,
+        amount: Number(amount),
+        status: String(status || "PENDING").trim().toUpperCase(),
+        transactionId: transactionId ? String(transactionId) : null,
+        nsu: nsu ? String(nsu) : null,
+        authorizationCode: authorizationCode ? String(authorizationCode) : null,
+        cardBrand: cardBrand ? String(cardBrand) : null,
+        rawPayload: rawPayload ?? null,
+      },
+    });
+
+    return sendOk(res, req, trx, 201);
+  }));
+
+  router.put("/pos/transactions/:id", asyncHandler(async (req, res) => {
+    const {
+      status,
+      transactionId,
+      nsu,
+      authorizationCode,
+      cardBrand,
+      rawPayload,
+      paymentId,
+    } = req.body || {};
+
+    const existing = await prisma.posTransaction.findUnique({
+      where: { id: req.params.id },
+      include: { sale: { select: { storeId: true } } },
+    });
+    if (!existing) return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+
+    const currentStoreId = await resolveStoreId(req);
+    if (!isAdmin(req) && currentStoreId && existing.sale?.storeId !== currentStoreId) {
+      return res.status(403).json({ error: { code: 403, message: "Sem acesso a transacao POS" } });
+    }
+
+    const data = {};
+    if (status !== undefined) data.status = String(status || "").trim().toUpperCase();
+    if (transactionId !== undefined) data.transactionId = transactionId ? String(transactionId) : null;
+    if (nsu !== undefined) data.nsu = nsu ? String(nsu) : null;
+    if (authorizationCode !== undefined) data.authorizationCode = authorizationCode ? String(authorizationCode) : null;
+    if (cardBrand !== undefined) data.cardBrand = cardBrand ? String(cardBrand) : null;
+    if (rawPayload !== undefined) data.rawPayload = rawPayload;
+    if (paymentId !== undefined) data.paymentId = paymentId ? String(paymentId) : null;
+
+    const trx = await prisma.posTransaction.update({
+      where: { id: existing.id },
+      data,
+    });
+
+    return sendOk(res, req, trx);
+  }));
+
+  router.get("/pos/transactions/:id", asyncHandler(async (req, res) => {
+    const trx = await prisma.posTransaction.findUnique({
+      where: { id: req.params.id },
+      include: {
+        sale: { select: { id: true, number: true, storeId: true } },
+        payment: { select: { id: true, method: true, amount: true, createdAt: true } },
+      },
+    });
+    if (!trx) return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+
+    const currentStoreId = await resolveStoreId(req);
+    if (!isAdmin(req) && currentStoreId && trx.sale?.storeId !== currentStoreId) {
+      return res.status(403).json({ error: { code: 403, message: "Sem acesso a transacao POS" } });
+    }
+
+    return sendOk(res, req, trx);
+  }));
+
   router.post("/cash/operator-auth", asyncHandler(async (req, res) => {
     const bcrypt = require("bcryptjs");
     const { matricula, password } = req.body;

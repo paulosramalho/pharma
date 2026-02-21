@@ -28,6 +28,7 @@ export default function Chat() {
   const [activeUser, setActiveUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState("");
+  const [replyTo, setReplyTo] = useState(null);
   const endRef = useRef(null);
 
   const conversationMap = useMemo(() => {
@@ -89,6 +90,7 @@ export default function Chat() {
 
   useEffect(() => {
     if (!activeUserId) return;
+    setReplyTo(null);
     loadMessages(activeUserId);
   }, [activeUserId]);
 
@@ -115,9 +117,11 @@ export default function Chat() {
         body: JSON.stringify({
           recipientId: activeUserId,
           content: text,
+          replyToMessageId: replyTo?.id || null,
         }),
       });
       setDraft("");
+      setReplyTo(null);
       await loadMessages(activeUserId);
       await loadConversations();
     } catch (err) {
@@ -233,8 +237,22 @@ export default function Chat() {
                   return (
                     <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[85%] rounded-xl px-3 py-2 ${mine ? "bg-primary-600 text-white" : "bg-white border border-gray-200 text-gray-900"}`}>
+                        {m.replyTo && (
+                          <div className={`mb-1.5 px-2 py-1 rounded border-l-2 ${mine ? "bg-primary-500/40 border-primary-100 text-primary-100" : "bg-gray-50 border-gray-300 text-gray-500"}`}>
+                            <p className="text-[10px] font-semibold">{m.replyTo.senderId === m.senderId ? "Voce respondeu" : "Respondendo"}</p>
+                            <p className="text-[11px] whitespace-pre-wrap break-words">{String(m.replyTo.content || "").slice(0, 140)}</p>
+                          </div>
+                        )}
                         <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
-                        <p className={`text-[10px] mt-1 ${mine ? "text-primary-100" : "text-gray-400"}`}>{formatDateTime(m.createdAt)}</p>
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <p className={`text-[10px] ${mine ? "text-primary-100" : "text-gray-400"}`}>{formatDateTime(m.createdAt)}</p>
+                          <button
+                            onClick={() => setReplyTo({ id: m.id, senderId: m.senderId, content: m.content })}
+                            className={`text-[10px] underline ${mine ? "text-primary-100 hover:text-white" : "text-gray-500 hover:text-gray-700"}`}
+                          >
+                            Responder
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -245,23 +263,34 @@ export default function Chat() {
           <div ref={endRef} />
         </div>
 
-        <div className="px-4 py-3 border-t border-gray-100 flex gap-2">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-              }
-            }}
-            disabled={!activeUserId}
-            placeholder={activeUserId ? "Digite sua mensagem..." : "Selecione um usuario para conversar"}
-            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-100"
-          />
-          <Button onClick={sendMessage} loading={sending} disabled={!activeUserId || !String(draft || "").trim()}>
-            Enviar
-          </Button>
+        <div className="px-4 py-3 border-t border-gray-100">
+          {replyTo && (
+            <div className="mb-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold text-gray-600">Respondendo mensagem</p>
+                <p className="text-xs text-gray-500 whitespace-pre-wrap break-words">{String(replyTo.content || "").slice(0, 180)}</p>
+              </div>
+              <button onClick={() => setReplyTo(null)} className="text-xs text-gray-500 hover:text-red-600">Cancelar</button>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage();
+                }
+              }}
+              disabled={!activeUserId}
+              placeholder={activeUserId ? "Digite sua mensagem..." : "Selecione um usuario para conversar"}
+              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-100"
+            />
+            <Button onClick={sendMessage} loading={sending} disabled={!activeUserId || !String(draft || "").trim()}>
+              Enviar
+            </Button>
+          </div>
         </div>
       </Card>
     </div>
