@@ -35,8 +35,8 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-primary-50 px-4">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-4 text-left">
+        <div className="mb-8 flex justify-center">
+          <div className="flex items-center gap-4 w-fit">
             <video
               src="/brand/LogoPharma.MP4"
               poster="/brand/LogoPharma.PNG"
@@ -46,7 +46,7 @@ export default function Login() {
               playsInline
               className="w-16 h-16 object-contain bg-transparent mix-blend-multiply"
             />
-            <div>
+            <div className="text-left">
               <h1 className="text-2xl font-bold text-gray-900">Pharma</h1>
               <p className="text-sm text-gray-500 mt-1">Sistema de Gestao Farmaceutica</p>
             </div>
