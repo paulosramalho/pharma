@@ -3295,18 +3295,68 @@ function buildApiRoutes({ prisma, log }) {
           originStore: { select: { name: true } },
           destinationStore: { select: { name: true } },
           createdBy: { select: { name: true } },
-          movements: { where: { type: "TRANSFER_OUT" }, select: { quantity: true } },
-          items: { select: { quantity: true } },
+          movements: {
+            where: { type: "TRANSFER_OUT" },
+            select: {
+              quantity: true,
+              productId: true,
+              createdBy: { select: { name: true } },
+            },
+          },
+          items: {
+            select: {
+              quantity: true,
+              productId: true,
+              product: { select: { name: true } },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         take: 500,
       });
 
-      const lines = transfers.map((t) => {
+      const lines = [];
+      for (const t of transfers) {
         const requested = (t.items || []).reduce((sum, i) => sum + Number(i.quantity || 0), 0);
         const sent = (t.movements || []).reduce((sum, m) => sum + Number(m.quantity || 0), 0);
-        return `${dateTime(t.createdAt)} | ${t.destinationStore?.name || "-"} -> ${t.originStore?.name || "-"} | Solicitante: ${t.createdBy?.name || "-"} | Solicitado: ${requested} | Enviado: ${sent} | Status: ${t.status}`;
-      });
+        const senderName = (t.movements || []).find((m) => m.createdBy?.name)?.createdBy?.name || "-";
+
+        lines.push("Data | Origem | Destino | Solicitante | Remetente | Qtd Pedida | Qtd Enviada | Status");
+        lines.push(`${dateTime(t.createdAt)} | ${t.originStore?.name || "-"} | ${t.destinationStore?.name || "-"} | ${t.createdBy?.name || "-"} | ${senderName} | ${requested} | ${sent} | ${t.status}`);
+        lines.push("Item | Qtd Pedida | Qtd Enviada");
+
+        const byProduct = {};
+        for (const it of t.items || []) {
+          if (!byProduct[it.productId]) {
+            byProduct[it.productId] = {
+              item: it.product?.name || "Item",
+              requestedQty: 0,
+              sentQty: 0,
+            };
+          }
+          byProduct[it.productId].requestedQty += Number(it.quantity || 0);
+        }
+        for (const mv of t.movements || []) {
+          if (!byProduct[mv.productId]) {
+            byProduct[mv.productId] = {
+              item: "Item",
+              requestedQty: 0,
+              sentQty: 0,
+            };
+          }
+          byProduct[mv.productId].sentQty += Number(mv.quantity || 0);
+        }
+
+        const rows = Object.values(byProduct);
+        if (rows.length === 0) {
+          lines.push("- | 0 | 0");
+        } else {
+          for (const row of rows) {
+            lines.push(`${row.item} | ${row.requestedQty} | ${row.sentQty}`);
+          }
+        }
+        lines.push(" ");
+      }
 
       sections = [
         { title: "Filtros", lines: [`Periodo: ${from ? dateTime(from) : "-"} ate ${to ? dateTime(to) : "-"}`] },
