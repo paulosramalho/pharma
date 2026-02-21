@@ -61,7 +61,15 @@ export default function Layout() {
         {/* Logo */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <img src="/logo-pharma.svg" alt="Pharma" className="w-8 h-8 rounded-lg" />
+            <video
+              src="/brand/LogoPharma.MP4"
+              poster="/brand/LogoPharma.PNG"
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="w-8 h-8 rounded-lg object-cover"
+            />
             <span className="text-lg font-bold text-gray-900">Pharma</span>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1 text-gray-400 hover:text-gray-600">
@@ -133,7 +141,15 @@ export default function Layout() {
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2">
-            <img src="/logo-pharma.svg" alt="Pharma" className="w-6 h-6 rounded" />
+            <video
+              src="/brand/LogoPharma.MP4"
+              poster="/brand/LogoPharma.PNG"
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="w-6 h-6 rounded object-cover"
+            />
             <span className="font-bold text-gray-900">Pharma</span>
           </div>
         </header>

@@ -1,4 +1,6 @@
 const PDFDocument = require("pdfkit");
+const fs = require("fs");
+const path = require("path");
 
 const PAGE = {
   size: "A4",
@@ -9,8 +11,8 @@ const PAGE = {
 };
 
 const HEADER = {
-  logoY: 44,
-  logoRadius: 14,
+  logoY: 30,
+  logoHeight: 30,
   systemNameY: 68,
   reportNameY: 96,
   separatorY: 116,
@@ -30,16 +32,29 @@ function formatDateTimeBR(d) {
   return { date, time };
 }
 
+function getReportLogoPath() {
+  const preferred = process.env.REPORT_LOGO_PNG_PATH || "C:\\Pharma\\Dep\u00F3sito\\LogoPharma.PNG";
+  if (fs.existsSync(preferred)) return preferred;
+  const fallback = path.resolve(__dirname, "../../../..", "frontend/public/brand/LogoPharma.PNG");
+  if (fs.existsSync(fallback)) return fallback;
+  return null;
+}
+
 function drawHeader(doc, { reportName, systemName }) {
   const width = doc.page.width;
   const centerX = width / 2;
   const left = PAGE.marginLeft;
   const right = width - PAGE.marginRight;
 
-  doc.save();
-  doc.circle(centerX, HEADER.logoY, HEADER.logoRadius).fillColor("#0f766e").fill();
-  doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(12).text("P", centerX - 4, HEADER.logoY - 7);
-  doc.restore();
+  const logoPath = getReportLogoPath();
+  if (logoPath) {
+    const logoWidth = HEADER.logoHeight;
+    doc.image(logoPath, centerX - (logoWidth / 2), HEADER.logoY, {
+      fit: [logoWidth, HEADER.logoHeight],
+      align: "center",
+      valign: "center",
+    });
+  }
 
   doc.fillColor("#111827").font("Helvetica-Bold").fontSize(11).text(systemName, left, HEADER.systemNameY, {
     width: right - left,

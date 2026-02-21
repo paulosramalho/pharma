@@ -36,7 +36,15 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <img src="/logo-pharma.svg" alt="Pharma" className="w-16 h-16 rounded-2xl shadow-lg mx-auto mb-4" />
+          <video
+            src="/brand/LogoPharma.MP4"
+            poster="/brand/LogoPharma.PNG"
+            autoPlay
+            muted
+            loop
+            playsInline
+            className="w-16 h-16 rounded-2xl shadow-lg mx-auto mb-4 object-cover"
+          />
           <h1 className="text-2xl font-bold text-gray-900">Pharma</h1>
           <p className="text-sm text-gray-500 mt-1">Sistema de Gestao Farmaceutica</p>
         </div>
