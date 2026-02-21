@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import {
   LayoutDashboard, ShoppingCart, Wallet, Package, Pill,
-  Settings, LogOut, Menu, X, ChevronDown, Store, UserCircle, BarChart3,
+  Settings, LogOut, Menu, X, ChevronDown, Store, UserCircle, BarChart3, MessageCircle,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { to: "/caixa", label: "Caixa", icon: Wallet, perm: "cash.open" },
   { to: "/estoque", label: "Estoque", icon: Package, perm: "inventory.receive" },
   { to: "/produtos", label: "Produtos", icon: Pill, perm: "products.manage" },
+  { to: "/chat", label: "Chat", icon: MessageCircle, perm: null },
   { to: "/relatorios", label: "Relatórios", icon: BarChart3, perm: "reports.view" },
   { to: "/config", label: "Configurações", icon: Settings, perm: "users.manage" },
   { to: "/perfil", label: "Meu Perfil", icon: UserCircle, perm: null, restrictedOnly: true },
@@ -19,8 +20,8 @@ const NAV_ITEMS = [
 
 // Restricted roles see only specific items
 const ROLE_NAV_RESTRICT = {
-  CAIXA: ["/caixa", "/perfil"],
-  VENDEDOR: ["/vendas", "/perfil"],
+  CAIXA: ["/caixa", "/chat", "/perfil"],
+  VENDEDOR: ["/vendas", "/chat", "/perfil"],
 };
 
 export default function Layout() {

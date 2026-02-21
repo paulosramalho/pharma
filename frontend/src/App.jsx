@@ -15,6 +15,7 @@ import Usuarios from "./pages/Usuarios";
 import Config from "./pages/Config";
 import MeuPerfil from "./pages/MeuPerfil";
 import Relatorios from "./pages/Relatorios";
+import Chat from "./pages/Chat";
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -57,6 +58,7 @@ function AppRoutes() {
         <Route path="/usuarios" element={<Usuarios />} />
         <Route path="/config" element={<Config />} />
         <Route path="/perfil" element={<MeuPerfil />} />
+        <Route path="/chat" element={<Chat />} />
         <Route path="/relatorios" element={<Relatorios />} />
       </Route>
       <Route path="*" element={<DefaultRedirect />} />

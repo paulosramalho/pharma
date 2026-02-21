@@ -161,6 +161,8 @@ model User {
   stockTransfersReceived StockTransfer[]     @relation("StockTransferReceivedBy")
   stockReservationsRequested StockReservation[] @relation("StockReservationRequestedBy")
   stockReservationsReviewed  StockReservation[] @relation("StockReservationReviewedBy")
+  chatSentMessages      ChatMessage[]        @relation("ChatMessageSender")
+  chatReceivedMessages  ChatMessage[]        @relation("ChatMessageRecipient")
 
   stores StoreUser[]
   audit  AuditLog[]
@@ -198,6 +200,26 @@ model RolePermission {
 
   @@unique([roleId, permissionKey])
   @@index([permissionKey])
+}
+
+model ChatMessage {
+  id String @id @default(uuid())
+
+  sender   User   @relation("ChatMessageSender", fields: [senderId], references: [id])
+  senderId String
+
+  recipient   User   @relation("ChatMessageRecipient", fields: [recipientId], references: [id])
+  recipientId String
+
+  content   String
+  metaType  String?
+  metaJson  Json?
+  createdAt DateTime @default(now())
+  readAt    DateTime?
+
+  @@index([senderId, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([recipientId, readAt])
 }
 
 model AuditLog {

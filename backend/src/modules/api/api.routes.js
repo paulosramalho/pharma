@@ -129,6 +129,49 @@ function buildApiRoutes({ prisma, log }) {
     });
   }
 
+  async function sendTransferRequestChatMessages({ transfer, senderId }) {
+    if (!transfer?.originStoreId || !transfer?.destinationStoreId || !senderId) return;
+
+    const [admins, pharmacists] = await Promise.all([
+      prisma.user.findMany({
+        where: {
+          active: true,
+          id: { not: senderId },
+          role: { name: "ADMIN" },
+        },
+        select: { id: true },
+      }),
+      prisma.user.findMany({
+        where: {
+          active: true,
+          id: { not: senderId },
+          role: { name: "FARMACEUTICO" },
+          stores: { some: { storeId: transfer.originStoreId } },
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    const recipientIds = Array.from(new Set([...admins, ...pharmacists].map((u) => u.id).filter(Boolean)));
+    if (recipientIds.length === 0) return;
+
+    const message = `Nova solicitacao de transferencia: ${transfer.destinationStore?.name || "Loja destino"} -> ${transfer.originStore?.name || "Loja origem"} (${transfer.items?.length || 0} item(ns)).`;
+
+    await prisma.chatMessage.createMany({
+      data: recipientIds.map((recipientId) => ({
+        senderId,
+        recipientId,
+        content: message,
+        metaType: "TRANSFER_REQUEST",
+        metaJson: {
+          transferId: transfer.id,
+          originStoreId: transfer.originStoreId,
+          destinationStoreId: transfer.destinationStoreId,
+        },
+      })),
+    });
+  }
+
   // ─── DASHBOARD ───
   router.get("/dashboard", asyncHandler(async (req, res) => {
     const userStoreIds = await getUserStoreIds(req);
@@ -753,6 +796,214 @@ function buildApiRoutes({ prisma, log }) {
 
   // ─── INVENTORY ───
 
+
+  // --- CHAT ---
+  router.get("/chat/users", asyncHandler(async (req, res) => {
+    const search = String(req.query.search || "").trim();
+    const limit = Math.min(Math.max(Number(req.query.limit || 30), 1), 100);
+
+    const where = {
+      active: true,
+      id: { not: req.user?.id || "" },
+    };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const users = await prisma.user.findMany({
+      where,
+      take: limit,
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: { select: { name: true } },
+      },
+    });
+
+    return sendOk(res, req, { users });
+  }));
+
+  router.get("/chat/conversations", asyncHandler(async (req, res) => {
+    const currentUserId = req.user?.id;
+    if (!currentUserId) return sendOk(res, req, { conversations: [] });
+
+    const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+    const scanLimit = Math.max(limit * 10, 200);
+
+    const [messages, unreadAgg] = await Promise.all([
+      prisma.chatMessage.findMany({
+        where: {
+          OR: [
+            { senderId: currentUserId },
+            { recipientId: currentUserId },
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+        take: scanLimit,
+        include: {
+          sender: { select: { id: true, name: true, email: true, role: { select: { name: true } } } },
+          recipient: { select: { id: true, name: true, email: true, role: { select: { name: true } } } },
+        },
+      }),
+      prisma.chatMessage.groupBy({
+        by: ["senderId"],
+        where: { recipientId: currentUserId, readAt: null },
+        _count: { senderId: true },
+      }),
+    ]);
+
+    const unreadMap = unreadAgg.reduce((acc, row) => {
+      acc[row.senderId] = Number(row._count?.senderId || 0);
+      return acc;
+    }, {});
+
+    const convMap = new Map();
+    for (const msg of messages) {
+      const otherId = msg.senderId === currentUserId ? msg.recipientId : msg.senderId;
+      if (!otherId || convMap.has(otherId)) continue;
+      const other = msg.senderId === currentUserId ? msg.recipient : msg.sender;
+      convMap.set(otherId, {
+        user: other,
+        lastMessage: {
+          id: msg.id,
+          content: msg.content,
+          createdAt: msg.createdAt,
+          senderId: msg.senderId,
+          recipientId: msg.recipientId,
+          metaType: msg.metaType,
+          metaJson: msg.metaJson,
+          readAt: msg.readAt,
+        },
+        unreadCount: unreadMap[otherId] || 0,
+      });
+      if (convMap.size >= limit) break;
+    }
+
+    const conversations = Array.from(convMap.values()).sort(
+      (a, b) => new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime(),
+    );
+
+    return sendOk(res, req, { conversations });
+  }));
+
+  router.get("/chat/messages/:userId", asyncHandler(async (req, res) => {
+    const currentUserId = req.user?.id;
+    const otherUserId = req.params.userId;
+    if (!currentUserId) return sendOk(res, req, { messages: [] });
+    if (!otherUserId) return res.status(400).json({ error: { code: 400, message: "userId obrigatorio" } });
+
+    const otherUser = await prisma.user.findFirst({
+      where: { id: otherUserId, active: true },
+      select: { id: true, name: true, email: true, role: { select: { name: true } } },
+    });
+    if (!otherUser) return res.status(404).json({ error: { code: 404, message: "Usuario nao encontrado" } });
+
+    const limit = Math.min(Math.max(Number(req.query.limit || 80), 1), 300);
+    const before = req.query.before ? new Date(String(req.query.before)) : null;
+
+    const where = {
+      OR: [
+        { senderId: currentUserId, recipientId: otherUserId },
+        { senderId: otherUserId, recipientId: currentUserId },
+      ],
+    };
+    if (before && !Number.isNaN(before.getTime())) {
+      where.createdAt = { lt: before };
+    }
+
+    const messagesDesc = await prisma.chatMessage.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: {
+        id: true,
+        senderId: true,
+        recipientId: true,
+        content: true,
+        metaType: true,
+        metaJson: true,
+        createdAt: true,
+        readAt: true,
+      },
+    });
+
+    await prisma.chatMessage.updateMany({
+      where: {
+        senderId: otherUserId,
+        recipientId: currentUserId,
+        readAt: null,
+      },
+      data: { readAt: new Date() },
+    });
+
+    return sendOk(res, req, {
+      user: otherUser,
+      messages: messagesDesc.reverse(),
+    });
+  }));
+
+  router.post("/chat/messages", asyncHandler(async (req, res) => {
+    const senderId = req.user?.id;
+    const recipientId = String(req.body?.recipientId || "").trim();
+    const content = String(req.body?.content || "").trim();
+    const metaType = req.body?.metaType ? String(req.body.metaType) : null;
+    const metaJson = req.body?.metaJson ?? null;
+
+    if (!senderId) return res.status(401).json({ error: { code: 401, message: "Nao autenticado" } });
+    if (!recipientId) return res.status(400).json({ error: { code: 400, message: "recipientId obrigatorio" } });
+    if (recipientId === senderId) return res.status(400).json({ error: { code: 400, message: "Nao e permitido enviar para si mesmo" } });
+    if (!content) return res.status(400).json({ error: { code: 400, message: "Mensagem obrigatoria" } });
+
+    const recipient = await prisma.user.findFirst({
+      where: { id: recipientId, active: true },
+      select: { id: true },
+    });
+    if (!recipient) return res.status(404).json({ error: { code: 404, message: "Destinatario nao encontrado" } });
+
+    const message = await prisma.chatMessage.create({
+      data: {
+        senderId,
+        recipientId,
+        content,
+        metaType,
+        metaJson,
+      },
+      select: {
+        id: true,
+        senderId: true,
+        recipientId: true,
+        content: true,
+        metaType: true,
+        metaJson: true,
+        createdAt: true,
+        readAt: true,
+      },
+    });
+
+    return sendOk(res, req, message, 201);
+  }));
+
+  router.post("/chat/messages/:userId/read", asyncHandler(async (req, res) => {
+    const currentUserId = req.user?.id;
+    const otherUserId = req.params.userId;
+    if (!currentUserId || !otherUserId) return sendOk(res, req, { updated: 0 });
+
+    const result = await prisma.chatMessage.updateMany({
+      where: {
+        senderId: otherUserId,
+        recipientId: currentUserId,
+        readAt: null,
+      },
+      data: { readAt: new Date() },
+    });
+
+    return sendOk(res, req, { updated: result.count || 0 });
+  }));
   // Multi-store overview: all products with per-store qty + recent entries/exits
   router.get("/inventory/overview", asyncHandler(async (req, res) => {
     const { search } = req.query;
@@ -1144,6 +1395,18 @@ function buildApiRoutes({ prisma, log }) {
         items: { include: { product: { select: { id: true, name: true } } } },
       },
     });
+
+    try {
+      await sendTransferRequestChatMessages({
+        transfer,
+        senderId: req.user?.id,
+      });
+    } catch (err) {
+      log?.warn?.("Falha ao notificar chat de transferencia solicitada", {
+        transferId: transfer.id,
+        error: err?.message || String(err),
+      });
+    }
 
     return sendOk(res, req, transfer, 201);
   }));
