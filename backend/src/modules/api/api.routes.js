@@ -3348,7 +3348,9 @@ function buildApiRoutes({ prisma, log }) {
         systemName: "Pharma",
         emittedAt: new Date(),
         render: (doc, layout) => {
-          const { left, contentTop, contentBottom } = layout;
+          const { left, right, contentTop, contentBottom } = layout;
+          const pageLeft = Math.max(20, left - 20);
+          const pageRight = Math.min(doc.page.width - 20, right + 20);
           let y = contentTop;
 
           const ensureSpace = (needed) => {
@@ -3357,21 +3359,23 @@ function buildApiRoutes({ prisma, log }) {
             y = contentTop;
           };
 
-          const filterLines = [
-            `Periodo: ${dateOnly(from)} a ${dateOnly(to)} (considerando 00:00:00 ate 23:59:59)`,
-            `Origem: ${originStore?.name || "Todas"}`,
-            `Destino: ${destinationStore?.name || "Todos"}`,
-            `Solicitante: ${requesterUser?.name || "Todos"}`,
-            `Remetente: ${senderUser?.name || "Todos"}`,
-            `Item: ${item || "Todos"}`,
-          ];
+          const filterLines = [];
+          if (from || to) {
+            filterLines.push(`Periodo: ${dateOnly(from)} a ${dateOnly(to)} (00:00:00 ate 23:59:59)`);
+          }
+          if (originStore?.name) filterLines.push(`Origem: ${originStore.name}`);
+          if (destinationStore?.name) filterLines.push(`Destino: ${destinationStore.name}`);
+          if (requesterUser?.name) filterLines.push(`Solicitante: ${requesterUser.name}`);
+          if (senderUser?.name) filterLines.push(`Remetente: ${senderUser.name}`);
+          if (item) filterLines.push(`Item: ${item}`);
+          if (filterLines.length === 0) filterLines.push("Sem filtros adicionais.");
 
           ensureSpace(14 + (filterLines.length * 12) + 8);
-          doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827").text("Filtros", left, y);
+          doc.font("Helvetica-Bold").fontSize(10).fillColor("#111827").text("Filtros", pageLeft, y);
           y += 14;
           doc.font("Helvetica").fontSize(9.5).fillColor("#111827");
           for (const line of filterLines) {
-            doc.text(line, left, y);
+            doc.text(line, pageLeft, y, { width: pageRight - pageLeft, align: "left" });
             y += 12;
           }
           y += 8;
@@ -3423,7 +3427,7 @@ function buildApiRoutes({ prisma, log }) {
             const blockHeight = 13 + 13 + 12 + Math.max(1, rows.length) * 12 + 10;
             ensureSpace(blockHeight);
 
-            let x = left;
+            let x = pageLeft;
             doc.font("Helvetica-Bold").fontSize(8.2).fillColor("#111827");
             for (const c of cols) {
               doc.text(c.label, x, y, { width: c.width, align: c.align });
@@ -3441,7 +3445,7 @@ function buildApiRoutes({ prisma, log }) {
               sent: String(sent),
               status: transferStatusPt(t.status),
             };
-            x = left;
+            x = pageLeft;
             doc.font("Helvetica").fontSize(8.4).fillColor("#111827");
             for (const c of cols) {
               doc.text(values[c.key], x, y, { width: c.width, align: c.align });
@@ -3449,7 +3453,7 @@ function buildApiRoutes({ prisma, log }) {
             }
             y += 13;
 
-            x = left + itemIndent;
+            x = pageLeft + itemIndent;
             doc.font("Helvetica-Bold").fontSize(8.1).fillColor("#374151");
             for (const c of itemCols) {
               doc.text(c.label, x, y, { width: c.width, align: c.align });
@@ -3459,26 +3463,27 @@ function buildApiRoutes({ prisma, log }) {
 
             doc.font("Helvetica").fontSize(8.4).fillColor("#111827");
             if (rows.length === 0) {
-              x = left + itemIndent;
+              x = pageLeft + itemIndent;
               doc.text("-", x, y, { width: itemCols[0].width, align: "left" });
               doc.text("0", x + itemCols[0].width, y, { width: itemCols[1].width, align: "right" });
               doc.text("0", x + itemCols[0].width + itemCols[1].width, y, { width: itemCols[2].width, align: "right" });
               y += 12;
             } else {
               for (const r of rows) {
-                x = left + itemIndent;
+                x = pageLeft + itemIndent;
                 doc.text(truncate(r.item, 58), x, y, { width: itemCols[0].width, align: "left" });
                 doc.text(String(r.requestedQty), x + itemCols[0].width, y, { width: itemCols[1].width, align: "right" });
                 doc.text(String(r.sentQty), x + itemCols[0].width + itemCols[1].width, y, { width: itemCols[2].width, align: "right" });
                 y += 12;
               }
             }
-            y += 8;
+            doc.moveTo(pageLeft, y + 2).lineTo(pageRight, y + 2).lineWidth(0.6).strokeColor("#d1d5db").stroke();
+            y += 10;
           }
 
           if (transfers.length === 0) {
             ensureSpace(16);
-            doc.font("Helvetica").fontSize(10).fillColor("#6b7280").text("Nenhuma transferencia encontrada.", left, y);
+            doc.font("Helvetica").fontSize(10).fillColor("#6b7280").text("Nenhuma transferencia encontrada.", pageLeft, y);
           }
         },
       });
