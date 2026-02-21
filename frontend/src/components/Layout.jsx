@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { apiFetch } from "../lib/api";
 import {
   LayoutDashboard, ShoppingCart, Wallet, Package, Pill,
   Settings, LogOut, Menu, X, ChevronDown, Store, UserCircle, BarChart3, MessageCircle,
@@ -29,6 +30,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   const roleRestrict = ROLE_NAV_RESTRICT[user?.role];
   const visibleItems = NAV_ITEMS.filter((item) => {
@@ -42,6 +44,31 @@ export default function Layout() {
     logout();
     navigate("/login");
   };
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    let cancelled = false;
+
+    const loadChatUnread = async () => {
+      try {
+        const res = await apiFetch("/api/chat/conversations?limit=60");
+        const total = (res?.data?.conversations || []).reduce(
+          (sum, c) => sum + Number(c?.unreadCount || 0),
+          0,
+        );
+        if (!cancelled) setChatUnreadCount(total);
+      } catch {
+        if (!cancelled) setChatUnreadCount(0);
+      }
+    };
+
+    loadChatUnread();
+    const id = setInterval(loadChatUnread, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [user?.id]);
 
   const linkClass = ({ isActive }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
@@ -112,7 +139,12 @@ export default function Layout() {
           {visibleItems.map((item) => (
             <NavLink key={item.to} to={item.to} className={linkClass} onClick={() => setSidebarOpen(false)}>
               <item.icon size={18} />
-              {item.label}
+              <span>{item.label}</span>
+              {item.to === "/chat" && chatUnreadCount > 0 && (
+                <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700">
+                  Nova
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
