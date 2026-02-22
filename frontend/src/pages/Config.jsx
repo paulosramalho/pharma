@@ -110,6 +110,7 @@ export default function Config() {
   const [contractorForm, setContractorForm] = useState({
     document: "",
     nameOrCompany: "",
+    tradeName: "",
     addressFull: "",
     zipCode: "",
     phoneWhatsapp: "",
@@ -171,6 +172,7 @@ export default function Config() {
           setContractorForm({
             document: String(lic?.contractor?.document || ""),
             nameOrCompany: String(lic?.contractor?.nameOrCompany || ""),
+            tradeName: String(lic?.contractor?.tradeName || ""),
             addressFull: String(lic?.contractor?.addressFull || ""),
             zipCode: String(lic?.contractor?.zipCode || ""),
             phoneWhatsapp: String(lic?.contractor?.phoneWhatsapp || ""),
@@ -427,6 +429,7 @@ export default function Config() {
         body: JSON.stringify({
           document: contractorDocDigits || null,
           nameOrCompany: String(contractorForm.nameOrCompany || "").trim(),
+          tradeName: String(contractorForm.tradeName || "").trim() || null,
           addressFull: String(contractorForm.addressFull || "").trim() || null,
           zipCode: contractorZipDigits || null,
           phoneWhatsapp: phoneDigits || null,
@@ -439,6 +442,7 @@ export default function Config() {
       setContractorForm({
         document: String(lic?.contractor?.document || ""),
         nameOrCompany: String(lic?.contractor?.nameOrCompany || ""),
+        tradeName: String(lic?.contractor?.tradeName || ""),
         addressFull: String(lic?.contractor?.addressFull || ""),
         zipCode: String(lic?.contractor?.zipCode || ""),
         phoneWhatsapp: String(lic?.contractor?.phoneWhatsapp || ""),

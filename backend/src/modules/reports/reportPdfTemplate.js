@@ -24,6 +24,17 @@ const FOOTER = {
   line2YFromBottom: 40,
 };
 
+function decodeDataUrlToBuffer(dataUrl) {
+  const raw = String(dataUrl || "").trim();
+  const m = raw.match(/^data:(.+?);base64,(.+)$/i);
+  if (!m) return null;
+  try {
+    return Buffer.from(m[2], "base64");
+  } catch {
+    return null;
+  }
+}
+
 function formatDateTimeBR(d) {
   const dt = d instanceof Date ? d : new Date(d);
   const pad = (n) => String(n).padStart(2, "0");
@@ -40,26 +51,46 @@ function getReportLogoPath() {
   return null;
 }
 
-function drawHeader(doc, { reportName, systemName }) {
+function drawHeader(doc, { reportName, systemName, contractorLine = null, logoDataUrl = null }) {
   const width = doc.page.width;
   const centerX = width / 2;
   const left = PAGE.marginLeft;
   const right = width - PAGE.marginRight;
 
-  const logoPath = getReportLogoPath();
-  if (logoPath) {
-    const logoWidth = HEADER.logoHeight;
-    doc.image(logoPath, centerX - (logoWidth / 2), HEADER.logoY, {
-      fit: [logoWidth, HEADER.logoHeight],
-      align: "center",
-      valign: "center",
-    });
+  const logoWidth = HEADER.logoHeight;
+  const logoBuffer = decodeDataUrlToBuffer(logoDataUrl);
+  if (logoBuffer) {
+    try {
+      doc.image(logoBuffer, centerX - (logoWidth / 2), HEADER.logoY, {
+        fit: [logoWidth, HEADER.logoHeight],
+        align: "center",
+        valign: "center",
+      });
+    } catch {
+      // ignore invalid image buffer and fallback below
+    }
+  } else {
+    const logoPath = getReportLogoPath();
+    if (logoPath) {
+      doc.image(logoPath, centerX - (logoWidth / 2), HEADER.logoY, {
+        fit: [logoWidth, HEADER.logoHeight],
+        align: "center",
+        valign: "center",
+      });
+    }
   }
 
   doc.fillColor("#111827").font("Helvetica-Bold").fontSize(11).text(systemName, left, HEADER.systemNameY, {
     width: right - left,
     align: "center",
   });
+
+  if (contractorLine) {
+    doc.fillColor("#374151").font("Helvetica").fontSize(9).text(contractorLine, left, HEADER.systemNameY + 14, {
+      width: right - left,
+      align: "center",
+    });
+  }
 
   doc.fillColor("#111827").font("Helvetica-Bold").fontSize(12).text(reportName, left, HEADER.reportNameY, {
     width: right - left,
@@ -153,7 +184,7 @@ function buildLinesBody(doc, { sections = [] }) {
   }
 }
 
-function makeReportSamplePdfBuffer({ reportName, emittedBy, systemName = "Pharma", emittedAt = new Date() }) {
+function makeReportSamplePdfBuffer({ reportName, emittedBy, systemName = "Pharma", emittedAt = new Date(), contractorLine = null, logoDataUrl = null }) {
   const pdf = new PDFDocument({
     size: PAGE.size,
     margins: {
@@ -178,7 +209,7 @@ function makeReportSamplePdfBuffer({ reportName, emittedBy, systemName = "Pharma
     const totalPages = range.count;
     for (let i = 0; i < totalPages; i += 1) {
       pdf.switchToPage(i);
-      drawHeader(pdf, { reportName, systemName });
+      drawHeader(pdf, { reportName, systemName, contractorLine, logoDataUrl });
       drawFooter(pdf, {
         emittedAt,
         emittedBy,
@@ -191,7 +222,7 @@ function makeReportSamplePdfBuffer({ reportName, emittedBy, systemName = "Pharma
   });
 }
 
-function makeReportLinesPdfBuffer({ reportName, emittedBy, sections = [], systemName = "Pharma", emittedAt = new Date() }) {
+function makeReportLinesPdfBuffer({ reportName, emittedBy, sections = [], systemName = "Pharma", emittedAt = new Date(), contractorLine = null, logoDataUrl = null }) {
   const pdf = new PDFDocument({
     size: PAGE.size,
     margins: {
@@ -216,7 +247,7 @@ function makeReportLinesPdfBuffer({ reportName, emittedBy, sections = [], system
     const totalPages = range.count;
     for (let i = 0; i < totalPages; i += 1) {
       pdf.switchToPage(i);
-      drawHeader(pdf, { reportName, systemName });
+      drawHeader(pdf, { reportName, systemName, contractorLine, logoDataUrl });
       drawFooter(pdf, {
         emittedAt,
         emittedBy,
@@ -229,7 +260,7 @@ function makeReportLinesPdfBuffer({ reportName, emittedBy, sections = [], system
   });
 }
 
-function makeReportCustomPdfBuffer({ reportName, emittedBy, systemName = "Pharma", emittedAt = new Date(), render }) {
+function makeReportCustomPdfBuffer({ reportName, emittedBy, systemName = "Pharma", emittedAt = new Date(), render, contractorLine = null, logoDataUrl = null }) {
   const pdf = new PDFDocument({
     size: PAGE.size,
     margins: {
@@ -264,7 +295,7 @@ function makeReportCustomPdfBuffer({ reportName, emittedBy, systemName = "Pharma
     const totalPages = range.count;
     for (let i = 0; i < totalPages; i += 1) {
       pdf.switchToPage(i);
-      drawHeader(pdf, { reportName, systemName });
+      drawHeader(pdf, { reportName, systemName, contractorLine, logoDataUrl });
       drawFooter(pdf, {
         emittedAt,
         emittedBy,

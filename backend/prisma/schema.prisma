@@ -90,6 +90,7 @@ model Tenant {
   isDeveloperTenant           Boolean @default(false)
   contractorDocument          String?
   contractorNameOrCompany     String?
+  contractorTradeName         String?
   contractorAddressFull       String?
   contractorStreet            String?
   contractorNumber            String?

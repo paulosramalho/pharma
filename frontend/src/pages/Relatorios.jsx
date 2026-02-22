@@ -34,7 +34,7 @@ function monthAgoStr() {
 
 export default function Relatorios() {
   const { addToast } = useToast();
-  const { hasFeature } = useAuth();
+  const { hasFeature, license } = useAuth();
   const [tab, setTab] = useState("vendas");
   const [from, setFrom] = useState(monthAgoStr());
   const [to, setTo] = useState(todayStr());
@@ -168,6 +168,24 @@ export default function Relatorios() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-gray-900">Relatórios</h1>
+
+      <Card>
+        <CardBody className="flex items-center gap-3">
+          <img
+            src={license?.contractor?.logoFile || "/brand/LogoPharma.PNG"}
+            alt="Logo do licenciado"
+            className="w-12 h-12 object-contain bg-transparent rounded"
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">
+              {license?.contractor?.tradeName || license?.contractor?.tenantName || "Pharma"}
+            </p>
+            <p className="text-xs text-gray-500 truncate">
+              {license?.contractor?.nameOrCompany || "Licenciado"}
+            </p>
+          </div>
+        </CardBody>
+      </Card>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">

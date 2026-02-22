@@ -139,6 +139,7 @@ function buildApiRoutes({ prisma, log }) {
         isDeveloperTenant: true,
         contractorDocument: true,
         contractorNameOrCompany: true,
+        contractorTradeName: true,
         contractorAddressFull: true,
         contractorStreet: true,
         contractorNumber: true,
@@ -161,6 +162,7 @@ function buildApiRoutes({ prisma, log }) {
         isDeveloperTenant: Boolean(tenant.isDeveloperTenant),
         document: tenant.contractorDocument || null,
         nameOrCompany: tenant.contractorNameOrCompany || null,
+        tradeName: tenant.contractorTradeName || null,
         addressFull: tenant.contractorAddressFull || null,
         street: tenant.contractorStreet || null,
         number: tenant.contractorNumber || null,
@@ -181,6 +183,7 @@ function buildApiRoutes({ prisma, log }) {
     const normalized = {
       document: String(raw.document || "").replace(/\D/g, "") || null,
       nameOrCompany: String(raw.nameOrCompany || "").trim() || null,
+      tradeName: String(raw.tradeName || "").trim() || null,
       street: String(raw.street || "").trim() || null,
       number: String(raw.number || "").trim() || null,
       complement: String(raw.complement || "").trim() || null,
@@ -215,6 +218,24 @@ function buildApiRoutes({ prisma, log }) {
 
   function isValidEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+  }
+
+  async function getTenantBranding(req) {
+    const profile = await getTenantLicenseProfile(req);
+    const contractor = profile?.contractor || null;
+    const tradeName = String(contractor?.tradeName || "").trim();
+    const tenantName = String(contractor?.tenantName || "").trim();
+    const legalName = String(contractor?.nameOrCompany || "").trim();
+    const systemName = tradeName || tenantName || "Pharma";
+    const contractorLine = legalName
+      ? (legalName !== systemName ? `Contratante: ${legalName}` : `Licenciado: ${legalName}`)
+      : null;
+    return {
+      systemName,
+      contractorLine,
+      logoDataUrl: contractor?.logoFile || null,
+      contractor,
+    };
   }
 
   function slugify(input) {
@@ -363,6 +384,7 @@ function buildApiRoutes({ prisma, log }) {
     const adminEmail = String(payload?.admin?.email || "").trim().toLowerCase();
 
     if (!contractor.nameOrCompany) throw Object.assign(new Error("Nome/Razao social do contratante e obrigatorio"), { statusCode: 400 });
+    if (!contractor.tradeName) throw Object.assign(new Error("Nome fantasia do contratante e obrigatorio"), { statusCode: 400 });
     if (contractor.document && !isValidCpfCnpj(contractor.document)) throw Object.assign(new Error("CPF/CNPJ do contratante invalido"), { statusCode: 400 });
     if (!contractor.zipCode || contractor.zipCode.length !== 8) throw Object.assign(new Error("CEP do contratante invalido"), { statusCode: 400 });
     if (!contractor.street || !contractor.district || !contractor.city || !contractor.state) {
@@ -940,6 +962,7 @@ function buildApiRoutes({ prisma, log }) {
       data: {
         contractorDocument: contractor.document,
         contractorNameOrCompany: contractor.nameOrCompany,
+        contractorTradeName: contractor.tradeName,
         contractorAddressFull: contractor.addressFull,
         contractorStreet: contractor.street,
         contractorNumber: contractor.number,
@@ -1009,9 +1032,9 @@ function buildApiRoutes({ prisma, log }) {
     endsAt.setFullYear(endsAt.getFullYear() + 1);
 
     const result = await prisma.$transaction(async (tx) => {
-      const slugSeed = validated.contractor.document || validated.contractor.nameOrCompany || "tenant";
+      const slugSeed = validated.contractor.document || validated.contractor.tradeName || validated.contractor.nameOrCompany || "tenant";
       const slug = await nextTenantSlug(slugSeed);
-      const tenantName = validated.contractor.nameOrCompany;
+      const tenantName = validated.contractor.tradeName || validated.contractor.nameOrCompany;
 
       const existingAdminEmail = await tx.user.findFirst({
         where: { email: validated.adminEmail },
@@ -1029,6 +1052,7 @@ function buildApiRoutes({ prisma, log }) {
           isDeveloperTenant: false,
           contractorDocument: validated.contractor.document,
           contractorNameOrCompany: validated.contractor.nameOrCompany,
+          contractorTradeName: validated.contractor.tradeName,
           contractorAddressFull: validated.contractor.addressFull,
           contractorStreet: validated.contractor.street,
           contractorNumber: validated.contractor.number,
@@ -1128,6 +1152,7 @@ function buildApiRoutes({ prisma, log }) {
         isDeveloperTenant: true,
         contractorDocument: true,
         contractorNameOrCompany: true,
+        contractorTradeName: true,
         createdAt: true,
         _count: {
           select: {
@@ -1173,6 +1198,7 @@ function buildApiRoutes({ prisma, log }) {
         isDeveloperTenant: true,
         contractorDocument: true,
         contractorNameOrCompany: true,
+        contractorTradeName: true,
         contractorAddressFull: true,
         contractorStreet: true,
         contractorNumber: true,
@@ -1209,6 +1235,7 @@ function buildApiRoutes({ prisma, log }) {
         contractor: {
           document: tenant.contractorDocument || null,
           nameOrCompany: tenant.contractorNameOrCompany || null,
+          tradeName: tenant.contractorTradeName || null,
           addressFull: tenant.contractorAddressFull || null,
           street: tenant.contractorStreet || null,
           number: tenant.contractorNumber || null,
@@ -4331,10 +4358,13 @@ function buildApiRoutes({ prisma, log }) {
   router.get("/reports/sample-pdf", asyncHandler(async (req, res) => {
     const reportName = String(req.query.reportName || "Relatorio de Amostra");
     const emittedBy = req.user?.name || "Usuario";
+    const branding = await getTenantBranding(req);
     const pdfBuf = await makeReportSamplePdfBuffer({
       reportName,
       emittedBy,
-      systemName: "Pharma",
+      systemName: branding.systemName,
+      contractorLine: branding.contractorLine,
+      logoDataUrl: branding.logoDataUrl,
       emittedAt: new Date(),
     });
 
@@ -4354,6 +4384,7 @@ function buildApiRoutes({ prisma, log }) {
     if (to) to.setHours(23, 59, 59, 999);
 
     const emittedBy = req.user?.name || "Usuario";
+    const branding = await getTenantBranding(req);
     const money = (v) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
     const dateTime = (v) => {
       const d = v ? new Date(v) : null;
@@ -4510,7 +4541,9 @@ function buildApiRoutes({ prisma, log }) {
       const pdfBuf = await makeReportCustomPdfBuffer({
         reportName,
         emittedBy,
-        systemName: "Pharma",
+        systemName: branding.systemName,
+        contractorLine: branding.contractorLine,
+        logoDataUrl: branding.logoDataUrl,
         emittedAt: new Date(),
         render: (doc, layout) => {
           const { left, right, contentTop, contentBottom } = layout;
@@ -4693,7 +4726,9 @@ function buildApiRoutes({ prisma, log }) {
       reportName,
       emittedBy,
       sections,
-      systemName: "Pharma",
+      systemName: branding.systemName,
+      contractorLine: branding.contractorLine,
+      logoDataUrl: branding.logoDataUrl,
       emittedAt: new Date(),
     });
 

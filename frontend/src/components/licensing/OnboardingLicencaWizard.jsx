@@ -74,6 +74,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
     contractor: {
       document: "",
       nameOrCompany: "",
+      tradeName: "",
       zipCode: "",
       street: "",
       number: "",
@@ -100,7 +101,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
 
   const canNext = useMemo(() => {
     const c = form.contractor;
-    if (step === 1) return Boolean(c.nameOrCompany.trim()) && isValidCpfCnpj(c.document);
+    if (step === 1) return Boolean(c.nameOrCompany.trim()) && Boolean(c.tradeName.trim()) && isValidCpfCnpj(c.document);
     if (step === 2) return Boolean(c.zipCode.replace(/\D/g, "").length === 8 && c.street && c.district && c.city && c.state);
     if (step === 3) return (!c.email || isValidEmail(c.email));
     if (step === 4) return Boolean(form.planCode && form.admin.name.trim() && isValidEmail(form.admin.email));
@@ -186,6 +187,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
         contractor: {
           document: String(c.document || "").replace(/\D/g, ""),
           nameOrCompany: String(c.nameOrCompany || "").trim(),
+          tradeName: String(c.tradeName || "").trim(),
           zipCode: String(c.zipCode || "").replace(/\D/g, ""),
           street: String(c.street || "").trim(),
           number: String(c.number || "").trim(),
@@ -248,6 +250,10 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">Nome/Razao social *</label>
             <input className={inputClass} value={form.contractor.nameOrCompany} onChange={(e) => setContractor("nameOrCompany", e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">Nome Fantasia *</label>
+            <input className={inputClass} value={form.contractor.tradeName} onChange={(e) => setContractor("tradeName", e.target.value)} />
           </div>
         </div>
       )}

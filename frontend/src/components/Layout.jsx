@@ -26,7 +26,7 @@ const ROLE_NAV_RESTRICT = {
 };
 
 export default function Layout() {
-  const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive } = useAuth();
+  const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive, license } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
@@ -43,6 +43,10 @@ export default function Layout() {
     return !item.perm || hasPermission(item.perm);
   });
   const currentStore = stores.find((s) => s.id === storeId);
+  const contractor = license?.contractor || {};
+  const brandName = contractor?.tradeName || contractor?.tenantName || "Pharma";
+  const contractorName = contractor?.nameOrCompany || null;
+  const brandLogo = contractor?.logoFile || "/brand/LogoPharma.PNG";
 
   const handleLogout = () => {
     logout();
@@ -93,16 +97,17 @@ export default function Layout() {
         {/* Logo */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <video
-              src="/brand/LogoPharma.MP4"
-              poster="/brand/LogoPharma.PNG"
-              autoPlay
-              muted
-              loop
-              playsInline
-              className="w-8 h-8 object-contain bg-transparent mix-blend-multiply"
+            <img
+              src={brandLogo}
+              alt="Logo"
+              className="w-8 h-8 object-contain bg-transparent"
             />
-            <span className="text-lg font-bold text-gray-900">Pharma</span>
+            <div className="min-w-0">
+              <span className="block text-lg font-bold text-gray-900 truncate leading-5">{brandName}</span>
+              {contractorName && contractorName !== brandName ? (
+                <span className="block text-[10px] text-gray-500 truncate leading-4">{contractorName}</span>
+              ) : null}
+            </div>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1 text-gray-400 hover:text-gray-600">
             <X size={20} />
@@ -178,16 +183,17 @@ export default function Layout() {
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2">
-            <video
-              src="/brand/LogoPharma.MP4"
-              poster="/brand/LogoPharma.PNG"
-              autoPlay
-              muted
-              loop
-              playsInline
-              className="w-6 h-6 object-contain bg-transparent mix-blend-multiply"
+            <img
+              src={brandLogo}
+              alt="Logo"
+              className="w-6 h-6 object-contain bg-transparent"
             />
-            <span className="font-bold text-gray-900">Pharma</span>
+            <div className="min-w-0">
+              <span className="font-bold text-gray-900 block truncate leading-5">{brandName}</span>
+              {contractorName && contractorName !== brandName ? (
+                <span className="text-[10px] text-gray-500 block truncate leading-4">{contractorName}</span>
+              ) : null}
+            </div>
           </div>
         </header>
 
