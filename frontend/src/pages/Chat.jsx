@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
 import Card from "../components/ui/Card";
@@ -13,9 +13,9 @@ function formatDateTime(v) {
 
 function getPresenceText(user) {
   if (!user) return "";
-  if (user.isOnline) return "online";
-  if (user.lastSeenAt) return `visto por ultimo em ${formatDateTime(user.lastSeenAt)}`;
-  return "nunca visto";
+  if (user.isOnline) return "online agora";
+  if (user.lastSeenAt) return `visto por último em ${formatDateTime(user.lastSeenAt)}`;
+  return "último acesso indisponível";
 }
 
 function sameDay(a, b) {
@@ -157,7 +157,7 @@ export default function Chat() {
       <Card className="flex flex-col min-h-0">
         <div className="px-4 py-3 border-b border-gray-100">
           <p className="text-base font-semibold text-gray-900">Chat</p>
-          <p className="text-xs text-gray-500">Converse com qualquer usuario ativo</p>
+          <p className="text-xs text-gray-500">Converse com qualquer usuário ativo</p>
         </div>
 
         <div className="px-4 py-3 border-b border-gray-100 space-y-2">
@@ -165,7 +165,7 @@ export default function Chat() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") loadUsers(query); }}
-            placeholder="Buscar usuario..."
+            placeholder="Buscar usuário..."
             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
           <Button size="sm" variant="secondary" className="w-full" onClick={() => loadUsers(query)} loading={usersLoading}>
@@ -197,7 +197,7 @@ export default function Chat() {
 
           {users.length > 0 && (
             <div className="pt-3 mt-2 border-t border-gray-100">
-              <p className="px-2 mb-1 text-[11px] uppercase text-gray-400">Usuarios</p>
+              <p className="px-2 mb-1 text-[11px] uppercase text-gray-400">Usuários</p>
               {users.map((u) => {
                 const selected = activeUserId === u.id;
                 const unread = conversationMap[u.id]?.unreadCount || 0;
@@ -227,7 +227,7 @@ export default function Chat() {
         <div className="px-4 py-3 border-b border-gray-100">
           <p className="text-base font-semibold text-gray-900 flex items-center gap-2">
             <span className={`inline-block w-2.5 h-2.5 rounded-full ${activeUser?.isOnline ? "bg-emerald-500" : "bg-gray-300"}`} />
-            {activeUser?.name || "Selecione um usuario"}
+            {activeUser?.name || "Selecione um usuário"}
           </p>
           <p className="text-xs text-gray-500">{activeUser?.role?.name || ""} {activeUser ? `• ${getPresenceText(activeUser)}` : ""}</p>
         </div>
@@ -292,7 +292,7 @@ export default function Chat() {
                 }
               }}
               disabled={!activeUserId}
-              placeholder={activeUserId ? "Digite sua mensagem..." : "Selecione um usuario para conversar"}
+              placeholder={activeUserId ? "Digite sua mensagem..." : "Selecione um usuário para conversar"}
               className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-100"
             />
             <Button onClick={sendMessage} loading={sending} disabled={!activeUserId || !String(draft || "").trim()}>
@@ -304,3 +304,4 @@ export default function Chat() {
     </div>
   );
 }
+

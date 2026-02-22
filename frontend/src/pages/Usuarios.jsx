@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
-import { formatDate, formatDateTime } from "../lib/format";
+import { formatDate } from "../lib/format";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
@@ -71,7 +71,7 @@ export default function UsuariosPage() {
         addToast("Usuário atualizado!", "success");
       } else {
         if (!form.password) {
-          addToast("Senha obrigatoria para novo usuário", "error");
+          addToast("Senha obrigatória para novo usuário", "error");
           setSubmitting(false);
           return;
         }
@@ -106,9 +106,6 @@ export default function UsuariosPage() {
     )},
     { key: "createdAt", label: "Criado em", render: (r) => (
       <span className="text-xs text-gray-400">{r.createdAt ? formatDate(r.createdAt) : "—"}</span>
-    )},
-    { key: "lastSeenAt", label: "Último acesso", render: (r) => (
-      <span className="text-xs text-gray-500">{r.lastSeenAt ? formatDateTime(r.lastSeenAt) : "Nunca"}</span>
     )},
     { key: "actions", label: "", className: "w-10", render: (r) => (
       <button onClick={() => openEdit(r)} className="p-1 text-gray-400 hover:text-primary-600 rounded">
@@ -156,7 +153,7 @@ export default function UsuariosPage() {
               <option value="ADMIN">Administrador</option>
               <option value="VENDEDOR">Vendedor</option>
               <option value="CAIXA">Caixa</option>
-              <option value="FARMACEUTICO">Farmaceutico</option>
+              <option value="FARMACEUTICO">Farmacêutico</option>
             </select>
           </div>
           {form.roleName !== "ADMIN" ? (
@@ -178,7 +175,7 @@ export default function UsuariosPage() {
                     <span>{s.name}</span>
                   </label>
                 ))}
-                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponivel</p>}
+                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponível</p>}
               </div>
             </div>
           ) : (
@@ -195,3 +192,4 @@ export default function UsuariosPage() {
     </div>
   );
 }
+

@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
-import { cnpjMask, phoneMask, cpfMask, whatsappMask, formatDate, formatDateTime } from "../lib/format";
+import { cnpjMask, phoneMask, cpfMask, whatsappMask, formatDate } from "../lib/format";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
@@ -13,21 +13,21 @@ import { Settings, Store, Shield, Plus, Pencil, Users, UserCheck } from "lucide-
 
 const TABS = [
   { key: "lojas", label: "Lojas", icon: Store },
-  { key: "usuarios", label: "UsuÃ¡rios", icon: Users },
+  { key: "usuarios", label: "Usuários", icon: Users },
   { key: "clientes", label: "Clientes", icon: UserCheck },
-  { key: "permissoes", label: "PermissÃµes", icon: Shield },
+  { key: "permissoes", label: "Permissões", icon: Shield },
 ];
 
-const TYPE_LABELS = { CENTRAL: "Central (DepÃ³sito)", LOJA: "Loja" };
+const TYPE_LABELS = { CENTRAL: "Central (Depósito)", LOJA: "Loja" };
 const ROLE_COLORS = { ADMIN: "purple", CAIXA: "blue", VENDEDOR: "green", FARMACUTICO: "yellow" };
-const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "FarmacÃªutico" };
+const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "Farmacêutico" };
 
 const emptyStoreForm = { name: "", type: "LOJA", cnpj: "", phone: "", email: "", street: "", number: "", complement: "", district: "", city: "", state: "", zipCode: "" };
 const emptyUserForm = { name: "", email: "", password: "", passwordConfirm: "", roleName: "VENDEDOR", storeIds: [] };
 const emptyCustomerForm = { name: "", document: "", birthDate: "", whatsapp: "", phone: "", email: "" };
 
 const PERMISSIONS = [
-  { key: "users.manage", label: "Gerenciar usuÃ¡rios" },
+  { key: "users.manage", label: "Gerenciar usuários" },
   { key: "stores.manage", label: "Gerenciar lojas" },
   { key: "products.manage", label: "Gerenciar produtos" },
   { key: "inventory.receive", label: "Receber estoque" },
@@ -37,7 +37,7 @@ const PERMISSIONS = [
   { key: "cash.open", label: "Abrir caixa" },
   { key: "cash.close", label: "Fechar caixa" },
   { key: "cash.refund", label: "Estornar" },
-  { key: "reports.view", label: "Ver relatÃ³rios" },
+  { key: "reports.view", label: "Ver relatórios" },
 ];
 
 const ROLES = [
@@ -137,7 +137,7 @@ export default function Config() {
   const toggleStoreDefault = async (s) => {
     try {
       await apiFetch(`/api/stores/${s.id}`, { method: "PUT", body: JSON.stringify({ isDefault: !s.isDefault }) });
-      addToast(s.isDefault ? "Removido como padrÃ£o" : `${s.name} definida como padrÃ£o`, "success");
+      addToast(s.isDefault ? "Removido como padrão" : `${s.name} definida como padrão`, "success");
       apiFetch("/api/stores?all=true").then((res) => setStores(res.data || []));
     } catch (err) { addToast(err.message, "error"); }
   };
@@ -157,7 +157,7 @@ export default function Config() {
   };
   const submitUser = async () => {
     if (userForm.password && userForm.password !== userForm.passwordConfirm) {
-      addToast("As senhas nÃ£o coincidem", "error"); return;
+      addToast("As senhas não coincidem", "error"); return;
     }
     if (userForm.roleName !== "ADMIN" && (!userForm.storeIds || userForm.storeIds.length === 0)) {
       addToast("Selecione ao menos uma loja para este perfil", "warning");
@@ -170,11 +170,11 @@ export default function Config() {
       if (userForm.password) body.password = userForm.password;
       if (userEditId) {
         await apiFetch(`/api/users/${userEditId}`, { method: "PUT", body: JSON.stringify(body) });
-        addToast("UsuÃ¡rio atualizado!", "success");
+        addToast("Usuário atualizado!", "success");
       } else {
-        if (!userForm.password) { addToast("Senha obrigatÃ³ria", "error"); setSubmitting(false); return; }
+        if (!userForm.password) { addToast("Senha obrigatória", "error"); setSubmitting(false); return; }
         await apiFetch("/api/users", { method: "POST", body: JSON.stringify(body) });
-        addToast("UsuÃ¡rio criado!", "success");
+        addToast("Usuário criado!", "success");
       }
       setUserModal(false);
       apiFetch("/api/users").then((res) => setUsers(res.data || []));
@@ -203,11 +203,11 @@ export default function Config() {
     setSubmitting(false);
   };
 
-  const roleName = (u) => u.role?.name || u.role || "â€”";
+  const roleName = (u) => u.role?.name || u.role || "—";
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">ConfiguraÃ§Ãµes</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
@@ -225,7 +225,7 @@ export default function Config() {
           <CardHeader className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Store size={18} className="text-gray-400" />
-              <h3 className="font-semibold text-gray-900">Lojas e DepÃ³sitos</h3>
+              <h3 className="font-semibold text-gray-900">Lojas e Depósitos</h3>
             </div>
             <Button size="sm" onClick={openCreateStore}><Plus size={14} /> Nova Loja</Button>
           </CardHeader>
@@ -237,7 +237,7 @@ export default function Config() {
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-gray-900">{s.name}</p>
                       <Badge color={s.type === "CENTRAL" ? "blue" : "green"}>{TYPE_LABELS[s.type] || s.type}</Badge>
-                      {s.isDefault && <Badge color="purple">PadrÃ£o</Badge>}
+                      {s.isDefault && <Badge color="purple">Padrão</Badge>}
                       {!s.active && <Badge color="red">Inativa</Badge>}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
@@ -247,14 +247,14 @@ export default function Config() {
                       {!s.cnpj && !s.phone && !s.city && <span className="text-gray-400 italic">Sem dados cadastrais</span>}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
-                      <span>{s._count?.accessUsers || 0} usuÃ¡rios</span>
+                      <span>{s._count?.accessUsers || 0} usuários</span>
                       <span>{s._count?.sales || 0} vendas</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     <button onClick={() => toggleStoreDefault(s)}
                       className={`text-xs px-2 py-1 rounded ${s.isDefault ? "text-purple-600 hover:bg-purple-50 font-medium" : "text-gray-500 hover:bg-gray-100"}`}>
-                      {s.isDefault ? "PadrÃ£o" : "Def. PadrÃ£o"}
+                      {s.isDefault ? "Padrão" : "Def. Padrão"}
                     </button>
                     <button onClick={() => toggleStoreActive(s)}
                       className={`text-xs px-2 py-1 rounded ${s.active ? "text-red-600 hover:bg-red-50" : "text-emerald-600 hover:bg-emerald-50"}`}>
@@ -274,23 +274,22 @@ export default function Config() {
       {tab === "usuarios" && (
         <Card>
           <CardHeader className="flex items-center justify-between">
-            <div className="flex items-center gap-2"><Users size={18} className="text-gray-400" /><h3 className="font-semibold text-gray-900">UsuÃ¡rios</h3></div>
-            <Button size="sm" onClick={openCreateUser}><Plus size={14} /> Novo UsuÃ¡rio</Button>
+            <div className="flex items-center gap-2"><Users size={18} className="text-gray-400" /><h3 className="font-semibold text-gray-900">Usuários</h3></div>
+            <Button size="sm" onClick={openCreateUser}><Plus size={14} /> Novo Usuário</Button>
           </CardHeader>
           {loading ? <PageSpinner /> : users.length === 0 ? (
-            <EmptyState icon={Users} title="Nenhum usuÃ¡rio" />
+            <EmptyState icon={Users} title="Nenhum usuário" />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-gray-200 text-left">
-                  <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">MatrÃ­cula</th>
+                  <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Matrícula</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Nome</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Email</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Perfil</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Lojas</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Status</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Criado em</th>
-                  <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Ãšltimo acesso</th>
                   <th className="px-4 py-2 w-10" />
                 </tr></thead>
                 <tbody className="divide-y divide-gray-100">
@@ -298,13 +297,13 @@ export default function Config() {
                     const rn = roleName(u);
                     return (
                       <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{u.matricula || "â€”"}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{u.matricula || "—"}</td>
                         <td className="px-4 py-2 font-medium text-gray-900">{u.name}</td>
                         <td className="px-4 py-2 text-gray-500">{u.email}</td>
                         <td className="px-4 py-2"><Badge color={ROLE_COLORS[rn] || "gray"}>{ROLE_LABELS[rn] || rn}</Badge></td>
                         <td className="px-4 py-2 text-gray-500">{u.storeCount ?? u.stores?.length ?? 0}</td>
                         <td className="px-4 py-2"><Badge color={u.active ? "green" : "red"}>{u.active ? "Ativo" : "Inativo"}</Badge></td>
-                        <td className="px-4 py-2 text-xs text-gray-400">{u.createdAt ? formatDate(u.createdAt) : "â€”"}</td>                        <td className="px-4 py-2 text-xs text-gray-500">{u.lastSeenAt ? formatDateTime(u.lastSeenAt) : "Nunca"}</td>
+                        <td className="px-4 py-2 text-xs text-gray-400">{u.createdAt ? formatDate(u.createdAt) : "—"}</td>
                         <td className="px-4 py-2">
                           <button onClick={() => openEditUser(u)} className="p-1 text-gray-400 hover:text-primary-600 rounded">
                             <Pencil size={14} />
@@ -347,10 +346,10 @@ export default function Config() {
                   {customers.map((c) => (
                     <tr key={c.id} className="hover:bg-gray-50">
                       <td className="px-4 py-2 font-medium text-gray-900">{c.name}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.document ? cpfMask(c.document) : "â€”"}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.whatsapp ? whatsappMask(c.whatsapp) : "â€”"}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.birthDate ? formatDate(c.birthDate) : "â€”"}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.email || "â€”"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.document ? cpfMask(c.document) : "—"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.whatsapp ? whatsappMask(c.whatsapp) : "—"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.birthDate ? formatDate(c.birthDate) : "—"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.email || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -365,12 +364,12 @@ export default function Config() {
         <Card>
           <CardHeader className="flex items-center gap-2">
             <Shield size={18} className="text-gray-400" />
-            <h3 className="font-semibold text-gray-900">Matriz de PermissÃµes</h3>
+            <h3 className="font-semibold text-gray-900">Matriz de Permissões</h3>
           </CardHeader>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-200">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">PermissÃ£o</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Permissão</th>
                 {ROLES.map((r) => <th key={r.name} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{r.name}</th>)}
               </tr></thead>
               <tbody className="divide-y divide-gray-100">
@@ -395,7 +394,7 @@ export default function Config() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 space-y-1"><label className="block text-sm font-medium text-gray-700">Nome *</label><input value={storeForm.name} onChange={(e) => setStoreForm({ ...storeForm, name: e.target.value })} className={inputClass} /></div>
-            <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Tipo *</label><select value={storeForm.type} onChange={(e) => setStoreForm({ ...storeForm, type: e.target.value })} className={inputClass}><option value="LOJA">Loja</option><option value="CENTRAL">Central (DepÃ³sito)</option></select></div>
+            <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Tipo *</label><select value={storeForm.type} onChange={(e) => setStoreForm({ ...storeForm, type: e.target.value })} className={inputClass}><option value="LOJA">Loja</option><option value="CENTRAL">Central (Depósito)</option></select></div>
             <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">CNPJ</label><input value={cnpjMask(storeForm.cnpj)} onChange={(e) => setStoreForm({ ...storeForm, cnpj: e.target.value.replace(/\D/g, "").slice(0, 14) })} placeholder="00.000.000/0000-00" className={inputClass} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -403,10 +402,10 @@ export default function Config() {
             <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Email</label><input type="email" value={storeForm.email} onChange={(e) => setStoreForm({ ...storeForm, email: e.target.value })} className={inputClass} /></div>
           </div>
           <div className="border-t pt-3">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Endereco</p>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Endereço</p>
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2 space-y-1"><label className="block text-sm font-medium text-gray-700">Rua</label><input value={storeForm.street} onChange={(e) => setStoreForm({ ...storeForm, street: e.target.value })} className={inputClass} /></div>
-              <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">NÃºmero</label><input value={storeForm.number} onChange={(e) => setStoreForm({ ...storeForm, number: e.target.value })} className={inputClass} /></div>
+              <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Número</label><input value={storeForm.number} onChange={(e) => setStoreForm({ ...storeForm, number: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Complemento</label><input value={storeForm.complement} onChange={(e) => setStoreForm({ ...storeForm, complement: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Bairro</label><input value={storeForm.district} onChange={(e) => setStoreForm({ ...storeForm, district: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">CEP</label><input value={storeForm.zipCode} onChange={(e) => setStoreForm({ ...storeForm, zipCode: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="00000-000" className={inputClass} /></div>
@@ -422,18 +421,18 @@ export default function Config() {
       </Modal>
 
       {/* â•â•â• USER MODAL â•â•â• */}
-      <Modal open={userModal} onClose={() => setUserModal(false)} title={userEditId ? "Editar UsuÃ¡rio" : "Novo UsuÃ¡rio"}>
+      <Modal open={userModal} onClose={() => setUserModal(false)} title={userEditId ? "Editar Usuário" : "Novo Usuário"}>
         <div className="space-y-4">
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Nome *</label><input value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} className={inputClass} /></div>
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Email *</label><input type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} className={inputClass} /></div>
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">{userEditId ? "Nova Senha (deixe vazio para manter)" : "Senha *"}</label><input type="password" value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} onPaste={(e) => e.preventDefault()} autoComplete="new-password" className={inputClass} /></div>
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Confirmar Senha {!userEditId && "*"}</label><input type="password" value={userForm.passwordConfirm} onChange={(e) => setUserForm({ ...userForm, passwordConfirm: e.target.value })} onPaste={(e) => e.preventDefault()} autoComplete="new-password" className={inputClass} /></div>
           {userForm.password && userForm.passwordConfirm && userForm.password !== userForm.passwordConfirm && (
-            <p className="text-xs text-red-600">As senhas nÃ£o coincidem</p>
+            <p className="text-xs text-red-600">As senhas não coincidem</p>
           )}
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Perfil</label>
             <select value={userForm.roleName} onChange={(e) => setUserForm({ ...userForm, roleName: e.target.value, storeIds: e.target.value === "ADMIN" ? [] : userForm.storeIds })} className={inputClass}>
-              <option value="ADMIN">Administrador</option><option value="VENDEDOR">Vendedor</option><option value="CAIXA">Caixa</option><option value="FARMACEUTICO">FarmacÃªutico</option>
+              <option value="ADMIN">Administrador</option><option value="VENDEDOR">Vendedor</option><option value="CAIXA">Caixa</option><option value="FARMACEUTICO">Farmacêutico</option>
             </select>
           </div>
           {userForm.roleName !== "ADMIN" ? (
@@ -455,7 +454,7 @@ export default function Config() {
                     <span>{s.name}</span>
                   </label>
                 ))}
-                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponÃ­vel</p>}
+                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponível</p>}
               </div>
             </div>
           ) : (
@@ -490,5 +489,6 @@ export default function Config() {
     </div>
   );
 }
+
 
 
