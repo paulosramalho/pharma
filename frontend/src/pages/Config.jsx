@@ -795,7 +795,19 @@ export default function Config() {
                     catalog={licenseData?.catalog || []}
                     defaultPlanCode={licenseForm.planCode}
                     addToast={addToast}
-                    onSuccess={() => {
+                    onSuccess={async (payload) => {
+                      if (isDeveloperAdmin) {
+                        try {
+                          const listRes = await apiFetch("/api/license/admin/licenses");
+                          const list = listRes?.data?.licenses || [];
+                          setLicensesList(list);
+                          if (payload?.tenantId && list.some((l) => l.id === payload.tenantId && !l.isDeveloperTenant)) {
+                            setSelectedLicenseId(payload.tenantId);
+                          }
+                        } catch (err) {
+                          addToast(err.message || "Falha ao atualizar contratantes", "error");
+                        }
+                      }
                       setNovoContratanteMode(false);
                       setTab("licenciamento");
                     }}
