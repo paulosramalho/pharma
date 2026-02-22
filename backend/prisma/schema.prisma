@@ -415,10 +415,11 @@ model Category {
   id   String @id @default(uuid())
   tenant   Tenant @relation(fields: [tenantId], references: [id])
   tenantId String
-  name String @unique
+  name String
 
   products Product[]
 
+  @@unique([tenantId, name])
   @@index([tenantId, name])
 }
 
@@ -426,7 +427,7 @@ model Product {
   id         String   @id @default(uuid())
   tenant     Tenant   @relation(fields: [tenantId], references: [id])
   tenantId   String
-  ean        String?  @unique
+  ean        String?
   name       String
   brand      String?
   controlled    Boolean  @default(false)
@@ -446,6 +447,7 @@ model Product {
   reservationItems StockReservationItem[]
   discounts      Discount[]
 
+  @@unique([tenantId, ean])
   @@index([tenantId, active])
   @@index([tenantId, controlled])
   @@index([tenantId, categoryId])
