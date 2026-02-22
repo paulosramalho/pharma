@@ -16,6 +16,7 @@ import Config from "./pages/Config";
 import MeuPerfil from "./pages/MeuPerfil";
 import Relatorios from "./pages/Relatorios";
 import Chat from "./pages/Chat";
+import PrimeiroAcesso from "./pages/PrimeiroAcesso";
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -28,6 +29,7 @@ function PublicRoute({ children }) {
   const { isAuthenticated, loading, user } = useAuth();
   if (loading) return <PageSpinner />;
   if (isAuthenticated) {
+    if (user?.mustChangePassword) return <Navigate to="/primeiro-acesso" replace />;
     const role = user?.role;
     if (role === "CAIXA") return <Navigate to="/caixa" replace />;
     if (role === "VENDEDOR") return <Navigate to="/vendas" replace />;
@@ -38,6 +40,7 @@ function PublicRoute({ children }) {
 
 function DefaultRedirect() {
   const { user, isLicenseActive } = useAuth();
+  if (user?.mustChangePassword) return <Navigate to="/primeiro-acesso" replace />;
   if (user?.role === "ADMIN" && !isLicenseActive) return <Navigate to="/config" replace />;
   const role = user?.role;
   if (role === "CAIXA") return <Navigate to="/caixa" replace />;
@@ -48,21 +51,23 @@ function DefaultRedirect() {
 function AppRoutes() {
   const { hasFeature, user, isLicenseActive } = useAuth();
   const adminLicenseLocked = user?.role === "ADMIN" && !isLicenseActive;
+  const firstAccessLocked = !!user?.mustChangePassword;
   return (
     <Routes>
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      <Route path="/primeiro-acesso" element={<ProtectedRoute><PrimeiroAcesso /></ProtectedRoute>} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route path="/dashboard" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Dashboard />} />
-        <Route path="/vendas" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Vendas />} />
-        <Route path="/vendas/nova" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <VendaNova />} />
-        <Route path="/caixa" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Caixa />} />
-        <Route path="/estoque" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Estoque />} />
-        <Route path="/produtos" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Produtos />} />
-        <Route path="/usuarios" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Usuarios />} />
-        <Route path="/config" element={<Config />} />
-        <Route path="/perfil" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <MeuPerfil />} />
-        <Route path="/chat" element={adminLicenseLocked ? <Navigate to="/config" replace /> : (hasFeature("chat") ? <Chat /> : <Navigate to="/dashboard" replace />)} />
-        <Route path="/relatorios" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Relatorios />} />
+        <Route path="/dashboard" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : <Dashboard />)} />
+        <Route path="/vendas" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : <Vendas />)} />
+        <Route path="/vendas/nova" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : <VendaNova />)} />
+        <Route path="/caixa" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : <Caixa />)} />
+        <Route path="/estoque" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : <Estoque />)} />
+        <Route path="/produtos" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : <Produtos />)} />
+        <Route path="/usuarios" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : <Usuarios />)} />
+        <Route path="/config" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : <Config />} />
+        <Route path="/perfil" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : <MeuPerfil />)} />
+        <Route path="/chat" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : (hasFeature("chat") ? <Chat /> : <Navigate to="/dashboard" replace />))} />
+        <Route path="/relatorios" element={firstAccessLocked ? <Navigate to="/primeiro-acesso" replace /> : (adminLicenseLocked ? <Navigate to="/config" replace /> : <Relatorios />)} />
       </Route>
       <Route path="*" element={<DefaultRedirect />} />
     </Routes>

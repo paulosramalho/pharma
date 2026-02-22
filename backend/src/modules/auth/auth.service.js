@@ -9,7 +9,13 @@ const REFRESH_EXP = process.env.JWT_REFRESH_EXPIRES || "7d";
 
 function signAccess(user, roleName) {
   return jwt.sign(
-    { sub: user.id, email: user.email, role: roleName, tenantId: user.tenantId || null },
+    {
+      sub: user.id,
+      email: user.email,
+      role: roleName,
+      tenantId: user.tenantId || null,
+      mustChangePassword: Boolean(user.mustChangePassword),
+    },
     SECRET,
     { expiresIn: ACCESS_EXP }
   );
@@ -91,7 +97,14 @@ async function login(email, password) {
   return {
     accessToken,
     refreshToken,
-    user: { id: user.id, name: user.name, email: user.email, role: roleName, tenantId: user.tenantId || null },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: roleName,
+      tenantId: user.tenantId || null,
+      mustChangePassword: Boolean(user.mustChangePassword),
+    },
     permissions,
     stores,
   };
@@ -156,7 +169,14 @@ async function getMe(userId) {
   }
 
   return {
-    user: { id: user.id, name: user.name, email: user.email, role: roleName, tenantId: user.tenantId || null },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: roleName,
+      tenantId: user.tenantId || null,
+      mustChangePassword: Boolean(user.mustChangePassword),
+    },
     permissions,
     stores,
   };

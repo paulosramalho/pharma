@@ -50,6 +50,17 @@ export function AuthProvider({ children }) {
     setCurrentStore(id);
   }, []);
 
+  const refreshSession = useCallback(async () => {
+    if (!getToken()) return null;
+    const [meRes, licRes] = await Promise.all([apiFetch("/me"), apiFetch("/api/license/me").catch(() => ({ data: null }))]);
+    const d = meRes.data;
+    setUser(d.user);
+    setPermissions(d.permissions || []);
+    setStores(d.stores || []);
+    setLicense(licRes?.data || null);
+    return d;
+  }, []);
+
   const hasPermission = useCallback((key) => {
     if (!user) return false;
     if (user.role === "ADMIN") return true;
@@ -66,20 +77,13 @@ export function AuthProvider({ children }) {
   // Restore session on mount
   useEffect(() => {
     if (!getToken()) { setLoading(false); return; }
-    Promise.all([apiFetch("/me"), apiFetch("/api/license/me").catch(() => ({ data: null }))])
-      .then(([meRes, licRes]) => {
-        const d = meRes.data;
-        setUser(d.user);
-        setPermissions(d.permissions || []);
-        setStores(d.stores || []);
-        setLicense(licRes?.data || null);
-      })
+    refreshSession()
       .catch(() => { clearAuth(); setUser(null); })
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshSession]);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout, stores, storeId, switchStore, permissions, hasPermission, license, hasFeature, isLicenseActive }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout, refreshSession, stores, storeId, switchStore, permissions, hasPermission, license, hasFeature, isLicenseActive }}>
       {children}
     </AuthContext.Provider>
   );

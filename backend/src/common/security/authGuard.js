@@ -19,6 +19,7 @@ function authGuard() {
         email: payload.email,
         role: payload.role,
         tenantId: payload.tenantId || null,
+        mustChangePassword: Boolean(payload.mustChangePassword),
       };
 
       return next();

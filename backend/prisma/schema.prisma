@@ -91,6 +91,12 @@ model Tenant {
   contractorDocument          String?
   contractorNameOrCompany     String?
   contractorAddressFull       String?
+  contractorStreet            String?
+  contractorNumber            String?
+  contractorComplement        String?
+  contractorDistrict          String?
+  contractorCity              String?
+  contractorState             String?
   contractorZipCode           String?
   contractorPhoneWhatsapp     String?
   contractorEmail             String?
@@ -233,6 +239,8 @@ model User {
   twoFactorEnabled   Boolean   @default(false)
   twoFactorSecretEnc Json?
   lastSeenAt         DateTime?
+  mustChangePassword Boolean   @default(false)
+  passwordChangedAt  DateTime?
 
   createdAt    DateTime @default(now())
 

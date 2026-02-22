@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
 const { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer, makeReportCustomPdfBuffer } = require("../reports/reportPdfTemplate");
@@ -95,6 +95,12 @@ function buildApiRoutes({ prisma, log }) {
         contractorDocument: true,
         contractorNameOrCompany: true,
         contractorAddressFull: true,
+        contractorStreet: true,
+        contractorNumber: true,
+        contractorComplement: true,
+        contractorDistrict: true,
+        contractorCity: true,
+        contractorState: true,
         contractorZipCode: true,
         contractorPhoneWhatsapp: true,
         contractorEmail: true,
@@ -111,6 +117,12 @@ function buildApiRoutes({ prisma, log }) {
         document: tenant.contractorDocument || null,
         nameOrCompany: tenant.contractorNameOrCompany || null,
         addressFull: tenant.contractorAddressFull || null,
+        street: tenant.contractorStreet || null,
+        number: tenant.contractorNumber || null,
+        complement: tenant.contractorComplement || null,
+        district: tenant.contractorDistrict || null,
+        city: tenant.contractorCity || null,
+        state: tenant.contractorState || null,
         zipCode: tenant.contractorZipCode || null,
         phoneWhatsapp: tenant.contractorPhoneWhatsapp || null,
         email: tenant.contractorEmail || null,
@@ -120,14 +132,67 @@ function buildApiRoutes({ prisma, log }) {
   }
 
   function normalizeContractorPayload(raw = {}) {
-    return {
+    const state = String(raw.state || "").trim().toUpperCase().slice(0, 2) || null;
+    const normalized = {
       document: String(raw.document || "").replace(/\D/g, "") || null,
       nameOrCompany: String(raw.nameOrCompany || "").trim() || null,
+      street: String(raw.street || "").trim() || null,
+      number: String(raw.number || "").trim() || null,
+      complement: String(raw.complement || "").trim() || null,
+      district: String(raw.district || "").trim() || null,
+      city: String(raw.city || "").trim() || null,
+      state,
       addressFull: String(raw.addressFull || "").trim() || null,
       zipCode: String(raw.zipCode || "").replace(/\D/g, "") || null,
       phoneWhatsapp: String(raw.phoneWhatsapp || "").replace(/\D/g, "") || null,
       email: String(raw.email || "").trim().toLowerCase() || null,
       logoFile: String(raw.logoFile || "").trim() || null,
+    };
+    normalized.addressFull = normalized.addressFull || buildContractorAddressFull(normalized);
+    return normalized;
+  }
+
+  function buildContractorAddressFull(contractor) {
+    const left = [contractor.street, contractor.number, contractor.complement].filter(Boolean).join(", ");
+    const right = [contractor.district, contractor.city, contractor.state].filter(Boolean).join(" - ");
+    const merged = [left, right].filter(Boolean).join(" | ");
+    return merged || null;
+  }
+
+  function generateProvisionalPassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
+    let out = "";
+    for (let i = 0; i < 12; i += 1) {
+      out += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return out;
+  }
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+  }
+
+  function validateOnboardingPayload(payload) {
+    const contractor = normalizeContractorPayload(payload?.contractor || {});
+    const planCode = String(payload?.planCode || "").trim().toUpperCase();
+    const adminName = String(payload?.admin?.name || "").trim();
+    const adminEmail = String(payload?.admin?.email || "").trim().toLowerCase();
+
+    if (!contractor.nameOrCompany) throw Object.assign(new Error("Nome/Razao social do contratante e obrigatorio"), { statusCode: 400 });
+    if (!contractor.zipCode || contractor.zipCode.length !== 8) throw Object.assign(new Error("CEP do contratante invalido"), { statusCode: 400 });
+    if (!contractor.street || !contractor.district || !contractor.city || !contractor.state) {
+      throw Object.assign(new Error("Endereco do contratante incompleto"), { statusCode: 400 });
+    }
+    if (contractor.email && !isValidEmail(contractor.email)) throw Object.assign(new Error("Email do contratante invalido"), { statusCode: 400 });
+    if (!planCode) throw Object.assign(new Error("Pacote/planCode obrigatorio"), { statusCode: 400 });
+    if (!adminName || !adminEmail) throw Object.assign(new Error("Nome e email do usuario admin sao obrigatorios"), { statusCode: 400 });
+    if (!isValidEmail(adminEmail)) throw Object.assign(new Error("Email do usuario admin invalido"), { statusCode: 400 });
+
+    return {
+      contractor,
+      planCode,
+      adminName,
+      adminEmail,
     };
   }
 
@@ -317,11 +382,25 @@ function buildApiRoutes({ prisma, log }) {
     const license = await getLicense(req);
     if (isLicenseActive(license)) return next();
     const p = String(req.path || "");
-    if (p === "/license/me" || p === "/license/me/contractor") return next();
+    if (p === "/license/me" || p === "/license/me/contractor" || p === "/license/onboarding/finalize" || p.startsWith("/license/cep/")) return next();
     return res.status(403).json({
       error: {
         code: 403,
         message: "Licenca inativa. Regularize em Configuracoes > Licenciamento.",
+      },
+    });
+  }));
+
+  // First-login lock: user must change provisional password before using other modules.
+  router.use(asyncHandler(async (req, res, next) => {
+    if (!req.user?.id || !req.user?.mustChangePassword) return next();
+    const p = String(req.path || "");
+    const selfProfilePath = `/users/${req.user.id}/profile`;
+    if (p === selfProfilePath || p === "/license/me") return next();
+    return res.status(403).json({
+      error: {
+        code: 403,
+        message: "Troca de senha obrigatoria no primeiro acesso.",
       },
     });
   }));
@@ -494,7 +573,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }
 
-  // ─── DASHBOARD ───
+  // â”€â”€â”€ DASHBOARD â”€â”€â”€
   router.get("/license/me", asyncHandler(async (req, res) => {
     const license = await getLicense(req);
     const profile = await getTenantLicenseProfile(req);
@@ -580,6 +659,12 @@ function buildApiRoutes({ prisma, log }) {
         contractorDocument: contractor.document,
         contractorNameOrCompany: contractor.nameOrCompany,
         contractorAddressFull: contractor.addressFull,
+        contractorStreet: contractor.street,
+        contractorNumber: contractor.number,
+        contractorComplement: contractor.complement,
+        contractorDistrict: contractor.district,
+        contractorCity: contractor.city,
+        contractorState: contractor.state,
         contractorZipCode: contractor.zipCode,
         contractorPhoneWhatsapp: contractor.phoneWhatsapp,
         contractorEmail: contractor.email,
@@ -604,6 +689,164 @@ function buildApiRoutes({ prisma, log }) {
     const license = await getLicense(req);
     const profile = await getTenantLicenseProfile(req);
     return sendOk(res, req, { ...license, tenantId: profile.tenantId, contractor: profile.contractor });
+  }));
+
+  router.get("/license/cep/:cep", asyncHandler(async (req, res) => {
+    const cep = String(req.params.cep || "").replace(/\D/g, "");
+    if (cep.length !== 8) {
+      return res.status(400).json({ error: { code: 400, message: "CEP invalido" } });
+    }
+    const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+    if (!response.ok) {
+      return res.status(502).json({ error: { code: 502, message: "Falha ao consultar CEP" } });
+    }
+    const data = await response.json();
+    if (data?.erro) {
+      return res.status(404).json({ error: { code: 404, message: "CEP nao encontrado" } });
+    }
+    return sendOk(res, req, {
+      zipCode: cep,
+      street: String(data.logradouro || "").trim() || null,
+      complement: String(data.complemento || "").trim() || null,
+      district: String(data.bairro || "").trim() || null,
+      city: String(data.localidade || "").trim() || null,
+      state: String(data.uf || "").trim().toUpperCase() || null,
+    });
+  }));
+
+  router.post("/license/onboarding/finalize", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: { code: 403, message: "Somente admin pode executar onboarding de licenca" } });
+    }
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+
+    const validated = validateOnboardingPayload(req.body || {});
+    const passwordTemp = generateProvisionalPassword();
+    const bcrypt = require("bcryptjs");
+    const passwordHash = await bcrypt.hash(passwordTemp, 10);
+    const now = new Date();
+    const endsAt = new Date(now);
+    endsAt.setFullYear(endsAt.getFullYear() + 1);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const existingAdminEmail = await tx.user.findFirst({
+        where: { email: validated.adminEmail, tenantId },
+        select: { id: true },
+      });
+      if (existingAdminEmail) {
+        throw Object.assign(new Error("Email de admin ja existe neste tenant"), { statusCode: 400 });
+      }
+
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: {
+          contractorDocument: validated.contractor.document,
+          contractorNameOrCompany: validated.contractor.nameOrCompany,
+          contractorAddressFull: validated.contractor.addressFull,
+          contractorStreet: validated.contractor.street,
+          contractorNumber: validated.contractor.number,
+          contractorComplement: validated.contractor.complement,
+          contractorDistrict: validated.contractor.district,
+          contractorCity: validated.contractor.city,
+          contractorState: validated.contractor.state,
+          contractorZipCode: validated.contractor.zipCode,
+          contractorPhoneWhatsapp: validated.contractor.phoneWhatsapp,
+          contractorEmail: validated.contractor.email,
+          contractorLogoFile: validated.contractor.logoFile,
+        },
+      });
+
+      const previous = await tx.tenantLicense.findUnique({ where: { tenantId } });
+      const license = await tx.tenantLicense.upsert({
+        where: { tenantId },
+        update: {
+          planCode: validated.planCode,
+          status: "ACTIVE",
+          startsAt: now,
+          endsAt,
+          graceUntil: null,
+          updatedById: req.user?.id || null,
+          updatedByName: req.user?.name || req.user?.email || "Admin",
+        },
+        create: {
+          tenantId,
+          planCode: validated.planCode,
+          status: "ACTIVE",
+          startsAt: now,
+          endsAt,
+          graceUntil: null,
+          updatedById: req.user?.id || null,
+          updatedByName: req.user?.name || req.user?.email || "Admin",
+        },
+      });
+
+      const role = await tx.role.findUnique({ where: { name: "ADMIN" }, select: { id: true } });
+      if (!role?.id) throw Object.assign(new Error("Role ADMIN nao encontrada"), { statusCode: 500 });
+      const adminUser = await tx.user.create({
+        data: {
+          tenantId,
+          name: validated.adminName,
+          email: validated.adminEmail,
+          passwordHash,
+          active: true,
+          roleId: role.id,
+          mustChangePassword: true,
+          passwordChangedAt: null,
+        },
+        select: { id: true, name: true, email: true },
+      });
+
+      const defaultStore = await tx.store.findFirst({
+        where: { tenantId, active: true, isDefault: true },
+        select: { id: true },
+      });
+      if (defaultStore?.id) {
+        await tx.storeUser.upsert({
+          where: { storeId_userId: { storeId: defaultStore.id, userId: adminUser.id } },
+          update: { isDefault: true },
+          create: { storeId: defaultStore.id, userId: adminUser.id, isDefault: true },
+        });
+      }
+
+      await tx.tenantLicenseAudit.create({
+        data: {
+          tenantId,
+          previousPlan: previous?.planCode || null,
+          newPlan: license.planCode,
+          previousStatus: previous?.status || null,
+          newStatus: license.status,
+          changedById: req.user?.id || null,
+          changedByName: req.user?.name || req.user?.email || "Admin",
+          reason: "Onboarding de licenca com contratante e admin provisÃ³rio",
+          payload: {
+            contractor: validated.contractor,
+            adminUserId: adminUser.id,
+            adminEmail: adminUser.email,
+            mustChangePassword: true,
+          },
+        },
+      });
+
+      return { license, adminUser };
+    });
+
+    const profile = await getTenantLicenseProfile(req);
+    return sendOk(res, req, {
+      tenantId,
+      contractor: profile.contractor,
+      planCode: result.license.planCode,
+      status: result.license.status,
+      startsAt: result.license.startsAt,
+      endsAt: result.license.endsAt,
+      admin: {
+        id: result.adminUser.id,
+        name: result.adminUser.name,
+        email: result.adminUser.email,
+        temporaryPassword: passwordTemp,
+        mustChangePassword: true,
+      },
+    });
   }));
 
   router.get("/dashboard", asyncHandler(async (req, res) => {
@@ -696,7 +939,7 @@ function buildApiRoutes({ prisma, log }) {
       : null;
     const cashSession = openSession ? {
       id: openSession.id,
-      openedBy: openSession.openedBy?.name || "—",
+      openedBy: openSession.openedBy?.name || "â€”",
       openedAt: openSession.openedAt,
       initialCash: Number(openSession.initialCash),
     } : null;
@@ -829,7 +1072,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // ─── STORES ───
+  // â”€â”€â”€ STORES â”€â”€â”€
   router.get("/stores", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { all } = req.query; // ?all=true to include inactive
@@ -848,7 +1091,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/stores", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { name, type, cnpj, phone, email, street, number, complement, district, city, state, zipCode } = req.body;
-    if (!name || !type) return res.status(400).json({ error: { code: 400, message: "name e type obrigatórios" } });
+    if (!name || !type) return res.status(400).json({ error: { code: 400, message: "name e type obrigatÃ³rios" } });
     await assertStoreActivationAllowed(req, true);
 
     const store = await prisma.store.create({
@@ -892,14 +1135,14 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, store);
   }));
 
-  // ─── CATEGORIES ───
+  // â”€â”€â”€ CATEGORIES â”€â”€â”€
   router.get("/categories", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const categories = await prisma.category.findMany({ where: { tenantId }, orderBy: { name: "asc" } });
     return sendOk(res, req, categories);
   }));
 
-  // ─── PRODUCTS ───
+  // â”€â”€â”€ PRODUCTS â”€â”€â”€
   router.get("/products", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { search, categoryId, page = 1, limit = 50 } = req.query;
@@ -1022,7 +1265,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/products", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { name, ean, brand, categoryId, controlled, price } = req.body;
-    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatório" } });
+    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatÃ³rio" } });
 
     const product = await prisma.product.create({
       data: { tenantId, name, ean: ean || null, brand: brand || null, categoryId: categoryId || null, controlled: !!controlled, active: true },
@@ -1053,7 +1296,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, product);
   }));
 
-  // ─── DISCOUNTS ───
+  // â”€â”€â”€ DISCOUNTS â”€â”€â”€
   router.get("/discounts", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { productId, active } = req.query;
@@ -1075,7 +1318,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const { productId, type, value, startDate, endDate } = req.body;
     if (!productId || !type || value === undefined) {
-      return res.status(400).json({ error: { code: 400, message: "productId, type e value obrigatórios" } });
+      return res.status(400).json({ error: { code: 400, message: "productId, type e value obrigatÃ³rios" } });
     }
     if (!["PERCENT", "FIXED"].includes(type)) {
       return res.status(400).json({ error: { code: 400, message: "type deve ser PERCENT ou FIXED" } });
@@ -1142,7 +1385,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { success: true });
   }));
 
-  // ─── USERS ───
+  // â”€â”€â”€ USERS â”€â”€â”€
   router.get("/users", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const users = await prisma.user.findMany({
@@ -1168,11 +1411,11 @@ function buildApiRoutes({ prisma, log }) {
     const bcrypt = require("bcryptjs");
     const { name, email, password, roleName, storeIds } = req.body;
     if (!name || !email || !password || !roleName) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: name, email, password, roleName" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: name, email, password, roleName" } });
     }
     await assertUserCreationAllowed(req, roleName);
     const role = await prisma.role.findUnique({ where: { name: roleName } });
-    if (!role) return res.status(400).json({ error: { code: 400, message: `Role ${roleName} não encontrada` } });
+    if (!role) return res.status(400).json({ error: { code: 400, message: `Role ${roleName} nÃ£o encontrada` } });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
@@ -1244,32 +1487,51 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: user.id, name: user.name, email: user.email });
   }));
 
-  // ─── USER PROFILE (self-service email/password change) ───
+  // â”€â”€â”€ USER PROFILE (self-service email/password change) â”€â”€â”€
   router.put("/users/:id/profile", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
-    const { email, currentPassword, newPassword } = req.body;
+    const { name, email, currentPassword, newPassword } = req.body;
     const userId = req.params.id;
 
     // Users can only update their own profile
     if (req.user?.id !== userId) {
-      return res.status(403).json({ error: { code: 403, message: "Sem permissão" } });
+      return res.status(403).json({ error: { code: 403, message: "Sem permissÃ£o" } });
     }
 
     const data = {};
 
+    if (name !== undefined) {
+      const nextName = String(name || "").trim();
+      if (!nextName) return res.status(400).json({ error: { code: 400, message: "Nome obrigatorio" } });
+      data.name = nextName;
+    }
+
     if (email) {
       const existing = await prisma.user.findFirst({ where: { tenantId, email, NOT: { id: userId } } });
-      if (existing) return res.status(400).json({ error: { code: 400, message: "Email já em uso" } });
+      if (existing) return res.status(400).json({ error: { code: 400, message: "Email jÃ¡ em uso" } });
       data.email = email;
     }
 
-    if (currentPassword && newPassword) {
-      const user = await prisma.user.findFirst({ where: { id: userId, tenantId } });
-      if (!user) return res.status(404).json({ error: { code: 404, message: "Usuário não encontrado" } });
+    const user = await prisma.user.findFirst({ where: { id: userId, tenantId } });
+    if (!user) return res.status(404).json({ error: { code: 404, message: "UsuÃ¡rio nÃ£o encontrado" } });
+
+    if (newPassword !== undefined || currentPassword !== undefined) {
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: { code: 400, message: "Senha atual e nova senha sÃ£o obrigatÃ³rias" } });
+      }
+      if (String(newPassword).length < 4) {
+        return res.status(400).json({ error: { code: 400, message: "Nova senha deve ter no mÃ­nimo 4 caracteres" } });
+      }
+      if (String(currentPassword) === String(newPassword)) {
+        return res.status(400).json({ error: { code: 400, message: "Nova senha deve ser diferente da senha atual" } });
+      }
+
       const valid = await bcrypt.compare(currentPassword, user.passwordHash);
       if (!valid) return res.status(400).json({ error: { code: 400, message: "Senha atual incorreta" } });
       data.passwordHash = await bcrypt.hash(newPassword, 10);
+      data.mustChangePassword = false;
+      data.passwordChangedAt = new Date();
     }
 
     if (Object.keys(data).length === 0) {
@@ -1277,10 +1539,15 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const updated = await prisma.user.update({ where: { id: userId }, data });
-    return sendOk(res, req, { id: updated.id, name: updated.name, email: updated.email });
+    return sendOk(res, req, {
+      id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      mustChangePassword: Boolean(updated.mustChangePassword),
+    });
   }));
 
-  // ─── INVENTORY ───
+  // â”€â”€â”€ INVENTORY â”€â”€â”€
 
 
   // --- CHAT ---
@@ -1820,7 +2087,7 @@ function buildApiRoutes({ prisma, log }) {
     const storeId = await resolveStoreId(req);
     const { productId, lotNumber, expiration, costUnit, quantity, reason } = req.body;
     if (!productId || !lotNumber || !expiration || !costUnit || !quantity) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: productId, lotNumber, expiration, costUnit, quantity" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: productId, lotNumber, expiration, costUnit, quantity" } });
     }
 
     const lot = await prisma.inventoryLot.upsert({
@@ -1860,18 +2127,18 @@ function buildApiRoutes({ prisma, log }) {
     const storeId = await resolveStoreId(req);
     let { productId, lotId, type, quantity, reason } = req.body;
     if (!type || !quantity || !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: type, quantity, reason" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: type, quantity, reason" } });
     }
 
     // Resolve productId from lotId if not provided
     if (lotId && !productId) {
       const lot = await prisma.inventoryLot.findFirst({ where: { id: lotId, storeId, store: { tenantId } } });
-      if (!lot) return res.status(400).json({ error: { code: 400, message: "Lote não encontrado" } });
+      if (!lot) return res.status(400).json({ error: { code: 400, message: "Lote nÃ£o encontrado" } });
       productId = lot.productId;
     }
 
     if (!productId) {
-      return res.status(400).json({ error: { code: 400, message: "productId ou lotId obrigatório" } });
+      return res.status(400).json({ error: { code: 400, message: "productId ou lotId obrigatÃ³rio" } });
     }
 
     const isPositive = type === "ADJUST_POS";
@@ -2392,17 +2659,17 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { fulfilled: true });
   }));
 
-  // ─── INVENTORY EDIT (correct wrong entry) ───
+  // â”€â”€â”€ INVENTORY EDIT (correct wrong entry) â”€â”€â”€
   router.put("/inventory/lots/:id", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { quantity, costUnit, reason } = req.body;
     if (quantity === undefined && costUnit === undefined) {
       return res.status(400).json({ error: { code: 400, message: "Informe quantity ou costUnit" } });
     }
-    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório" } });
+    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio" } });
 
     const lot = await prisma.inventoryLot.findFirst({ where: { id: req.params.id, store: { tenantId } } });
-    if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote não encontrado" } });
+    if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote nÃ£o encontrado" } });
 
     const data = {};
     if (quantity !== undefined) data.quantity = Number(quantity);
@@ -2428,7 +2695,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, updated);
   }));
 
-  // ─── STOCK VALUATION ───
+  // â”€â”€â”€ STOCK VALUATION â”€â”€â”€
   router.get("/inventory/valuation", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = req.query.storeId || null;
@@ -2515,7 +2782,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // ─── AUTO-PRICE (calculate selling price from cost) ───
+  // â”€â”€â”€ AUTO-PRICE (calculate selling price from cost) â”€â”€â”€
   router.post("/products/:id/auto-price", asyncHandler(async (req, res) => {
     const { markup } = req.body; // markup percentage (e.g., 30 = 30%)
     if (!markup || markup <= 0) {
@@ -2550,7 +2817,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { avgCost: Math.round(avgCost * 100) / 100, markup: Number(markup), sellingPrice, price });
   }));
 
-  // ─── CUSTOMERS ───
+  // â”€â”€â”€ CUSTOMERS â”€â”€â”€
   router.get("/customers", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { search, page = 1, limit = 50 } = req.query;
@@ -2580,12 +2847,12 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/customers", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { name, document, birthDate, whatsapp, phone, email } = req.body;
-    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatório" } });
+    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatÃ³rio" } });
 
     const cleanDoc = document ? document.replace(/\D/g, "") : null;
     if (cleanDoc) {
       const existing = await prisma.customer.findFirst({ where: { tenantId, document: cleanDoc } });
-      if (existing) return res.status(400).json({ error: { code: 400, message: "CPF já cadastrado" } });
+      if (existing) return res.status(400).json({ error: { code: 400, message: "CPF jÃ¡ cadastrado" } });
     }
 
     const customer = await prisma.customer.create({
@@ -2608,7 +2875,7 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id, tenantId },
       include: { sales: { where: { tenantId, status: "PAID" }, orderBy: { createdAt: "desc" }, take: 10, include: { items: { include: { product: true } } } } },
     });
-    if (!customer) return res.status(404).json({ error: { code: 404, message: "Cliente não encontrado" } });
+    if (!customer) return res.status(404).json({ error: { code: 404, message: "Cliente nÃ£o encontrado" } });
     return sendOk(res, req, customer);
   }));
 
@@ -2675,7 +2942,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { suggestions });
   }));
 
-  // ─── SALES ───
+  // â”€â”€â”€ SALES â”€â”€â”€
   router.get("/sales", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
@@ -2709,7 +2976,7 @@ function buildApiRoutes({ prisma, log }) {
 
   router.get("/sales/:id", asyncHandler(async (req, res) => {
     const sale = await loadFullSale(req.params.id, await resolveTenantId(req));
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
     return sendOk(res, req, sale);
   }));
 
@@ -2764,7 +3031,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId não definido" } });
+    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
 
     // Robust sale number generation with retry for race conditions (e.g., React StrictMode double-mount)
     const maxRetries = 5;
@@ -2813,7 +3080,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales/:id/items", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { productId, quantity } = req.body;
-    if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatórios" } });
+    if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatÃ³rios" } });
 
     const saleCtx = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true, storeId: true, status: true } });
     if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
@@ -2832,7 +3099,7 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const price = await prisma.productPrice.findFirst({ where: { productId, active: true }, orderBy: { createdAt: "desc" } });
-    if (!price) return res.status(400).json({ error: { code: 400, message: "Produto sem preço" } });
+    if (!price) return res.status(400).json({ error: { code: 400, message: "Produto sem preÃ§o" } });
 
     const basePrice = Number(price.price);
     let priceUnit = basePrice;
@@ -2883,7 +3150,7 @@ function buildApiRoutes({ prisma, log }) {
     const saleCtx = await prisma.sale.findFirst({ where: { id: req.params.saleId, tenantId }, select: { id: true, storeId: true, status: true } });
     if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
     const item = await prisma.saleItem.findFirst({ where: { id: req.params.itemId, saleId: saleCtx.id } });
-    if (!item) return res.status(404).json({ error: { code: 404, message: "Item não encontrado" } });
+    if (!item) return res.status(404).json({ error: { code: 404, message: "Item nÃ£o encontrado" } });
     if (saleCtx.status !== "DRAFT" && saleCtx.status !== "CONFIRMED") {
       return res.status(400).json({ error: { code: 400, message: "Nao e possivel alterar itens neste status" } });
     }
@@ -2947,7 +3214,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales/:id/pay", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { method, pos } = req.body || {};
-    if (!method) return res.status(400).json({ error: { code: 400, message: "method obrigatório (DINHEIRO, PIX, CARTAO_CREDITO, CARTAO_DEBITO)" } });
+    if (!method) return res.status(400).json({ error: { code: 400, message: "method obrigatÃ³rio (DINHEIRO, PIX, CARTAO_CREDITO, CARTAO_DEBITO)" } });
 
     const sale = await prisma.sale.findFirst({
       where: { id: req.params.id, tenantId },
@@ -2955,12 +3222,12 @@ function buildApiRoutes({ prisma, log }) {
     });
 
     if (!sale || (sale.status !== "CONFIRMED" && sale.status !== "DRAFT")) {
-      return res.status(400).json({ error: { code: 400, message: "Venda não pode ser paga neste status" } });
+      return res.status(400).json({ error: { code: 400, message: "Venda nÃ£o pode ser paga neste status" } });
     }
 
     // Check open cash session
     const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o de caixa aberta" } });
 
     // FEFO + COGS for each item
     for (const item of sale.items) {
@@ -3057,7 +3324,7 @@ function buildApiRoutes({ prisma, log }) {
   router.delete("/sales/:id", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
     if (sale.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Somente rascunhos podem ser apagados" } });
 
     await prisma.saleItem.deleteMany({ where: { saleId: sale.id } });
@@ -3069,12 +3336,12 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const { reason } = req.body || {};
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
-    if (sale.status === "PAID") return res.status(400).json({ error: { code: 400, message: "Venda paga não pode ser cancelada (use estorno)" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (sale.status === "PAID") return res.status(400).json({ error: { code: 400, message: "Venda paga nÃ£o pode ser cancelada (use estorno)" } });
 
     // CONFIRMED sales require a reason
     if (sale.status === "CONFIRMED" && !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório para cancelar venda confirmada" } });
+      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio para cancelar venda confirmada" } });
     }
 
     await prisma.sale.update({
@@ -3085,12 +3352,12 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, updated);
   }));
 
-  // ─── EXCHANGE (TROCA) ───
+  // â”€â”€â”€ EXCHANGE (TROCA) â”€â”€â”€
   router.post("/sales/:id/exchange", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { returnedItems, newItems, reason } = req.body;
-    // returnedItems: [{ saleItemId, quantity }] — items to return
-    // newItems: [{ productId, quantity }] — new items the customer takes
+    // returnedItems: [{ saleItemId, quantity }] â€” items to return
+    // newItems: [{ productId, quantity }] â€” new items the customer takes
     if ((!returnedItems || !returnedItems.length) && (!newItems || !newItems.length)) {
       return res.status(400).json({ error: { code: 400, message: "Informe os itens para troca" } });
     }
@@ -3100,14 +3367,14 @@ function buildApiRoutes({ prisma, log }) {
       include: { items: { include: { product: true } } },
     });
 
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
     if (sale.status !== "PAID") return res.status(400).json({ error: { code: 400, message: "Somente vendas pagas podem ser trocadas" } });
 
     let totalReturn = 0;
     let totalNew = 0;
     const now = new Date();
 
-    // 1) Process returned items — refund + return to inventory
+    // 1) Process returned items â€” refund + return to inventory
     for (const ri of (returnedItems || [])) {
       const saleItem = sale.items.find((i) => i.id === ri.saleItemId);
       if (!saleItem) continue;
@@ -3126,14 +3393,14 @@ function buildApiRoutes({ prisma, log }) {
           data: {
             tenantId,
             storeId: sale.storeId, productId: saleItem.productId, lotId: lot.id,
-            type: "IN", quantity: returnQty, reason: reason || "Troca - Devolução",
+            type: "IN", quantity: returnQty, reason: reason || "Troca - DevoluÃ§Ã£o",
             refType: "EXCHANGE", refId: sale.id, createdById: req.user?.id,
           },
         });
       }
     }
 
-    // 2) Process new items — add to sale + deduct from inventory
+    // 2) Process new items â€” add to sale + deduct from inventory
     for (const ni of (newItems || [])) {
       if (!ni.productId || !ni.quantity || ni.quantity <= 0) continue;
 
@@ -3227,17 +3494,17 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // ─── SETTLE EXCHANGE (CAIXA) ───
+  // â”€â”€â”€ SETTLE EXCHANGE (CAIXA) â”€â”€â”€
   router.post("/sales/:id/settle-exchange", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
     if (sale.exchangeBalance === null || Number(sale.exchangeBalance) === 0) {
       return res.status(400).json({ error: { code: 400, message: "Nenhuma troca pendente para esta venda" } });
     }
 
     const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o de caixa aberta" } });
 
     const amount = Number(sale.exchangeBalance);
 
@@ -3258,7 +3525,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { sale: updated, settled: Math.abs(amount) });
   }));
 
-  // ─── CASH OPERATOR AUTH ───
+  // â”€â”€â”€ CASH OPERATOR AUTH â”€â”€â”€
   // --- POS TRANSACTIONS (base integration) ---
   router.post("/pos/transactions", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
@@ -3377,7 +3644,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
     const { matricula, password } = req.body;
-    if (!matricula || !password) return res.status(400).json({ error: { code: 400, message: "Matrícula e senha obrigatórios" } });
+    if (!matricula || !password) return res.status(400).json({ error: { code: 400, message: "MatrÃ­cula e senha obrigatÃ³rios" } });
 
     // Hard-coded master operator: 00000 / 00000
     if (matricula === "00000" && password === "00000") {
@@ -3387,7 +3654,7 @@ function buildApiRoutes({ prisma, log }) {
     // Matricula is sequential (0001, 0002, ...) based on user creation order
     const users = await prisma.user.findMany({ where: { tenantId, active: true }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, email: true, passwordHash: true } });
     const idx = parseInt(matricula, 10) - 1;
-    if (idx < 0 || idx >= users.length) return res.status(401).json({ error: { code: 401, message: "Matrícula inválida" } });
+    if (idx < 0 || idx >= users.length) return res.status(401).json({ error: { code: 401, message: "MatrÃ­cula invÃ¡lida" } });
 
     const user = users[idx];
     const valid = password === "0000" || await bcrypt.compare(password, user.passwordHash);
@@ -3396,7 +3663,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: user.id, name: user.name, matricula: String(idx + 1).padStart(4, "0") });
   }));
 
-  // ─── CASH SESSIONS ───
+  // â”€â”€â”€ CASH SESSIONS â”€â”€â”€
   router.get("/cash/sessions/current", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
@@ -3413,10 +3680,10 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/cash/sessions/open", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId não definido" } });
+    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
 
     const existing = await prisma.cashSession.findFirst({ where: { tenantId, storeId, closedAt: null } });
-    if (existing) return res.status(400).json({ error: { code: 400, message: "Já existe sessão aberta para esta loja" } });
+    if (existing) return res.status(400).json({ error: { code: 400, message: "JÃ¡ existe sessÃ£o aberta para esta loja" } });
 
     const { initialCash } = req.body;
     const session = await prisma.cashSession.create({
@@ -3434,8 +3701,8 @@ function buildApiRoutes({ prisma, log }) {
       include: { movements: true },
     });
 
-    if (!session) return res.status(404).json({ error: { code: 404, message: "Sessão não encontrada" } });
-    if (session.closedAt) return res.status(400).json({ error: { code: 400, message: "Sessão já fechada" } });
+    if (!session) return res.status(404).json({ error: { code: 404, message: "SessÃ£o nÃ£o encontrada" } });
+    if (session.closedAt) return res.status(400).json({ error: { code: 400, message: "SessÃ£o jÃ¡ fechada" } });
 
     // Calculate expected cash
     let expected = Number(session.initialCash);
@@ -3462,12 +3729,12 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     const session = await prisma.cashSession.findFirst({ where: { tenantId, storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o aberta" } });
 
     const { type, amount, reason, method } = req.body;
-    if (!type || !amount) return res.status(400).json({ error: { code: 400, message: "type e amount obrigatórios" } });
+    if (!type || !amount) return res.status(400).json({ error: { code: 400, message: "type e amount obrigatÃ³rios" } });
     if ((type === "SANGRIA" || type === "AJUSTE") && !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório para sangria/ajuste" } });
+      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio para sangria/ajuste" } });
     }
 
     const movement = await prisma.cashMovement.create({
@@ -3480,7 +3747,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, movement, 201);
   }));
 
-  // ─── REPORTS ───
+  // â”€â”€â”€ REPORTS â”€â”€â”€
   router.get("/reports/cash-closings", asyncHandler(async (req, res) => {
     await assertFeature(req, "reportsCashClosings", "Relatorio de fechamento de caixa indisponivel no plano atual");
     const storeId = await resolveStoreId(req);
@@ -3790,7 +4057,7 @@ function buildApiRoutes({ prisma, log }) {
       const truncate = (v, max = 24) => {
         const s = String(v || "-");
         if (s.length <= max) return s;
-        return `${s.slice(0, Math.max(0, max - 1))}…`;
+        return `${s.slice(0, Math.max(0, max - 1))}â€¦`;
       };
 
       const pdfBuf = await makeReportCustomPdfBuffer({

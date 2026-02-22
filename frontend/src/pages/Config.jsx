@@ -10,6 +10,7 @@ import Badge from "../components/ui/Badge";
 import Table from "../components/ui/Table";
 import EmptyState from "../components/ui/EmptyState";
 import { PageSpinner } from "../components/ui/Spinner";
+import OnboardingLicencaWizard from "../components/licensing/OnboardingLicencaWizard";
 import { Settings, Store, Shield, Plus, Pencil, Users, UserCheck } from "lucide-react";
 
 const TABS = [
@@ -697,6 +698,24 @@ export default function Config() {
                   </div>
                 </div>
               </div>
+
+              <OnboardingLicencaWizard
+                canManage={canManageLicense}
+                catalog={licenseData?.catalog || []}
+                defaultPlanCode={licenseForm.planCode}
+                addToast={addToast}
+                onSuccess={(payload) => {
+                  if (!payload) return;
+                  setLicenseData((prev) => ({
+                    ...(prev || {}),
+                    planCode: payload.planCode || prev?.planCode,
+                    status: payload.status || prev?.status,
+                    startsAt: payload.startsAt || prev?.startsAt,
+                    endsAt: payload.endsAt || prev?.endsAt,
+                    contractor: payload.contractor || prev?.contractor,
+                  }));
+                }}
+              />
             </CardBody>
           )}
         </Card>
