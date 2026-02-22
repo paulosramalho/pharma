@@ -11,6 +11,13 @@ function formatDateTime(v) {
   return d.toLocaleString("pt-BR");
 }
 
+function getPresenceText(user) {
+  if (!user) return "";
+  if (user.isOnline) return "online";
+  if (user.lastSeenAt) return `visto por ultimo em ${formatDateTime(user.lastSeenAt)}`;
+  return "nunca visto";
+}
+
 function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear()
     && a.getMonth() === b.getMonth()
@@ -183,6 +190,7 @@ export default function Chat() {
                   {!!c.unreadCount && <span className="text-[11px] bg-red-100 text-red-700 rounded-full px-2 py-0.5">{c.unreadCount}</span>}
                 </div>
                 <p className="text-xs text-gray-500 truncate">{c.lastMessage?.content || "-"}</p>
+                <p className="text-[11px] text-gray-400 truncate">{getPresenceText(c.user)}</p>
               </button>
             );
           })}
@@ -206,7 +214,7 @@ export default function Chat() {
                       </p>
                       {!!unread && <span className="text-[11px] bg-red-100 text-red-700 rounded-full px-2 py-0.5">{unread}</span>}
                     </div>
-                    <p className="text-xs text-gray-500 truncate">{u.role?.name || "-"} {u.isOnline ? "• online" : "• offline"}</p>
+                    <p className="text-xs text-gray-500 truncate">{u.role?.name || "-"} • {getPresenceText(u)}</p>
                   </button>
                 );
               })}
@@ -221,7 +229,7 @@ export default function Chat() {
             <span className={`inline-block w-2.5 h-2.5 rounded-full ${activeUser?.isOnline ? "bg-emerald-500" : "bg-gray-300"}`} />
             {activeUser?.name || "Selecione um usuario"}
           </p>
-          <p className="text-xs text-gray-500">{activeUser?.role?.name || ""} {activeUser ? (activeUser.isOnline ? "• online" : "• offline") : ""}</p>
+          <p className="text-xs text-gray-500">{activeUser?.role?.name || ""} {activeUser ? `• ${getPresenceText(activeUser)}` : ""}</p>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 bg-gray-50">
