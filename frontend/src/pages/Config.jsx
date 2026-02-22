@@ -1,6 +1,7 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/AuthContext";
 import { cnpjMask, phoneMask, cpfMask, whatsappMask, formatDate } from "../lib/format";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -15,6 +16,7 @@ const TABS = [
   { key: "lojas", label: "Lojas", icon: Store },
   { key: "usuarios", label: "Usuários", icon: Users },
   { key: "clientes", label: "Clientes", icon: UserCheck },
+  { key: "licenciamento", label: "Licenciamento", icon: Settings },
   { key: "permissoes", label: "Permissões", icon: Shield },
 ];
 
@@ -48,6 +50,7 @@ const ROLES = [
 ];
 
 export default function Config() {
+  const { user } = useAuth();
   const { addToast } = useToast();
   const [tab, setTab] = useState("lojas");
   const [loading, setLoading] = useState(true);
@@ -70,6 +73,8 @@ export default function Config() {
   const [customerForm, setCustomerForm] = useState(emptyCustomerForm);
   const [customerEditId, setCustomerEditId] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [licenseData, setLicenseData] = useState(null);
+  const [licenseForm, setLicenseForm] = useState({ planCode: "MINIMO", status: "ACTIVE", reason: "" });
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -91,6 +96,19 @@ export default function Config() {
         .finally(() => setLoading(false));
     } else if (tab === "clientes") {
       loadCustomers();
+    } else if (tab === "licenciamento") {
+      apiFetch("/api/license/me")
+        .then((res) => {
+          const lic = res.data || null;
+          setLicenseData(lic);
+          setLicenseForm((prev) => ({
+            ...prev,
+            planCode: String(lic?.planCode || "MINIMO").toUpperCase(),
+            status: String(lic?.status || "ACTIVE").toUpperCase(),
+          }));
+        })
+        .catch((err) => addToast(err.message, "error"))
+        .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
@@ -204,6 +222,30 @@ export default function Config() {
   };
 
   const roleName = (u) => u.role?.name || u.role || "—";
+  const canManageLicense = user?.role === "ADMIN";
+
+  const submitLicense = async () => {
+    if (!canManageLicense) return;
+    setSubmitting(true);
+    try {
+      const res = await apiFetch("/api/license/me", {
+        method: "PUT",
+        body: JSON.stringify({
+          planCode: String(licenseForm.planCode || "").toUpperCase(),
+          status: String(licenseForm.status || "").toUpperCase(),
+          reason: String(licenseForm.reason || "").trim() || null,
+        }),
+      });
+      setLicenseData(res.data || null);
+      addToast("Licença atualizada com sucesso!", "success");
+    } catch (err) {
+      addToast(err.message || "Erro ao atualizar licença", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const dateLabel = (v) => (v ? formatDate(v) : "—");
 
   return (
     <div className="space-y-6">
@@ -359,6 +401,84 @@ export default function Config() {
         </Card>
       )}
 
+      {/* ═══ LICENCIAMENTO TAB ═══ */}
+      {tab === "licenciamento" && (
+        <Card>
+          <CardHeader className="flex items-center gap-2">
+            <Settings size={18} className="text-gray-400" />
+            <h3 className="font-semibold text-gray-900">Licenciamento do Tenant</h3>
+          </CardHeader>
+          {loading ? <PageSpinner /> : (
+            <CardBody className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+                  <p className="text-xs text-gray-500">Plano atual</p>
+                  <p className="font-semibold text-gray-900">{licenseData?.planCode || "—"}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+                  <p className="text-xs text-gray-500">Status</p>
+                  <p className="font-semibold text-gray-900">{licenseData?.status || "—"}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+                  <p className="text-xs text-gray-500">Início</p>
+                  <p className="font-semibold text-gray-900">{dateLabel(licenseData?.startsAt)}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+                  <p className="text-xs text-gray-500">Atualizado em</p>
+                  <p className="font-semibold text-gray-900">{dateLabel(licenseData?.updatedAt)}</p>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Plano</label>
+                  <select
+                    className={inputClass}
+                    value={licenseForm.planCode}
+                    onChange={(e) => setLicenseForm((p) => ({ ...p, planCode: e.target.value }))}
+                    disabled={!canManageLicense}
+                  >
+                    {(licenseData?.catalog || []).map((p) => (
+                      <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Status</label>
+                  <select
+                    className={inputClass}
+                    value={licenseForm.status}
+                    onChange={(e) => setLicenseForm((p) => ({ ...p, status: e.target.value }))}
+                    disabled={!canManageLicense}
+                  >
+                    {["TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED", "CANCELED"].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Motivo</label>
+                  <input
+                    className={inputClass}
+                    value={licenseForm.reason}
+                    onChange={(e) => setLicenseForm((p) => ({ ...p, reason: e.target.value }))}
+                    placeholder="Opcional"
+                    disabled={!canManageLicense}
+                  />
+                </div>
+              </div>
+
+              {canManageLicense ? (
+                <div className="flex justify-end">
+                  <Button onClick={submitLicense} loading={submitting}>Salvar Licença</Button>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500">Somente ADMIN pode alterar licença.</p>
+              )}
+            </CardBody>
+          )}
+        </Card>
+      )}
       {/* â•â•â• PERMISSOES TAB â•â•â• */}
       {tab === "permissoes" && (
         <Card>
