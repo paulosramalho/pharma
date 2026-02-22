@@ -111,10 +111,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
     const cep = String(form.contractor.zipCode || "").replace(/\D/g, "");
     if (cep.length !== 8) return addToast?.("CEP invalido", "warning");
     setLoadingCep(true);
-    try {
-      const res = await apiFetch(`/api/license/cep/${cep}`);
-      const d = res.data || {};
-      // Regra solicitada: sobrescreve campos de endereco com o retorno do CEP.
+    const applyCepData = (d) => {
       setForm((prev) => ({
         ...prev,
         contractor: {
@@ -124,12 +121,34 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
           complement: d.complement || "",
           district: d.district || "",
           city: d.city || "",
-          state: d.state || "",
+          state: String(d.state || "").toUpperCase(),
         },
       }));
+    };
+    try {
+      const res = await apiFetch(`/api/license/cep/${cep}`);
+      const d = res.data || {};
+      applyCepData(d);
       addToast?.("Endereco preenchido pelo CEP", "success");
     } catch (err) {
-      addToast?.(err.message || "Falha ao buscar CEP", "error");
+      try {
+        // Fallback: consulta direta no navegador quando o backend nao consegue acessar o ViaCEP.
+        const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+        if (!response.ok) throw new Error("Falha ao consultar CEP");
+        const viaCep = await response.json();
+        if (viaCep?.erro) throw new Error("CEP nao encontrado");
+        applyCepData({
+          zipCode: cep,
+          street: String(viaCep.logradouro || "").trim() || "",
+          complement: String(viaCep.complemento || "").trim() || "",
+          district: String(viaCep.bairro || "").trim() || "",
+          city: String(viaCep.localidade || "").trim() || "",
+          state: String(viaCep.uf || "").trim().toUpperCase() || "",
+        });
+        addToast?.("Endereco preenchido pelo CEP", "success");
+      } catch {
+        addToast?.(err.message || "Falha ao buscar CEP", "error");
+      }
     } finally {
       setLoadingCep(false);
     }
@@ -350,4 +369,3 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
     </div>
   );
 }
-

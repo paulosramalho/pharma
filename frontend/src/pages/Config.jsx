@@ -360,7 +360,8 @@ export default function Config() {
   const roleName = (u) => u.role?.name || u.role || "—";
   const canManageLicense = user?.role === "ADMIN";
   const isDeveloperAdmin = canManageLicense && Boolean(licenseData?.contractor?.isDeveloperTenant);
-  const selectedLicense = (licensesList || []).find((l) => l.id === selectedLicenseId) || null;
+  const contractorLicenses = (licensesList || []).filter((l) => !l.isDeveloperTenant);
+  const selectedLicense = contractorLicenses.find((l) => l.id === selectedLicenseId) || null;
   const selectedPlanCode = String((isDeveloperAdmin ? selectedLicense?.license?.planCode : licenseData?.planCode) || licenseForm.planCode || "MINIMO").toUpperCase();
   const selectedPlanMeta = (licenseData?.catalog || []).find((p) => String(p.code || "").toUpperCase() === selectedPlanCode) || null;
   const moneyLabel = (cents, currency = "BRL") =>
@@ -684,32 +685,27 @@ export default function Config() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                            {(licensesList || []).map((l) => (
+                            {(contractorLicenses || []).map((l) => (
                               <tr
                                 key={l.id}
-                                onClick={() => { if (!l.isDeveloperTenant) setSelectedLicenseId(l.id); }}
-                                className={`${l.isDeveloperTenant ? "bg-gray-50 cursor-not-allowed" : "cursor-pointer hover:bg-gray-50"} ${selectedLicenseId === l.id ? "bg-primary-50" : ""}`}
+                                onClick={() => setSelectedLicenseId(l.id)}
+                                className={`cursor-pointer hover:bg-gray-50 ${selectedLicenseId === l.id ? "bg-primary-50" : ""}`}
                               >
                                 <td className="px-2 py-1 font-medium text-gray-900">
                                   {l.name}
-                                  {l.isDeveloperTenant ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Desenvolvedor</span> : null}
                                 </td>
                                 <td className="px-2 py-1 text-gray-600">{cpfCnpjMask(l.contractorDocument || "") || "-"}</td>
                                 <td className="px-2 py-1 text-gray-700">{l.license?.planCode || "-"}</td>
                                 <td className="px-2 py-1 text-gray-700">{STATUS_LABELS[String(l.license?.status || "").toUpperCase()] || l.license?.status || "-"}</td>
                                 <td className="px-2 py-1 text-gray-700">{Number(l?._count?.stores || 0)}/{Number(l?._count?.users || 0)}/{Number(l?._count?.customers || 0)}</td>
                                 <td className="px-2 py-1">
-                                  {l.isDeveloperTenant ? (
-                                    <span className="text-gray-400">Protegido</span>
-                                  ) : (
-                                    <button type="button" onClick={(e) => { e.stopPropagation(); openCleanupLicense(l); }} className="text-red-600 hover:text-red-700">
-                                      Limpar base
-                                    </button>
-                                  )}
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); openCleanupLicense(l); }} className="text-red-600 hover:text-red-700">
+                                    Limpar base
+                                  </button>
                                 </td>
                               </tr>
                             ))}
-                            {!licensesList?.length ? <tr><td colSpan={6} className="px-2 py-2 text-gray-400">Nenhum contratante encontrado.</td></tr> : null}
+                            {!contractorLicenses?.length ? <tr><td colSpan={6} className="px-2 py-2 text-gray-400">Nenhum contratante encontrado.</td></tr> : null}
                           </tbody>
                         </table>
                       </div>
@@ -719,7 +715,7 @@ export default function Config() {
                           type="button"
                           variant="secondary"
                           onClick={() => openCleanupLicense(selectedLicense)}
-                          disabled={!selectedLicense || selectedLicense?.isDeveloperTenant}
+                          disabled={!selectedLicense}
                         >
                           Zerar base do licenciado selecionado
                         </Button>
@@ -727,14 +723,14 @@ export default function Config() {
                     </div>
                   ) : null}
 
+                  {isDeveloperAdmin && !selectedLicense ? (
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-600">
+                      Selecione um contratante para visualizar o plano e alterar a licença.
+                    </div>
+                  ) : (
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="p-3 rounded-lg border border-gray-200 bg-white">
                       <p className="text-sm font-semibold text-gray-900 mb-2">Plano contratado</p>
-                      {isDeveloperAdmin && selectedLicense?.isDeveloperTenant ? (
-                        <p className="text-sm text-gray-600">
-                          Licença do Desenvolvedor selecionada. Detalhes do plano não são exibidos.
-                        </p>
-                      ) : (
                         <ul className="text-sm text-gray-700 space-y-1">
                           <li>Licenciado: {isDeveloperAdmin ? (selectedLicense?.name || "-") : (licenseData?.contractor?.tenantName || "-")}</li>
                           <li>Status: {STATUS_LABELS[String((isDeveloperAdmin ? selectedLicense?.license?.status : licenseData?.status) || "").toUpperCase()] || (isDeveloperAdmin ? selectedLicense?.license?.status : licenseData?.status) || "-"}</li>
@@ -745,7 +741,6 @@ export default function Config() {
                           <li>Tipos de usuários: {(perfisContratados(selectedPlanMeta?.limits).join(", ") || "Sem limite por perfil")}</li>
                           <li>Módulos: {(moduloHabilitado(selectedPlanMeta?.features).join(", ") || "Nenhum módulo habilitado")}</li>
                         </ul>
-                      )}
                     </div>
 
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
@@ -753,33 +748,34 @@ export default function Config() {
                       <div className="grid md:grid-cols-2 gap-3">
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Plano</label>
-                          <select className={inputClass} value={licenseForm.planCode} onChange={(e) => setLicenseForm((prev) => ({ ...prev, planCode: e.target.value }))} disabled={!canManageLicense || (isDeveloperAdmin && selectedLicense?.isDeveloperTenant)}>
+                          <select className={inputClass} value={licenseForm.planCode} onChange={(e) => setLicenseForm((prev) => ({ ...prev, planCode: e.target.value }))} disabled={!canManageLicense}>
                             {(licenseData?.catalog || []).map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
                           </select>
                         </div>
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Status</label>
-                          <select className={inputClass} value={licenseForm.status} onChange={(e) => setLicenseForm((prev) => ({ ...prev, status: e.target.value }))} disabled={!canManageLicense || (isDeveloperAdmin && selectedLicense?.isDeveloperTenant)}>
+                          <select className={inputClass} value={licenseForm.status} onChange={(e) => setLicenseForm((prev) => ({ ...prev, status: e.target.value }))} disabled={!canManageLicense}>
                             {["TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED", "CANCELED"].map((s) => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
                           </select>
                         </div>
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Data de encerramento</label>
-                          <input type="date" className={inputClass} value={licenseForm.endsAt} onChange={(e) => setLicenseForm((prev) => ({ ...prev, endsAt: e.target.value }))} disabled={!canManageLicense || (isDeveloperAdmin && selectedLicense?.isDeveloperTenant)} />
+                          <input type="date" className={inputClass} value={licenseForm.endsAt} onChange={(e) => setLicenseForm((prev) => ({ ...prev, endsAt: e.target.value }))} disabled={!canManageLicense} />
                         </div>
                         <div className="space-y-1">
                           <label className="block text-sm font-medium text-gray-700">Motivo</label>
-                          <input className={inputClass} value={licenseForm.reason} onChange={(e) => setLicenseForm((prev) => ({ ...prev, reason: e.target.value }))} placeholder="Opcional" disabled={!canManageLicense || (isDeveloperAdmin && selectedLicense?.isDeveloperTenant)} />
+                          <input className={inputClass} value={licenseForm.reason} onChange={(e) => setLicenseForm((prev) => ({ ...prev, reason: e.target.value }))} placeholder="Opcional" disabled={!canManageLicense} />
                         </div>
                       </div>
-                      {isDeveloperAdmin && selectedLicense && !selectedLicense.isDeveloperTenant ? (
+                      {isDeveloperAdmin && selectedLicense ? (
                         <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
                           Implicações: alterar plano/status pode impactar limite de usuários, módulos disponíveis e valores.
                         </div>
                       ) : null}
-                      {canManageLicense ? <div className="flex justify-end"><Button onClick={submitLicense} loading={submitting} disabled={isDeveloperAdmin && selectedLicense?.isDeveloperTenant}>Salvar licença</Button></div> : null}
+                      {canManageLicense ? <div className="flex justify-end"><Button onClick={submitLicense} loading={submitting}>Salvar licença</Button></div> : null}
                     </div>
                   </div>
+                  )}
                 </>
               ) : (
                 <>
