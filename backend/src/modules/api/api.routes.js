@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
 const { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer, makeReportCustomPdfBuffer } = require("../reports/reportPdfTemplate");
@@ -494,7 +494,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }
 
-  // â”€â”€â”€ DASHBOARD â”€â”€â”€
+  // ─── DASHBOARD ───
   router.get("/license/me", asyncHandler(async (req, res) => {
     const license = await getLicense(req);
     const profile = await getTenantLicenseProfile(req);
@@ -696,7 +696,7 @@ function buildApiRoutes({ prisma, log }) {
       : null;
     const cashSession = openSession ? {
       id: openSession.id,
-      openedBy: openSession.openedBy?.name || "â€”",
+      openedBy: openSession.openedBy?.name || "—",
       openedAt: openSession.openedAt,
       initialCash: Number(openSession.initialCash),
     } : null;
@@ -829,7 +829,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // â”€â”€â”€ STORES â”€â”€â”€
+  // ─── STORES ───
   router.get("/stores", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { all } = req.query; // ?all=true to include inactive
@@ -848,7 +848,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/stores", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { name, type, cnpj, phone, email, street, number, complement, district, city, state, zipCode } = req.body;
-    if (!name || !type) return res.status(400).json({ error: { code: 400, message: "name e type obrigatÃ³rios" } });
+    if (!name || !type) return res.status(400).json({ error: { code: 400, message: "name e type obrigatórios" } });
     await assertStoreActivationAllowed(req, true);
 
     const store = await prisma.store.create({
@@ -892,14 +892,14 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, store);
   }));
 
-  // â”€â”€â”€ CATEGORIES â”€â”€â”€
+  // ─── CATEGORIES ───
   router.get("/categories", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const categories = await prisma.category.findMany({ where: { tenantId }, orderBy: { name: "asc" } });
     return sendOk(res, req, categories);
   }));
 
-  // â”€â”€â”€ PRODUCTS â”€â”€â”€
+  // ─── PRODUCTS ───
   router.get("/products", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { search, categoryId, page = 1, limit = 50 } = req.query;
@@ -1022,7 +1022,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/products", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { name, ean, brand, categoryId, controlled, price } = req.body;
-    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatÃ³rio" } });
+    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatório" } });
 
     const product = await prisma.product.create({
       data: { tenantId, name, ean: ean || null, brand: brand || null, categoryId: categoryId || null, controlled: !!controlled, active: true },
@@ -1053,7 +1053,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, product);
   }));
 
-  // â”€â”€â”€ DISCOUNTS â”€â”€â”€
+  // ─── DISCOUNTS ───
   router.get("/discounts", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { productId, active } = req.query;
@@ -1075,7 +1075,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const { productId, type, value, startDate, endDate } = req.body;
     if (!productId || !type || value === undefined) {
-      return res.status(400).json({ error: { code: 400, message: "productId, type e value obrigatÃ³rios" } });
+      return res.status(400).json({ error: { code: 400, message: "productId, type e value obrigatórios" } });
     }
     if (!["PERCENT", "FIXED"].includes(type)) {
       return res.status(400).json({ error: { code: 400, message: "type deve ser PERCENT ou FIXED" } });
@@ -1142,7 +1142,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { success: true });
   }));
 
-  // â”€â”€â”€ USERS â”€â”€â”€
+  // ─── USERS ───
   router.get("/users", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const users = await prisma.user.findMany({
@@ -1168,11 +1168,11 @@ function buildApiRoutes({ prisma, log }) {
     const bcrypt = require("bcryptjs");
     const { name, email, password, roleName, storeIds } = req.body;
     if (!name || !email || !password || !roleName) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: name, email, password, roleName" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: name, email, password, roleName" } });
     }
     await assertUserCreationAllowed(req, roleName);
     const role = await prisma.role.findUnique({ where: { name: roleName } });
-    if (!role) return res.status(400).json({ error: { code: 400, message: `Role ${roleName} nÃ£o encontrada` } });
+    if (!role) return res.status(400).json({ error: { code: 400, message: `Role ${roleName} não encontrada` } });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
@@ -1244,7 +1244,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: user.id, name: user.name, email: user.email });
   }));
 
-  // â”€â”€â”€ USER PROFILE (self-service email/password change) â”€â”€â”€
+  // ─── USER PROFILE (self-service email/password change) ───
   router.put("/users/:id/profile", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
@@ -1253,20 +1253,20 @@ function buildApiRoutes({ prisma, log }) {
 
     // Users can only update their own profile
     if (req.user?.id !== userId) {
-      return res.status(403).json({ error: { code: 403, message: "Sem permissÃ£o" } });
+      return res.status(403).json({ error: { code: 403, message: "Sem permissão" } });
     }
 
     const data = {};
 
     if (email) {
       const existing = await prisma.user.findFirst({ where: { tenantId, email, NOT: { id: userId } } });
-      if (existing) return res.status(400).json({ error: { code: 400, message: "Email jÃ¡ em uso" } });
+      if (existing) return res.status(400).json({ error: { code: 400, message: "Email já em uso" } });
       data.email = email;
     }
 
     if (currentPassword && newPassword) {
       const user = await prisma.user.findFirst({ where: { id: userId, tenantId } });
-      if (!user) return res.status(404).json({ error: { code: 404, message: "UsuÃ¡rio nÃ£o encontrado" } });
+      if (!user) return res.status(404).json({ error: { code: 404, message: "Usuário não encontrado" } });
       const valid = await bcrypt.compare(currentPassword, user.passwordHash);
       if (!valid) return res.status(400).json({ error: { code: 400, message: "Senha atual incorreta" } });
       data.passwordHash = await bcrypt.hash(newPassword, 10);
@@ -1280,7 +1280,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: updated.id, name: updated.name, email: updated.email });
   }));
 
-  // â”€â”€â”€ INVENTORY â”€â”€â”€
+  // ─── INVENTORY ───
 
 
   // --- CHAT ---
@@ -1820,7 +1820,7 @@ function buildApiRoutes({ prisma, log }) {
     const storeId = await resolveStoreId(req);
     const { productId, lotNumber, expiration, costUnit, quantity, reason } = req.body;
     if (!productId || !lotNumber || !expiration || !costUnit || !quantity) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: productId, lotNumber, expiration, costUnit, quantity" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: productId, lotNumber, expiration, costUnit, quantity" } });
     }
 
     const lot = await prisma.inventoryLot.upsert({
@@ -1860,18 +1860,18 @@ function buildApiRoutes({ prisma, log }) {
     const storeId = await resolveStoreId(req);
     let { productId, lotId, type, quantity, reason } = req.body;
     if (!type || !quantity || !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: type, quantity, reason" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: type, quantity, reason" } });
     }
 
     // Resolve productId from lotId if not provided
     if (lotId && !productId) {
       const lot = await prisma.inventoryLot.findFirst({ where: { id: lotId, storeId, store: { tenantId } } });
-      if (!lot) return res.status(400).json({ error: { code: 400, message: "Lote nÃ£o encontrado" } });
+      if (!lot) return res.status(400).json({ error: { code: 400, message: "Lote não encontrado" } });
       productId = lot.productId;
     }
 
     if (!productId) {
-      return res.status(400).json({ error: { code: 400, message: "productId ou lotId obrigatÃ³rio" } });
+      return res.status(400).json({ error: { code: 400, message: "productId ou lotId obrigatório" } });
     }
 
     const isPositive = type === "ADJUST_POS";
@@ -2392,17 +2392,17 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { fulfilled: true });
   }));
 
-  // â”€â”€â”€ INVENTORY EDIT (correct wrong entry) â”€â”€â”€
+  // ─── INVENTORY EDIT (correct wrong entry) ───
   router.put("/inventory/lots/:id", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { quantity, costUnit, reason } = req.body;
     if (quantity === undefined && costUnit === undefined) {
       return res.status(400).json({ error: { code: 400, message: "Informe quantity ou costUnit" } });
     }
-    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio" } });
+    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório" } });
 
     const lot = await prisma.inventoryLot.findFirst({ where: { id: req.params.id, store: { tenantId } } });
-    if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote nÃ£o encontrado" } });
+    if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote não encontrado" } });
 
     const data = {};
     if (quantity !== undefined) data.quantity = Number(quantity);
@@ -2428,7 +2428,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, updated);
   }));
 
-  // â”€â”€â”€ STOCK VALUATION â”€â”€â”€
+  // ─── STOCK VALUATION ───
   router.get("/inventory/valuation", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = req.query.storeId || null;
@@ -2515,7 +2515,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // â”€â”€â”€ AUTO-PRICE (calculate selling price from cost) â”€â”€â”€
+  // ─── AUTO-PRICE (calculate selling price from cost) ───
   router.post("/products/:id/auto-price", asyncHandler(async (req, res) => {
     const { markup } = req.body; // markup percentage (e.g., 30 = 30%)
     if (!markup || markup <= 0) {
@@ -2550,7 +2550,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { avgCost: Math.round(avgCost * 100) / 100, markup: Number(markup), sellingPrice, price });
   }));
 
-  // â”€â”€â”€ CUSTOMERS â”€â”€â”€
+  // ─── CUSTOMERS ───
   router.get("/customers", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { search, page = 1, limit = 50 } = req.query;
@@ -2580,12 +2580,12 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/customers", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { name, document, birthDate, whatsapp, phone, email } = req.body;
-    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatÃ³rio" } });
+    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatório" } });
 
     const cleanDoc = document ? document.replace(/\D/g, "") : null;
     if (cleanDoc) {
       const existing = await prisma.customer.findFirst({ where: { tenantId, document: cleanDoc } });
-      if (existing) return res.status(400).json({ error: { code: 400, message: "CPF jÃ¡ cadastrado" } });
+      if (existing) return res.status(400).json({ error: { code: 400, message: "CPF já cadastrado" } });
     }
 
     const customer = await prisma.customer.create({
@@ -2608,7 +2608,7 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id, tenantId },
       include: { sales: { where: { tenantId, status: "PAID" }, orderBy: { createdAt: "desc" }, take: 10, include: { items: { include: { product: true } } } } },
     });
-    if (!customer) return res.status(404).json({ error: { code: 404, message: "Cliente nÃ£o encontrado" } });
+    if (!customer) return res.status(404).json({ error: { code: 404, message: "Cliente não encontrado" } });
     return sendOk(res, req, customer);
   }));
 
@@ -2675,7 +2675,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { suggestions });
   }));
 
-  // â”€â”€â”€ SALES â”€â”€â”€
+  // ─── SALES ───
   router.get("/sales", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
@@ -2709,7 +2709,7 @@ function buildApiRoutes({ prisma, log }) {
 
   router.get("/sales/:id", asyncHandler(async (req, res) => {
     const sale = await loadFullSale(req.params.id, await resolveTenantId(req));
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     return sendOk(res, req, sale);
   }));
 
@@ -2764,7 +2764,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
+    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId não definido" } });
 
     // Robust sale number generation with retry for race conditions (e.g., React StrictMode double-mount)
     const maxRetries = 5;
@@ -2813,7 +2813,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales/:id/items", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { productId, quantity } = req.body;
-    if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatÃ³rios" } });
+    if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatórios" } });
 
     const saleCtx = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true, storeId: true, status: true } });
     if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
@@ -2832,7 +2832,7 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const price = await prisma.productPrice.findFirst({ where: { productId, active: true }, orderBy: { createdAt: "desc" } });
-    if (!price) return res.status(400).json({ error: { code: 400, message: "Produto sem preÃ§o" } });
+    if (!price) return res.status(400).json({ error: { code: 400, message: "Produto sem preço" } });
 
     const basePrice = Number(price.price);
     let priceUnit = basePrice;
@@ -2883,7 +2883,7 @@ function buildApiRoutes({ prisma, log }) {
     const saleCtx = await prisma.sale.findFirst({ where: { id: req.params.saleId, tenantId }, select: { id: true, storeId: true, status: true } });
     if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
     const item = await prisma.saleItem.findFirst({ where: { id: req.params.itemId, saleId: saleCtx.id } });
-    if (!item) return res.status(404).json({ error: { code: 404, message: "Item nÃ£o encontrado" } });
+    if (!item) return res.status(404).json({ error: { code: 404, message: "Item não encontrado" } });
     if (saleCtx.status !== "DRAFT" && saleCtx.status !== "CONFIRMED") {
       return res.status(400).json({ error: { code: 400, message: "Nao e possivel alterar itens neste status" } });
     }
@@ -2947,7 +2947,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales/:id/pay", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { method, pos } = req.body || {};
-    if (!method) return res.status(400).json({ error: { code: 400, message: "method obrigatÃ³rio (DINHEIRO, PIX, CARTAO_CREDITO, CARTAO_DEBITO)" } });
+    if (!method) return res.status(400).json({ error: { code: 400, message: "method obrigatório (DINHEIRO, PIX, CARTAO_CREDITO, CARTAO_DEBITO)" } });
 
     const sale = await prisma.sale.findFirst({
       where: { id: req.params.id, tenantId },
@@ -2955,12 +2955,12 @@ function buildApiRoutes({ prisma, log }) {
     });
 
     if (!sale || (sale.status !== "CONFIRMED" && sale.status !== "DRAFT")) {
-      return res.status(400).json({ error: { code: 400, message: "Venda nÃ£o pode ser paga neste status" } });
+      return res.status(400).json({ error: { code: 400, message: "Venda não pode ser paga neste status" } });
     }
 
     // Check open cash session
     const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o de caixa aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
 
     // FEFO + COGS for each item
     for (const item of sale.items) {
@@ -3057,7 +3057,7 @@ function buildApiRoutes({ prisma, log }) {
   router.delete("/sales/:id", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     if (sale.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Somente rascunhos podem ser apagados" } });
 
     await prisma.saleItem.deleteMany({ where: { saleId: sale.id } });
@@ -3069,12 +3069,12 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const { reason } = req.body || {};
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
-    if (sale.status === "PAID") return res.status(400).json({ error: { code: 400, message: "Venda paga nÃ£o pode ser cancelada (use estorno)" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    if (sale.status === "PAID") return res.status(400).json({ error: { code: 400, message: "Venda paga não pode ser cancelada (use estorno)" } });
 
     // CONFIRMED sales require a reason
     if (sale.status === "CONFIRMED" && !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio para cancelar venda confirmada" } });
+      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório para cancelar venda confirmada" } });
     }
 
     await prisma.sale.update({
@@ -3085,12 +3085,12 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, updated);
   }));
 
-  // â”€â”€â”€ EXCHANGE (TROCA) â”€â”€â”€
+  // ─── EXCHANGE (TROCA) ───
   router.post("/sales/:id/exchange", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { returnedItems, newItems, reason } = req.body;
-    // returnedItems: [{ saleItemId, quantity }] â€” items to return
-    // newItems: [{ productId, quantity }] â€” new items the customer takes
+    // returnedItems: [{ saleItemId, quantity }] — items to return
+    // newItems: [{ productId, quantity }] — new items the customer takes
     if ((!returnedItems || !returnedItems.length) && (!newItems || !newItems.length)) {
       return res.status(400).json({ error: { code: 400, message: "Informe os itens para troca" } });
     }
@@ -3100,14 +3100,14 @@ function buildApiRoutes({ prisma, log }) {
       include: { items: { include: { product: true } } },
     });
 
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     if (sale.status !== "PAID") return res.status(400).json({ error: { code: 400, message: "Somente vendas pagas podem ser trocadas" } });
 
     let totalReturn = 0;
     let totalNew = 0;
     const now = new Date();
 
-    // 1) Process returned items â€” refund + return to inventory
+    // 1) Process returned items — refund + return to inventory
     for (const ri of (returnedItems || [])) {
       const saleItem = sale.items.find((i) => i.id === ri.saleItemId);
       if (!saleItem) continue;
@@ -3126,14 +3126,14 @@ function buildApiRoutes({ prisma, log }) {
           data: {
             tenantId,
             storeId: sale.storeId, productId: saleItem.productId, lotId: lot.id,
-            type: "IN", quantity: returnQty, reason: reason || "Troca - DevoluÃ§Ã£o",
+            type: "IN", quantity: returnQty, reason: reason || "Troca - Devolução",
             refType: "EXCHANGE", refId: sale.id, createdById: req.user?.id,
           },
         });
       }
     }
 
-    // 2) Process new items â€” add to sale + deduct from inventory
+    // 2) Process new items — add to sale + deduct from inventory
     for (const ni of (newItems || [])) {
       if (!ni.productId || !ni.quantity || ni.quantity <= 0) continue;
 
@@ -3227,17 +3227,17 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // â”€â”€â”€ SETTLE EXCHANGE (CAIXA) â”€â”€â”€
+  // ─── SETTLE EXCHANGE (CAIXA) ───
   router.post("/sales/:id/settle-exchange", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     if (sale.exchangeBalance === null || Number(sale.exchangeBalance) === 0) {
       return res.status(400).json({ error: { code: 400, message: "Nenhuma troca pendente para esta venda" } });
     }
 
     const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o de caixa aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
 
     const amount = Number(sale.exchangeBalance);
 
@@ -3258,7 +3258,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { sale: updated, settled: Math.abs(amount) });
   }));
 
-  // â”€â”€â”€ CASH OPERATOR AUTH â”€â”€â”€
+  // ─── CASH OPERATOR AUTH ───
   // --- POS TRANSACTIONS (base integration) ---
   router.post("/pos/transactions", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
@@ -3377,7 +3377,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
     const { matricula, password } = req.body;
-    if (!matricula || !password) return res.status(400).json({ error: { code: 400, message: "MatrÃ­cula e senha obrigatÃ³rios" } });
+    if (!matricula || !password) return res.status(400).json({ error: { code: 400, message: "Matrícula e senha obrigatórios" } });
 
     // Hard-coded master operator: 00000 / 00000
     if (matricula === "00000" && password === "00000") {
@@ -3387,7 +3387,7 @@ function buildApiRoutes({ prisma, log }) {
     // Matricula is sequential (0001, 0002, ...) based on user creation order
     const users = await prisma.user.findMany({ where: { tenantId, active: true }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, email: true, passwordHash: true } });
     const idx = parseInt(matricula, 10) - 1;
-    if (idx < 0 || idx >= users.length) return res.status(401).json({ error: { code: 401, message: "MatrÃ­cula invÃ¡lida" } });
+    if (idx < 0 || idx >= users.length) return res.status(401).json({ error: { code: 401, message: "Matrícula inválida" } });
 
     const user = users[idx];
     const valid = password === "0000" || await bcrypt.compare(password, user.passwordHash);
@@ -3396,7 +3396,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: user.id, name: user.name, matricula: String(idx + 1).padStart(4, "0") });
   }));
 
-  // â”€â”€â”€ CASH SESSIONS â”€â”€â”€
+  // ─── CASH SESSIONS ───
   router.get("/cash/sessions/current", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
@@ -3413,10 +3413,10 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/cash/sessions/open", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
+    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId não definido" } });
 
     const existing = await prisma.cashSession.findFirst({ where: { tenantId, storeId, closedAt: null } });
-    if (existing) return res.status(400).json({ error: { code: 400, message: "JÃ¡ existe sessÃ£o aberta para esta loja" } });
+    if (existing) return res.status(400).json({ error: { code: 400, message: "Já existe sessão aberta para esta loja" } });
 
     const { initialCash } = req.body;
     const session = await prisma.cashSession.create({
@@ -3434,8 +3434,8 @@ function buildApiRoutes({ prisma, log }) {
       include: { movements: true },
     });
 
-    if (!session) return res.status(404).json({ error: { code: 404, message: "SessÃ£o nÃ£o encontrada" } });
-    if (session.closedAt) return res.status(400).json({ error: { code: 400, message: "SessÃ£o jÃ¡ fechada" } });
+    if (!session) return res.status(404).json({ error: { code: 404, message: "Sessão não encontrada" } });
+    if (session.closedAt) return res.status(400).json({ error: { code: 400, message: "Sessão já fechada" } });
 
     // Calculate expected cash
     let expected = Number(session.initialCash);
@@ -3462,12 +3462,12 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     const session = await prisma.cashSession.findFirst({ where: { tenantId, storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão aberta" } });
 
     const { type, amount, reason, method } = req.body;
-    if (!type || !amount) return res.status(400).json({ error: { code: 400, message: "type e amount obrigatÃ³rios" } });
+    if (!type || !amount) return res.status(400).json({ error: { code: 400, message: "type e amount obrigatórios" } });
     if ((type === "SANGRIA" || type === "AJUSTE") && !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio para sangria/ajuste" } });
+      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório para sangria/ajuste" } });
     }
 
     const movement = await prisma.cashMovement.create({
@@ -3480,7 +3480,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, movement, 201);
   }));
 
-  // â”€â”€â”€ REPORTS â”€â”€â”€
+  // ─── REPORTS ───
   router.get("/reports/cash-closings", asyncHandler(async (req, res) => {
     await assertFeature(req, "reportsCashClosings", "Relatorio de fechamento de caixa indisponivel no plano atual");
     const storeId = await resolveStoreId(req);
@@ -3790,7 +3790,7 @@ function buildApiRoutes({ prisma, log }) {
       const truncate = (v, max = 24) => {
         const s = String(v || "-");
         if (s.length <= max) return s;
-        return `${s.slice(0, Math.max(0, max - 1))}â€¦`;
+        return `${s.slice(0, Math.max(0, max - 1))}…`;
       };
 
       const pdfBuf = await makeReportCustomPdfBuffer({

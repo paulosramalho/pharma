@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { apiFetch } from "../lib/api";
 import { money, formatDate, formatDateTime } from "../lib/format";
 import { useAuth } from "../contexts/AuthContext";
@@ -16,17 +16,17 @@ import {
 } from "lucide-react";
 
 const BASE_TABS = [
-  { key: "overview", label: "VisÃ£o Geral" },
+  { key: "overview", label: "Visão Geral" },
   { key: "receive", label: "Entrada" },
   { key: "adjust", label: "Ajuste" },
-  { key: "valuation", label: "ValoraÃ§Ã£o" },
+  { key: "valuation", label: "Valoração" },
   { key: "transfers", label: "Transferencias" },
   { key: "reservations", label: "Reservas" },
 ];
 
 const TYPE_ICON = { CENTRAL: Warehouse, LOJA: Store };
-const TYPE_LABEL = { CENTRAL: "DepÃ³sito", LOJA: "Loja" };
-const MOV_LABELS = { IN: "Entrada", OUT: "SaÃ­da", ADJUST_POS: "Ajuste +", ADJUST_NEG: "Ajuste -", TRANSFER_IN: "Transf. Entrada", TRANSFER_OUT: "Transf. SaÃ­da" };
+const TYPE_LABEL = { CENTRAL: "Depósito", LOJA: "Loja" };
+const MOV_LABELS = { IN: "Entrada", OUT: "Saída", ADJUST_POS: "Ajuste +", ADJUST_NEG: "Ajuste -", TRANSFER_IN: "Transf. Entrada", TRANSFER_OUT: "Transf. Saída" };
 
 export default function Estoque() {
   const { hasPermission, user, storeId, hasFeature } = useAuth();
@@ -508,7 +508,7 @@ export default function Estoque() {
   };
 
   const submitEditLot = async () => {
-    if (!editForm.reason.trim()) { addToast("Motivo obrigatÃ³rio", "warning"); return; }
+    if (!editForm.reason.trim()) { addToast("Motivo obrigatório", "warning"); return; }
     try {
       await apiFetch(`/api/inventory/lots/${editModal.lotId}`, {
         method: "PUT",
@@ -539,7 +539,7 @@ export default function Estoque() {
         body: JSON.stringify({ markup: parseFloat(markup) }),
       });
       setPricingResult(res.data);
-      addToast(`PreÃ§o atualizado: ${money(res.data.sellingPrice)}`, "success");
+      addToast(`Preço atualizado: ${money(res.data.sellingPrice)}`, "success");
       loadValuation();
     } catch (err) { addToast(err.message, "error"); }
   };
@@ -691,7 +691,7 @@ export default function Estoque() {
                                     </div>
                                   </div>
                                 ) : (
-                                  <span className="text-gray-300">â€”</span>
+                                  <span className="text-gray-300">—</span>
                                 )}
                               </td>
                             );
@@ -741,8 +741,8 @@ export default function Estoque() {
                                             <td className={`py-1.5 pr-3 text-right font-medium ${isIn ? "text-emerald-600" : "text-red-500"}`}>
                                               {isIn ? "+" : "-"}{m.quantity}
                                             </td>
-                                            <td className="py-1.5 pr-3 text-gray-400 font-mono">{m.lotNumber || "â€”"}</td>
-                                            <td className="py-1.5 text-gray-500">{m.reason || "â€”"}</td>
+                                            <td className="py-1.5 pr-3 text-gray-400 font-mono">{m.lotNumber || "—"}</td>
+                                            <td className="py-1.5 text-gray-500">{m.reason || "—"}</td>
                                             {hasPermission("inventory.adjust") && (
                                               <td className="py-1.5">
                                                 {m.lotId && m.type === "IN" && (
@@ -817,7 +817,7 @@ export default function Estoque() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">NÃºmero do Lote</label>
+                <label className="block text-sm font-medium text-gray-700">Número do Lote</label>
                 <input value={receiveForm.lotNumber} onChange={(e) => setReceiveForm({ ...receiveForm, lotNumber: e.target.value })} className={inputClass} />
               </div>
               <div className="space-y-1">
@@ -825,7 +825,7 @@ export default function Estoque() {
                 <input type="date" value={receiveForm.expiration} onChange={(e) => setReceiveForm({ ...receiveForm, expiration: e.target.value })} className={inputClass} />
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Custo UnitÃ¡rio (R$)</label>
+                <label className="block text-sm font-medium text-gray-700">Custo Unitário (R$)</label>
                 <input type="number" step="0.0001" value={receiveForm.costUnit} onChange={(e) => setReceiveForm({ ...receiveForm, costUnit: e.target.value })} className={inputClass} />
               </div>
               <div className="space-y-1">
@@ -857,7 +857,7 @@ export default function Estoque() {
                   {adjustLots.map((l) => (
                     <button key={l.id} onClick={() => { setAdjustForm({ ...adjustForm, lotId: l.id }); setAdjustLots([]); }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                    >{l.product?.name} â€” Lote {l.lotNumber} ({l.store?.name}, Qtd: {l.quantity})</button>
+                    >{l.product?.name} — Lote {l.lotNumber} ({l.store?.name}, Qtd: {l.quantity})</button>
                   ))}
                 </div>
               )}
@@ -876,7 +876,7 @@ export default function Estoque() {
               </div>
             </div>
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Motivo (obrigatÃ³rio)</label>
+              <label className="block text-sm font-medium text-gray-700">Motivo (obrigatório)</label>
               <input value={adjustForm.reason} onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value })}
                 placeholder="Descreva o motivo do ajuste..."
                 className={inputClass} />
@@ -940,7 +940,7 @@ export default function Estoque() {
                     <tr className="border-b border-gray-200 text-left">
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Produto</th>
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Estoque</th>
-                      <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Custo MÃ©dio</th>
+                      <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Custo Médio</th>
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Valor Estoque</th>
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Vendido (Qtd)</th>
                       <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Vendido (R$)</th>
@@ -961,7 +961,7 @@ export default function Estoque() {
                         <td className="px-4 py-2.5 text-right text-emerald-600 font-medium">{money(p.soldValue)}</td>
                         <td className="px-4 py-2.5 text-center">
                           {p.stockQty > 0 && (
-                            <button onClick={() => openAutoPrice(p)} className="p-1 text-gray-400 hover:text-primary-600 rounded" title="Calcular preÃ§o de venda">
+                            <button onClick={() => openAutoPrice(p)} className="p-1 text-gray-400 hover:text-primary-600 rounded" title="Calcular preço de venda">
                               <DollarSign size={14} />
                             </button>
                           )}
@@ -1088,8 +1088,8 @@ export default function Estoque() {
                   <div key={t.id} className="px-4 py-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{t.originStore?.name} â†’ {t.destinationStore?.name}</p>
-                        <p className="text-xs text-gray-500">{formatDateTime(t.createdAt)} â€¢ {t.items?.length || 0} item(ns)</p>
+                        <p className="text-sm font-medium text-gray-900">{t.originStore?.name} → {t.destinationStore?.name}</p>
+                        <p className="text-xs text-gray-500">{formatDateTime(t.createdAt)} • {t.items?.length || 0} item(ns)</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge color={t.status === "RECEIVED" ? "green" : t.status === "SENT" ? "blue" : t.status === "CANCELED" ? "red" : "gray"}>{transferStatusLabel[t.status] || t.status}</Badge>
@@ -1233,8 +1233,8 @@ export default function Estoque() {
                   <div key={r.id} className="px-4 py-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{r.customer?.name || "Sem cliente"} â€¢ {r.sourceStore?.name}</p>
-                        <p className="text-xs text-gray-500">{formatDateTime(r.createdAt)} â€¢ {r.items?.length || 0} item(ns)</p>
+                        <p className="text-sm font-medium text-gray-900">{r.customer?.name || "Sem cliente"} • {r.sourceStore?.name}</p>
+                        <p className="text-xs text-gray-500">{formatDateTime(r.createdAt)} • {r.items?.length || 0} item(ns)</p>
                         {r.rejectReason && <p className="text-xs text-red-600">Motivo rejeicao: {r.rejectReason}</p>}
                       </div>
                       <div className="flex items-center gap-2">
@@ -1290,12 +1290,12 @@ export default function Estoque() {
                 <input type="number" value={editForm.quantity} onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })} className={inputClass} />
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Custo UnitÃ¡rio</label>
+                <label className="block text-sm font-medium text-gray-700">Custo Unitário</label>
                 <input type="number" step="0.0001" value={editForm.costUnit} onChange={(e) => setEditForm({ ...editForm, costUnit: e.target.value })} className={inputClass} />
               </div>
             </div>
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">Motivo da correÃ§Ã£o *</label>
+              <label className="block text-sm font-medium text-gray-700">Motivo da correção *</label>
               <input value={editForm.reason} onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })}
                 placeholder="Ex: digitado qty errada..." className={inputClass} autoFocus />
             </div>
@@ -1310,7 +1310,7 @@ export default function Estoque() {
       </Modal>
 
       {/* Auto-Price Modal */}
-      <Modal open={!!priceModal} onClose={() => setPriceModal(null)} title="Calcular PreÃ§o de Venda">
+      <Modal open={!!priceModal} onClose={() => setPriceModal(null)} title="Calcular Preço de Venda">
         {priceModal && (
           <div className="space-y-4">
             <div className="p-3 bg-gray-50 rounded-lg">
@@ -1325,7 +1325,7 @@ export default function Estoque() {
                 placeholder="Ex: 30 = 30% sobre o custo" />
               {markup > 0 && priceModal.avgCost > 0 && (
                 <p className="text-xs text-gray-500">
-                  PreÃ§o estimado: <span className="font-bold text-primary-700">
+                  Preço estimado: <span className="font-bold text-primary-700">
                     {money(priceModal.avgCost * (1 + parseFloat(markup || 0) / 100))}
                   </span>
                 </p>
@@ -1335,13 +1335,13 @@ export default function Estoque() {
               <div className="p-3 bg-emerald-50 rounded-lg space-y-1">
                 <div className="flex justify-between text-sm"><span className="text-gray-600">Custo medio:</span><span>{money(pricingResult.avgCost)}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-600">Markup:</span><span>{pricingResult.markup}%</span></div>
-                <div className="flex justify-between text-sm font-bold"><span>PreÃ§o de venda:</span><span className="text-emerald-700">{money(pricingResult.sellingPrice)}</span></div>
+                <div className="flex justify-between text-sm font-bold"><span>Preço de venda:</span><span className="text-emerald-700">{money(pricingResult.sellingPrice)}</span></div>
               </div>
             )}
             <div className="flex gap-2 pt-2">
               <Button variant="secondary" className="flex-1" onClick={() => setPriceModal(null)}>Fechar</Button>
               <Button className="flex-1" disabled={!markup || parseFloat(markup) <= 0} onClick={submitAutoPrice}>
-                <DollarSign size={14} /> Definir PreÃ§o
+                <DollarSign size={14} /> Definir Preço
               </Button>
             </div>
           </div>
