@@ -5026,12 +5026,14 @@ function buildApiRoutes({ prisma, log }) {
   // â”€â”€â”€ REPORTS â”€â”€â”€
   router.get("/reports/cash-closings", asyncHandler(async (req, res) => {
     await assertFeature(req, "reportsCashClosings", "Relatorio de fechamento de caixa indisponivel no plano atual");
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
     const storeId = await resolveStoreId(req);
     const { from, to, page = 1, limit = 20 } = req.query;
     const take = Number(limit);
     const skip = (Number(page) - 1) * take;
 
-    const where = { closedAt: { not: null } };
+    const where = { tenantId, closedAt: { not: null } };
     if (storeId) where.storeId = storeId;
     if (from || to) {
       where.closedAt = {};
@@ -5092,12 +5094,14 @@ function buildApiRoutes({ prisma, log }) {
 
   router.get("/reports/sales", asyncHandler(async (req, res) => {
     await assertFeature(req, "reportsSales", "Relatorio de vendas indisponivel no plano atual");
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
     const storeId = await resolveStoreId(req);
     const { from, to, status, sellerId, customerId, page = 1, limit = 30 } = req.query;
     const take = Number(limit);
     const skip = (Number(page) - 1) * take;
 
-    const where = {};
+    const where = { tenantId };
     if (storeId) where.storeId = storeId;
     if (status) where.status = status;
     if (sellerId) where.sellerId = sellerId;
@@ -5181,6 +5185,8 @@ function buildApiRoutes({ prisma, log }) {
     if (type === "vendas") await assertFeature(req, "reportsSales", "Relatorio de vendas indisponivel no plano atual");
     if (type === "caixa") await assertFeature(req, "reportsCashClosings", "Relatorio de fechamento de caixa indisponivel no plano atual");
     if (type === "transferencias") await assertFeature(req, "reportsTransfers", "Relatorio de transferencias indisponivel no plano atual");
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
     const from = req.query.from ? safeDate(req.query.from) : null;
     const to = req.query.to ? safeDate(req.query.to) : null;
     if (to) to.setHours(23, 59, 59, 999);
@@ -5200,7 +5206,7 @@ function buildApiRoutes({ prisma, log }) {
     if (type === "caixa") {
       reportName = "Relatorio de Fechamentos de Caixa";
       const storeId = await resolveStoreId(req);
-      const where = { closedAt: { not: null } };
+      const where = { tenantId, closedAt: { not: null } };
       if (storeId) where.storeId = storeId;
       if (from || to) {
         where.closedAt = {};
@@ -5495,7 +5501,7 @@ function buildApiRoutes({ prisma, log }) {
     } else {
       reportName = "Relatorio de Vendas";
       const storeId = await resolveStoreId(req);
-      const where = { status: "PAID" };
+      const where = { tenantId, status: "PAID" };
       if (storeId) where.storeId = storeId;
       if (from || to) {
         where.createdAt = {};
@@ -5724,4 +5730,3 @@ function buildApiRoutes({ prisma, log }) {
 }
 
 module.exports = { buildApiRoutes };
-
