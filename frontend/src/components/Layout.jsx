@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { apiFetch } from "../lib/api";
@@ -8,14 +8,14 @@ import {
 } from "lucide-react";
 
 const NAV_ITEMS = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, perm: null },
-  { to: "/vendas", label: "Vendas", icon: ShoppingCart, perm: "sales.create" },
-  { to: "/caixa", label: "Caixa", icon: Wallet, perm: "cash.open" },
-  { to: "/estoque", label: "Estoque", icon: Package, perm: "inventory.receive" },
-  { to: "/produtos", label: "Produtos", icon: Pill, perm: "products.manage" },
-  { to: "/chat", label: "Chat", icon: MessageCircle, perm: null },
-  { to: "/relatorios", label: "Relatórios", icon: BarChart3, perm: "reports.view" },
-  { to: "/config", label: "Configurações", icon: Settings, perm: "users.manage" },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, perm: null, feature: "dashboard" },
+  { to: "/vendas", label: "Vendas", icon: ShoppingCart, perm: "sales.create", feature: "sales" },
+  { to: "/caixa", label: "Caixa", icon: Wallet, perm: "cash.open", feature: "cash" },
+  { to: "/estoque", label: "Estoque", icon: Package, perm: "inventory.receive", feature: "inventory" },
+  { to: "/produtos", label: "Produtos", icon: Pill, perm: "products.manage", feature: "products" },
+  { to: "/chat", label: "Chat", icon: MessageCircle, perm: null, feature: "chat" },
+  { to: "/relatorios", label: "Relatórios", icon: BarChart3, perm: "reports.view", feature: "reportsSales" },
+  { to: "/config", label: "Configurações", icon: Settings, perm: "users.manage", feature: "config" },
   { to: "/perfil", label: "Meu Perfil", icon: UserCircle, perm: null, restrictedOnly: true },
 ];
 
@@ -26,7 +26,7 @@ const ROLE_NAV_RESTRICT = {
 };
 
 export default function Layout() {
-  const { user, logout, stores, storeId, switchStore, hasPermission } = useAuth();
+  const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
@@ -34,6 +34,7 @@ export default function Layout() {
 
   const roleRestrict = ROLE_NAV_RESTRICT[user?.role];
   const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.feature && !hasFeature(item.feature)) return false;
     if (roleRestrict) return roleRestrict.includes(item.to);
     if (item.to === "/caixa" && user?.role === "FARMACEUTICO") return true;
     if (item.restrictedOnly) return false; // only shown for restricted roles
@@ -47,7 +48,7 @@ export default function Layout() {
   };
 
   useEffect(() => {
-    if (!user?.id) return undefined;
+    if (!user?.id || !hasFeature("chat")) return undefined;
     let cancelled = false;
 
     const loadChatUnread = async () => {
@@ -69,7 +70,7 @@ export default function Layout() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [user?.id]);
+  }, [user?.id, hasFeature]);
 
   const linkClass = ({ isActive }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
@@ -195,3 +196,4 @@ export default function Layout() {
     </div>
   );
 }
+

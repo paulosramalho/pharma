@@ -45,6 +45,7 @@ function DefaultRedirect() {
 }
 
 function AppRoutes() {
+  const { hasFeature } = useAuth();
   return (
     <Routes>
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
@@ -58,7 +59,7 @@ function AppRoutes() {
         <Route path="/usuarios" element={<Usuarios />} />
         <Route path="/config" element={<Config />} />
         <Route path="/perfil" element={<MeuPerfil />} />
-        <Route path="/chat" element={<Chat />} />
+        <Route path="/chat" element={hasFeature("chat") ? <Chat /> : <Navigate to="/dashboard" replace />} />
         <Route path="/relatorios" element={<Relatorios />} />
       </Route>
       <Route path="*" element={<DefaultRedirect />} />

@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [storeId, setCurrentStore] = useState(getStoreId);
   const [stores, setStores] = useState([]);
   const [permissions, setPermissions] = useState([]);
+  const [license, setLicense] = useState(null);
   const [loading, setLoading] = useState(!!getToken());
 
   const isAuthenticated = !!user;
@@ -18,10 +19,18 @@ export function AuthProvider({ children }) {
       body: JSON.stringify({ email, password }),
     });
     const d = res.data;
+    let licenseData = null;
+    try {
+      const lic = await apiFetch("/api/license/me");
+      licenseData = lic.data || null;
+    } catch {
+      licenseData = null;
+    }
     setAuth({ accessToken: d.accessToken, refreshToken: d.refreshToken, user: d.user, stores: d.stores });
     setUser(d.user);
     setPermissions(d.permissions || []);
     setStores(d.stores || []);
+    setLicense(licenseData);
     const defaultStore = d.stores?.find((s) => s.isDefault) || d.stores?.[0];
     if (defaultStore) setCurrentStore(defaultStore.id);
     return d;
@@ -32,6 +41,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     setPermissions([]);
     setStores([]);
+    setLicense(null);
     setCurrentStore(null);
   }, []);
 
@@ -46,22 +56,28 @@ export function AuthProvider({ children }) {
     return permissions.includes(key);
   }, [user, permissions]);
 
+  const hasFeature = useCallback((key) => {
+    if (!license?.features) return true;
+    return Boolean(license.features[key]);
+  }, [license]);
+
   // Restore session on mount
   useEffect(() => {
     if (!getToken()) { setLoading(false); return; }
-    apiFetch("/me")
-      .then((res) => {
-        const d = res.data;
+    Promise.all([apiFetch("/me"), apiFetch("/api/license/me").catch(() => ({ data: null }))])
+      .then(([meRes, licRes]) => {
+        const d = meRes.data;
         setUser(d.user);
         setPermissions(d.permissions || []);
         setStores(d.stores || []);
+        setLicense(licRes?.data || null);
       })
       .catch(() => { clearAuth(); setUser(null); })
       .finally(() => setLoading(false));
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout, stores, storeId, switchStore, permissions, hasPermission }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout, stores, storeId, switchStore, permissions, hasPermission, license, hasFeature }}>
       {children}
     </AuthContext.Provider>
   );

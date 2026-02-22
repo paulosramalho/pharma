@@ -116,6 +116,7 @@ export default function Dashboard() {
   const salesMax = salesByDay.reduce((m, d) => Math.max(m, Number(d.revenue || 0)), 0);
   const stockByStore = data?.charts?.stockByStore || [];
   const transferStatus = data?.charts?.transferStatus || [];
+  const simplifiedDashboard = data?.dashboardMode === "SIMPLIFIED";
 
   return (
     <div className="space-y-6">
@@ -176,23 +177,25 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {stockCards.map((card) => (
-          <Card key={card.label}>
-            <CardBody className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${card.color}`}>
-                <card.icon size={18} />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">{card.label}</p>
-                <p className="text-lg font-bold text-gray-900">{card.value}</p>
-              </div>
-            </CardBody>
-          </Card>
-        ))}
-      </div>
+      {!simplifiedDashboard && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {stockCards.map((card) => (
+            <Card key={card.label}>
+              <CardBody className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${card.color}`}>
+                  <card.icon size={18} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">{card.label}</p>
+                  <p className="text-lg font-bold text-gray-900">{card.value}</p>
+                </div>
+              </CardBody>
+            </Card>
+          ))}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className={`grid grid-cols-1 ${simplifiedDashboard ? "" : "lg:grid-cols-2"} gap-4`}>
         <Card>
           <CardBody>
             <div className="flex items-center justify-between mb-3">
@@ -228,6 +231,7 @@ export default function Dashboard() {
           </CardBody>
         </Card>
 
+        {!simplifiedDashboard && (
         <Card>
           <CardBody>
             <h3 className="font-semibold text-gray-900 mb-3">Acoes Rapidas</h3>
@@ -255,6 +259,7 @@ export default function Dashboard() {
             </div>
           </CardBody>
         </Card>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -279,6 +284,7 @@ export default function Dashboard() {
           </CardBody>
         </Card>
 
+        {!simplifiedDashboard && (
         <Card>
           <CardBody>
             <div className="flex items-center gap-2 mb-3">
@@ -323,8 +329,10 @@ export default function Dashboard() {
             </div>
           </CardBody>
         </Card>
+        )}
       </div>
 
+      {!simplifiedDashboard && (
       <Card>
         <CardBody>
           <h3 className="font-semibold text-gray-900 mb-3">Estoque por Loja (barra)</h3>
@@ -345,7 +353,9 @@ export default function Dashboard() {
           )}
         </CardBody>
       </Card>
+      )}
 
+      {!simplifiedDashboard && (
       <Card>
         <CardBody>
           <h3 className="font-semibold text-gray-900 mb-3">Rentabilidade por Produto</h3>
@@ -382,6 +392,7 @@ export default function Dashboard() {
           </div>
         </CardBody>
       </Card>
+      )}
     </div>
   );
 }

@@ -11,7 +11,8 @@
     "build": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "tenant:audit": "node scripts/tenant-audit.js"
   },
   "dependencies": {
     "@prisma/client": "^5.19.1",

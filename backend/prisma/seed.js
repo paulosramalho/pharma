@@ -28,16 +28,28 @@ const USERS = [
 async function main() {
   console.log("Seeding...\n");
 
+  const tenant = await prisma.tenant.upsert({
+    where: { id: "00000000-0000-0000-0000-000000000001" },
+    update: { name: "Tenant Default", slug: "default", active: true },
+    create: { id: "00000000-0000-0000-0000-000000000001", name: "Tenant Default", slug: "default", active: true },
+  });
+
+  await prisma.tenantLicense.upsert({
+    where: { tenantId: tenant.id },
+    update: { planCode: "MINIMO", status: "ACTIVE" },
+    create: { tenantId: tenant.id, planCode: "MINIMO", status: "ACTIVE" },
+  });
+
   // 1. Stores
   const central = await prisma.store.upsert({
     where: { id: "store-central" },
-    update: {},
-    create: { id: "store-central", name: "Central", type: "CENTRAL", active: true },
+    update: { tenantId: tenant.id },
+    create: { id: "store-central", tenantId: tenant.id, name: "Central", type: "CENTRAL", active: true },
   });
   const loja1 = await prisma.store.upsert({
     where: { id: "store-loja-01" },
-    update: {},
-    create: { id: "store-loja-01", name: "Loja Centro", type: "LOJA", active: true },
+    update: { tenantId: tenant.id },
+    create: { id: "store-loja-01", tenantId: tenant.id, name: "Loja Centro", type: "LOJA", active: true },
   });
   console.log("  Stores:", central.name, "|", loja1.name);
 
@@ -65,8 +77,8 @@ async function main() {
 
     const user = await prisma.user.upsert({
       where: { email: u.email },
-      update: { passwordHash, roleId: role.id },
-      create: { name: u.name, email: u.email, passwordHash, active: true, roleId: role.id },
+      update: { tenantId: tenant.id, passwordHash, roleId: role.id },
+      create: { tenantId: tenant.id, name: u.name, email: u.email, passwordHash, active: true, roleId: role.id },
     });
 
     // Vendedor/Caixa only get Loja access; Admin/Farmaceutico get both (Central + Loja)
@@ -84,7 +96,7 @@ async function main() {
   // 4. Categories
   const cats = ["Medicamentos", "Higiene", "Cosmeticos", "Suplementos", "Diversos"];
   for (const name of cats) {
-    await prisma.category.upsert({ where: { name }, update: {}, create: { name } });
+    await prisma.category.upsert({ where: { name }, update: { tenantId: tenant.id }, create: { tenantId: tenant.id, name } });
   }
   console.log(`  ${cats.length} categories`);
 
@@ -110,8 +122,8 @@ async function main() {
   for (const p of products) {
     const product = await prisma.product.upsert({
       where: { ean: p.ean },
-      update: {},
-      create: { name: p.name, ean: p.ean, brand: p.brand, categoryId: p.categoryId, controlled: p.controlled, active: true },
+      update: { tenantId: tenant.id },
+      create: { tenantId: tenant.id, name: p.name, ean: p.ean, brand: p.brand, categoryId: p.categoryId, controlled: p.controlled, active: true },
     });
 
     const existingPrice = await prisma.productPrice.findFirst({ where: { productId: product.id, active: true } });
@@ -127,6 +139,7 @@ async function main() {
       exp.setFullYear(exp.getFullYear() + 1);
       await prisma.inventoryLot.create({
         data: {
+          tenantId: tenant.id,
           productId: product.id, storeId: loja1.id,
           lotNumber: `L${Date.now().toString(36).toUpperCase().slice(-6)}`,
           expiration: exp,

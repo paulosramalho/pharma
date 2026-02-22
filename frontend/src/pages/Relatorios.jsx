@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { apiFetch, getStoreId, getToken } from "../lib/api";
 import { money, formatDate, formatDateTime, cpfMask } from "../lib/format";
 import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/AuthContext";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Badge from "../components/ui/Badge";
@@ -12,7 +13,7 @@ import {
   Printer,
 } from "lucide-react";
 
-const TABS = [
+const BASE_TABS = [
   { key: "vendas", label: "Vendas", icon: ShoppingCart },
   { key: "caixa", label: "Fechamentos de Caixa", icon: Wallet },
   { key: "transferencias", label: "Transferencias", icon: ArrowUpCircle },
@@ -33,6 +34,7 @@ function monthAgoStr() {
 
 export default function Relatorios() {
   const { addToast } = useToast();
+  const { hasFeature } = useAuth();
   const [tab, setTab] = useState("vendas");
   const [from, setFrom] = useState(monthAgoStr());
   const [to, setTo] = useState(todayStr());
@@ -54,6 +56,16 @@ export default function Relatorios() {
   const [senderId, setSenderId] = useState("");
   const [itemFilter, setItemFilter] = useState("");
   const [printing, setPrinting] = useState(false);
+  const tabs = BASE_TABS.filter((t) => {
+    if (t.key === "transferencias") return hasFeature("reportsTransfers");
+    if (t.key === "vendas") return hasFeature("reportsSales");
+    if (t.key === "caixa") return hasFeature("reportsCashClosings");
+    return true;
+  });
+
+  useEffect(() => {
+    if (!tabs.some((t) => t.key === tab)) setTab("vendas");
+  }, [tab, tabs]);
 
   const inputClass = "px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
   const handlePrint = async () => {
@@ -159,7 +171,7 @@ export default function Relatorios() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
               tab === t.key ? "bg-white text-primary-700 shadow-sm" : "text-gray-600 hover:text-gray-900"

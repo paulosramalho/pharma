@@ -72,11 +72,89 @@ enum ReservationStatus {
   FULFILLED
 }
 
+enum LicenseStatus {
+  TRIAL
+  ACTIVE
+  GRACE
+  SUSPENDED
+  EXPIRED
+  CANCELED
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users        User[]
+  stores       Store[]
+  categories   Category[]
+  products     Product[]
+  customers    Customer[]
+  sales        Sale[]
+  cashSessions CashSession[]
+  transfers    StockTransfer[]
+  reservations StockReservation[]
+  chatMessages ChatMessage[]
+  auditLogs    AuditLog[]
+
+  license      TenantLicense?
+  licenseAudit TenantLicenseAudit[]
+  inventoryLots        InventoryLot[]
+  inventoryMovements   InventoryMovement[]
+  saleItems            SaleItem[]
+  payments             Payment[]
+  posTransactions      PosTransaction[]
+  discounts            Discount[]
+  addresses            Address[]
+  deliveries           Delivery[]
+  transferItems        StockTransferItem[]
+  reservationItems     StockReservationItem[]
+}
+
+model TenantLicense {
+  id             String        @id @default(uuid())
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+  tenantId       String        @unique
+  planCode       String
+  status         LicenseStatus @default(ACTIVE)
+  startsAt       DateTime      @default(now())
+  endsAt         DateTime?
+  graceUntil     DateTime?
+  updatedById    String?
+  updatedByName  String?
+  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime      @default(now())
+
+  @@index([planCode, status])
+}
+
+model TenantLicenseAudit {
+  id            String        @id @default(uuid())
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  tenantId      String
+  previousPlan  String?
+  newPlan       String
+  previousStatus LicenseStatus?
+  newStatus     LicenseStatus
+  changedById   String?
+  changedByName String?
+  reason        String?
+  payload       Json?
+  createdAt     DateTime      @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
 // ------------------------------
 // CORE: LOJAS
 // ------------------------------
 model Store {
   id        String    @id @default(uuid())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId  String
   name      String
   type      StoreType
   active    Boolean   @default(true)
@@ -112,8 +190,8 @@ model Store {
   fiscalDocs      FiscalDocument[]
   fiscalSequences FiscalSequence[]
 
-  @@index([type])
-  @@index([active])
+  @@index([tenantId, type])
+  @@index([tenantId, active])
 }
 
 // Usuário pode operar em múltiplas lojas (multi-loja real)
@@ -136,6 +214,8 @@ model StoreUser {
 // ------------------------------
 model User {
   id           String   @id @default(uuid())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId     String
   name         String
   email        String   @unique
   passwordHash String
@@ -168,8 +248,9 @@ model User {
   stores StoreUser[]
   audit  AuditLog[]
 
-  @@index([active])
-  @@index([lastSeenAt])
+  @@index([tenantId, active])
+  @@index([tenantId, lastSeenAt])
+  @@index([tenantId, email])
 }
 
 model Role {
@@ -206,6 +287,8 @@ model RolePermission {
 
 model ChatMessage {
   id String @id @default(uuid())
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenantId String
 
   sender   User   @relation("ChatMessageSender", fields: [senderId], references: [id])
   senderId String
@@ -222,14 +305,16 @@ model ChatMessage {
   createdAt DateTime @default(now())
   readAt    DateTime?
 
-  @@index([senderId, createdAt])
-  @@index([recipientId, createdAt])
-  @@index([recipientId, readAt])
+  @@index([tenantId, senderId, createdAt])
+  @@index([tenantId, recipientId, createdAt])
+  @@index([tenantId, recipientId, readAt])
   @@index([replyToId])
 }
 
 model AuditLog {
   id        String   @id @default(uuid())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId  String
   user      User?    @relation(fields: [userId], references: [id])
   userId    String?
   store     Store?   @relation(fields: [storeId], references: [id])
@@ -240,10 +325,10 @@ model AuditLog {
   payload   Json?
   createdAt DateTime @default(now())
 
-  @@index([createdAt])
-  @@index([storeId])
-  @@index([userId])
-  @@index([entity, entityId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, storeId])
+  @@index([tenantId, userId])
+  @@index([tenantId, entity, entityId])
 }
 
 // ------------------------------
@@ -251,13 +336,19 @@ model AuditLog {
 // ------------------------------
 model Category {
   id   String @id @default(uuid())
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenantId String
   name String @unique
 
   products Product[]
+
+  @@index([tenantId, name])
 }
 
 model Product {
   id         String   @id @default(uuid())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId   String
   ean        String?  @unique
   name       String
   brand      String?
@@ -278,10 +369,10 @@ model Product {
   reservationItems StockReservationItem[]
   discounts      Discount[]
 
-  @@index([active])
-  @@index([controlled])
-  @@index([categoryId])
-  @@index([name])
+  @@index([tenantId, active])
+  @@index([tenantId, controlled])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, name])
 }
 
 model ProductPrice {
@@ -304,6 +395,8 @@ model ProductPrice {
 // ------------------------------
 model InventoryLot {
   id        String  @id @default(uuid())
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  tenantId  String
   product   Product @relation(fields: [productId], references: [id])
   productId String
   store     Store   @relation(fields: [storeId], references: [id])
@@ -321,6 +414,7 @@ model InventoryLot {
   originTransferItems StockTransferItem[] @relation("TransferOriginLot")
 
   @@unique([storeId, productId, lotNumber, expiration])
+  @@index([tenantId, storeId, productId])
   @@index([storeId, productId])
   @@index([expiration])
   @@index([active])
@@ -328,6 +422,8 @@ model InventoryLot {
 
 model InventoryMovement {
   id        String        @id @default(uuid())
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  tenantId  String
   store     Store         @relation(fields: [storeId], references: [id])
   storeId   String
   product   Product       @relation(fields: [productId], references: [id])
@@ -353,6 +449,7 @@ model InventoryMovement {
   createdById String?
 
   @@index([storeId, createdAt])
+  @@index([tenantId, storeId, createdAt])
   @@index([productId, createdAt])
   @@index([refType, refId])
   @@index([saleId])
@@ -364,6 +461,8 @@ model InventoryMovement {
 // ------------------------------
 model Sale {
   id      String @id @default(uuid())
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenantId String
   number  String
   store   Store  @relation(fields: [storeId], references: [id])
   storeId String
@@ -393,8 +492,9 @@ model Sale {
   controlledDispensation SaleControlledDispensation?
 
   @@unique([storeId, number])
-  @@index([storeId, createdAt])
-  @@index([status])
+  @@index([tenantId, storeId, createdAt])
+  @@index([tenantId, status])
+  @@index([tenantId, number])
 }
 
 model SaleControlledDispensation {
@@ -424,6 +524,8 @@ model SaleControlledDispensation {
 
 model SaleItem {
   id     String @id @default(uuid())
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenantId String
   sale   Sale   @relation(fields: [saleId], references: [id])
   saleId String
 
@@ -444,6 +546,7 @@ model SaleItem {
   cogsUnit  Decimal? @db.Decimal(14, 4)
   cogsTotal Decimal? @db.Decimal(14, 2)
 
+  @@index([tenantId, saleId])
   @@index([saleId])
   @@index([productId])
   @@index([lotId])
@@ -451,6 +554,8 @@ model SaleItem {
 
 model Payment {
   id        String        @id @default(uuid())
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  tenantId  String
   sale      Sale          @relation(fields: [saleId], references: [id])
   saleId    String
   method    PaymentMethod
@@ -458,12 +563,15 @@ model Payment {
   createdAt DateTime      @default(now())
   posTransaction PosTransaction?
 
+  @@index([tenantId, saleId, createdAt])
   @@index([saleId])
   @@index([createdAt])
 }
 
 model PosTransaction {
   id String @id @default(uuid())
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenantId String
 
   sale   Sale   @relation(fields: [saleId], references: [id])
   saleId String
@@ -483,6 +591,7 @@ model PosTransaction {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  @@index([tenantId, saleId, createdAt])
   @@index([saleId, createdAt])
   @@index([status, createdAt])
   @@index([provider, createdAt])
@@ -493,6 +602,8 @@ model PosTransaction {
 // ------------------------------
 model CashSession {
   id          String    @id @default(uuid())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId    String
   store       Store     @relation(fields: [storeId], references: [id])
   storeId     String
   openedBy    User?     @relation("CashSessionOpenedBy", fields: [openedById], references: [id])
@@ -507,8 +618,8 @@ model CashSession {
 
   movements CashMovement[]
 
-  @@index([storeId, openedAt])
-  @@index([closedAt])
+  @@index([tenantId, storeId, openedAt])
+  @@index([tenantId, closedAt])
 }
 
 model CashMovement {
@@ -540,6 +651,8 @@ enum DiscountType {
 
 model Discount {
   id        String       @id @default(uuid())
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+  tenantId  String
   product   Product      @relation(fields: [productId], references: [id])
   productId String
 
@@ -552,6 +665,7 @@ model Discount {
   active    Boolean      @default(true)
   createdAt DateTime     @default(now())
 
+  @@index([tenantId, productId, active])
   @@index([productId, active])
   @@index([startDate, endDate])
 }
@@ -561,6 +675,8 @@ model Discount {
 // ------------------------------
 model Customer {
   id        String    @id @default(uuid())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId  String
   name      String
   document  String?   @unique
   phone     String?
@@ -573,11 +689,14 @@ model Customer {
   sales     Sale[]
   reservations StockReservation[]
 
-  @@index([name])
+  @@index([tenantId, name])
+  @@index([tenantId, document])
 }
 
 model Address {
   id         String   @id @default(uuid())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId   String
   customer   Customer @relation(fields: [customerId], references: [id])
   customerId String
   street     String
@@ -589,6 +708,7 @@ model Address {
   complement String?
   reference  String?
 
+  @@index([tenantId, customerId])
   @@index([customerId])
 }
 
@@ -597,6 +717,8 @@ model Address {
 // ------------------------------
 model Delivery {
   id          String    @id @default(uuid())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  tenantId    String
   sale        Sale      @relation(fields: [saleId], references: [id])
   saleId      String    @unique
   store       Store     @relation(fields: [storeId], references: [id])
@@ -606,6 +728,7 @@ model Delivery {
   deliveredAt DateTime?
   createdAt   DateTime  @default(now())
 
+  @@index([tenantId, storeId, createdAt])
   @@index([storeId, createdAt])
 }
 
@@ -614,6 +737,8 @@ model Delivery {
 // ------------------------------
 model StockTransfer {
   id                 String @id @default(uuid())
+  tenant             Tenant @relation(fields: [tenantId], references: [id])
+  tenantId           String
   originStore        Store  @relation("TransferOrigin", fields: [originStoreId], references: [id])
   originStoreId      String
   destinationStore   Store  @relation("TransferDestination", fields: [destinationStoreId], references: [id])
@@ -632,13 +757,16 @@ model StockTransfer {
   items     StockTransferItem[]
   movements InventoryMovement[]
 
-  @@index([originStoreId, createdAt])
-  @@index([destinationStoreId, createdAt])
-  @@index([status])
+  @@index([tenantId, originStoreId, createdAt])
+  @@index([tenantId, destinationStoreId, createdAt])
+  @@index([tenantId, status])
+  @@index([tenantId, createdById, createdAt])
 }
 
 model StockTransferItem {
   id         String        @id @default(uuid())
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  tenantId   String
   transfer   StockTransfer @relation(fields: [transferId], references: [id])
   transferId String
 
@@ -652,6 +780,7 @@ model StockTransferItem {
   quantity Int
   costUnit Decimal @db.Decimal(14, 4) // custo preservado
 
+  @@index([tenantId, transferId])
   @@index([transferId])
   @@index([productId])
   @@index([originLotId])
@@ -659,6 +788,8 @@ model StockTransferItem {
 
 model StockReservation {
   id            String @id @default(uuid())
+  tenant        Tenant @relation(fields: [tenantId], references: [id])
+  tenantId      String
   requestStore  Store  @relation("ReservationRequestedStore", fields: [requestStoreId], references: [id])
   requestStoreId String
   sourceStore   Store  @relation("ReservationSourceStore", fields: [sourceStoreId], references: [id])
@@ -683,13 +814,16 @@ model StockReservation {
 
   items StockReservationItem[]
 
-  @@index([requestStoreId, createdAt])
-  @@index([sourceStoreId, createdAt])
-  @@index([status])
+  @@index([tenantId, requestStoreId, createdAt])
+  @@index([tenantId, sourceStoreId, createdAt])
+  @@index([tenantId, status])
+  @@index([tenantId, requestedById, createdAt])
 }
 
 model StockReservationItem {
   id            String @id @default(uuid())
+  tenant        Tenant @relation(fields: [tenantId], references: [id])
+  tenantId      String
   reservation   StockReservation @relation(fields: [reservationId], references: [id])
   reservationId String
 
@@ -699,6 +833,7 @@ model StockReservationItem {
   quantity   Int
   reservedQty Int @default(0)
 
+  @@index([tenantId, reservationId])
   @@index([reservationId])
   @@index([productId])
 }

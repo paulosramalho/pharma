@@ -18,6 +18,7 @@ function authGuard() {
         id: payload.sub,
         email: payload.email,
         role: payload.role,
+        tenantId: payload.tenantId || null,
       };
 
       return next();

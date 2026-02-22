@@ -1,7 +1,14 @@
-const express = require("express");
+﻿const express = require("express");
 const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
 const { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer, makeReportCustomPdfBuffer } = require("../reports/reportPdfTemplate");
+const {
+  getActiveLicense,
+  resolveTenantLicense,
+  normalizeStatus,
+  isFeatureEnabled,
+  isLicenseActive,
+} = require("../../common/licensing/license.service");
 
 /** Converts "YYYY-MM-DD" to noon UTC to avoid timezone day-shift */
 function safeDate(v) {
@@ -19,17 +26,28 @@ function buildApiRoutes({ prisma, log }) {
     return req.user?.role === "ADMIN";
   }
 
+  async function resolveTenantId(req) {
+    if (req.user?.tenantId) return req.user.tenantId;
+    if (!req.user?.id) return null;
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { tenantId: true },
+    });
+    return user?.tenantId || null;
+  }
+
   async function getUserStoreIds(req) {
+    const tenantId = await resolveTenantId(req);
     if (!req.user) return [];
     if (isAdmin(req)) {
       const stores = await prisma.store.findMany({
-        where: { active: true },
+        where: { active: true, tenantId },
         select: { id: true },
       });
       return stores.map((s) => s.id);
     }
     const links = await prisma.storeUser.findMany({
-      where: { userId: req.user.id, store: { active: true } },
+      where: { userId: req.user.id, store: { active: true, tenantId } },
       select: { storeId: true },
     });
     return links.map((s) => s.storeId);
@@ -42,6 +60,81 @@ function buildApiRoutes({ prisma, log }) {
   function assertPharmacistOrAdmin(req) {
     if (!isPharmacistOrAdmin(req)) {
       throw Object.assign(new Error("Operacao permitida apenas para Farmaceutico ou Admin"), { statusCode: 403 });
+    }
+  }
+
+  async function getLicense(req) {
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return getActiveLicense();
+    const row = await prisma.tenantLicense.findUnique({
+      where: { tenantId },
+      select: {
+        planCode: true,
+        status: true,
+        startsAt: true,
+        endsAt: true,
+        graceUntil: true,
+        updatedAt: true,
+      },
+    });
+    return resolveTenantLicense(row);
+  }
+
+  async function assertFeature(req, featureKey, message) {
+    const license = await getLicense(req);
+    if (!isFeatureEnabled(featureKey, license)) {
+      throw Object.assign(new Error(message || "Recurso indisponivel no plano atual"), { statusCode: 403 });
+    }
+  }
+
+  async function assertUserCreationAllowed(req, roleName, options = {}) {
+    const excludeUserId = options.excludeUserId || null;
+    const tenantId = await resolveTenantId(req);
+    const license = await getLicense(req);
+    if (!isLicenseActive(license)) {
+      throw Object.assign(new Error("Licenca inativa. Regularize o plano para continuar."), { statusCode: 403 });
+    }
+    const maxUsers = Number(license?.limits?.maxActiveUsers || 0);
+    if (maxUsers > 0) {
+      const activeUsers = await prisma.user.count({
+        where: excludeUserId
+          ? { tenantId, active: true, id: { not: excludeUserId } }
+          : { tenantId, active: true },
+      });
+      if (activeUsers >= maxUsers) {
+        throw Object.assign(new Error("Limite do plano MINIMO atingido para usuarios."), { statusCode: 403 });
+      }
+    }
+    const capByRole = license?.limits?.maxRoleActive || {};
+    const roleCap = Number(capByRole?.[String(roleName || "").toUpperCase()] || 0);
+    if (roleCap > 0) {
+      const role = await prisma.role.findUnique({ where: { name: String(roleName).toUpperCase() }, select: { id: true } });
+      if (role?.id) {
+        const roleActiveUsers = await prisma.user.count({
+          where: excludeUserId
+            ? { tenantId, active: true, roleId: role.id, id: { not: excludeUserId } }
+            : { tenantId, active: true, roleId: role.id },
+        });
+        if (roleActiveUsers >= roleCap) {
+          throw Object.assign(new Error(`Limite do plano MINIMO atingido para perfil ${String(roleName).toUpperCase()}.`), { statusCode: 403 });
+        }
+      }
+    }
+  }
+
+  async function assertStoreActivationAllowed(req, nextActiveState) {
+    if (!nextActiveState) return;
+    const tenantId = await resolveTenantId(req);
+    const license = await getLicense(req);
+    if (!isLicenseActive(license)) {
+      throw Object.assign(new Error("Licenca inativa. Regularize o plano para continuar."), { statusCode: 403 });
+    }
+    const maxStores = Number(license?.limits?.maxActiveStores || 0);
+    if (maxStores > 0) {
+      const activeStores = await prisma.store.count({ where: { tenantId, active: true } });
+      if (activeStores >= maxStores) {
+        throw Object.assign(new Error("Limite do plano MINIMO atingido para lojas."), { statusCode: 403 });
+      }
     }
   }
 
@@ -107,11 +200,19 @@ function buildApiRoutes({ prisma, log }) {
 
   // Helper: get storeId from header or default, validating user access.
   async function resolveStoreId(req) {
+    const tenantId = await resolveTenantId(req);
     const fromHeader = String(req.headers["x-store-id"] || "").trim();
     if (fromHeader) {
-      if (isAdmin(req)) return fromHeader;
+      if (isAdmin(req)) {
+        const adminStore = await prisma.store.findFirst({
+          where: { id: fromHeader, tenantId, active: true },
+          select: { id: true },
+        });
+        if (!adminStore) throw Object.assign(new Error("Loja informada fora do tenant"), { statusCode: 403 });
+        return fromHeader;
+      }
       const allowed = await prisma.storeUser.findFirst({
-        where: { userId: req.user?.id, storeId: fromHeader, store: { active: true } },
+        where: { userId: req.user?.id, storeId: fromHeader, store: { active: true, tenantId } },
         select: { storeId: true },
       });
       if (!allowed) {
@@ -122,33 +223,33 @@ function buildApiRoutes({ prisma, log }) {
     if (!req.user) return null;
     if (isAdmin(req)) {
       const defaultStore = await prisma.store.findFirst({
-        where: { active: true, isDefault: true },
+        where: { active: true, isDefault: true, tenantId },
         select: { id: true },
       });
       if (defaultStore?.id) return defaultStore.id;
       const firstStore = await prisma.store.findFirst({
-        where: { active: true },
+        where: { active: true, tenantId },
         orderBy: { createdAt: "asc" },
         select: { id: true },
       });
       return firstStore?.id || null;
     }
     const su = await prisma.storeUser.findFirst({
-      where: { userId: req.user.id, isDefault: true, store: { active: true } },
+      where: { userId: req.user.id, isDefault: true, store: { active: true, tenantId } },
       select: { storeId: true },
     });
     if (su?.storeId) return su.storeId;
     const fallback = await prisma.storeUser.findFirst({
-      where: { userId: req.user.id, store: { active: true } },
+      where: { userId: req.user.id, store: { active: true, tenantId } },
       select: { storeId: true },
     });
     return fallback?.storeId || null;
   }
 
   // Helper: load full sale with includes (used by multiple endpoints)
-  async function loadFullSale(id) {
-    return prisma.sale.findUnique({
-      where: { id },
+  async function loadFullSale(id, tenantId) {
+    return prisma.sale.findFirst({
+      where: { id, tenantId },
       include: {
         customer: true,
         items: { include: { product: true } },
@@ -196,9 +297,9 @@ function buildApiRoutes({ prisma, log }) {
     return data;
   }
 
-  async function assertControlledDispensationIfRequired(saleId) {
-    const sale = await prisma.sale.findUnique({
-      where: { id: saleId },
+  async function assertControlledDispensationIfRequired(saleId, tenantId) {
+    const sale = await prisma.sale.findFirst({
+      where: { id: saleId, tenantId },
       include: {
         items: { include: { product: { select: { controlled: true } } } },
         controlledDispensation: true,
@@ -231,10 +332,14 @@ function buildApiRoutes({ prisma, log }) {
 
   async function sendTransferRequestChatMessages({ transfer, senderId }) {
     if (!transfer?.originStoreId || !transfer?.destinationStoreId || !senderId) return;
+    const sender = await prisma.user.findUnique({ where: { id: senderId }, select: { tenantId: true, name: true } });
+    const tenantId = sender?.tenantId;
+    if (!tenantId) return;
 
-    const [admins, pharmacists, sender] = await Promise.all([
+    const [admins, pharmacists] = await Promise.all([
       prisma.user.findMany({
         where: {
+          tenantId,
           active: true,
           id: { not: senderId },
           role: { name: "ADMIN" },
@@ -243,16 +348,13 @@ function buildApiRoutes({ prisma, log }) {
       }),
       prisma.user.findMany({
         where: {
+          tenantId,
           active: true,
           id: { not: senderId },
           role: { name: "FARMACEUTICO" },
           stores: { some: { storeId: transfer.originStoreId } },
         },
         select: { id: true },
-      }),
-      prisma.user.findUnique({
-        where: { id: senderId },
-        select: { name: true },
       }),
     ]);
 
@@ -264,6 +366,7 @@ function buildApiRoutes({ prisma, log }) {
 
     await prisma.chatMessage.createMany({
       data: recipientIds.map((recipientId) => ({
+        tenantId,
         senderId,
         recipientId,
         content: message,
@@ -279,9 +382,12 @@ function buildApiRoutes({ prisma, log }) {
 
   async function sendTransferSentChatMessage({ transferId, senderId }) {
     if (!transferId || !senderId) return;
+    const senderTenant = await prisma.user.findUnique({ where: { id: senderId }, select: { tenantId: true, name: true } });
+    const tenantId = senderTenant?.tenantId;
+    if (!tenantId) return;
 
-    const transfer = await prisma.stockTransfer.findUnique({
-      where: { id: transferId },
+    const transfer = await prisma.stockTransfer.findFirst({
+      where: { id: transferId, tenantId },
       include: {
         originStore: { select: { id: true, name: true } },
         destinationStore: { select: { id: true, name: true } },
@@ -306,6 +412,7 @@ function buildApiRoutes({ prisma, log }) {
 
     await prisma.chatMessage.create({
       data: {
+        tenantId,
         senderId,
         recipientId: transfer.createdById,
         content: message,
@@ -321,11 +428,78 @@ function buildApiRoutes({ prisma, log }) {
     });
   }
 
-  // ─── DASHBOARD ───
+  // â”€â”€â”€ DASHBOARD â”€â”€â”€
+  router.get("/license/me", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
+    const license = await getLicense(req);
+    return sendOk(res, req, { ...license, tenantId });
+  }));
+
+  router.put("/license/me", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: { code: 403, message: "Somente admin pode alterar licenca" } });
+    }
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+
+    const nextPlan = String(req.body?.planCode || "").trim().toUpperCase();
+    const nextStatus = normalizeStatus(req.body?.status || "ACTIVE");
+    const reason = req.body?.reason ? String(req.body.reason) : null;
+    if (!nextPlan) return res.status(400).json({ error: { code: 400, message: "planCode obrigatorio" } });
+
+    const previous = await prisma.tenantLicense.findUnique({ where: { tenantId } });
+    const now = new Date();
+    const updated = await prisma.tenantLicense.upsert({
+      where: { tenantId },
+      update: {
+        planCode: nextPlan,
+        status: nextStatus,
+        endsAt: req.body?.endsAt ? safeDate(req.body.endsAt) : null,
+        graceUntil: req.body?.graceUntil ? safeDate(req.body.graceUntil) : null,
+        updatedById: req.user?.id || null,
+        updatedByName: req.user?.name || req.user?.email || "Admin",
+      },
+      create: {
+        tenantId,
+        planCode: nextPlan,
+        status: nextStatus,
+        startsAt: now,
+        endsAt: req.body?.endsAt ? safeDate(req.body.endsAt) : null,
+        graceUntil: req.body?.graceUntil ? safeDate(req.body.graceUntil) : null,
+        updatedById: req.user?.id || null,
+        updatedByName: req.user?.name || req.user?.email || "Admin",
+      },
+    });
+
+    await prisma.tenantLicenseAudit.create({
+      data: {
+        tenantId,
+        previousPlan: previous?.planCode || null,
+        newPlan: updated.planCode,
+        previousStatus: previous?.status || null,
+        newStatus: updated.status,
+        changedById: req.user?.id || null,
+        changedByName: req.user?.name || req.user?.email || "Admin",
+        reason,
+        payload: {
+          endsAt: updated.endsAt,
+          graceUntil: updated.graceUntil,
+        },
+      },
+    });
+
+    const license = await getLicense(req);
+    return sendOk(res, req, { ...license, tenantId });
+  }));
+
   router.get("/dashboard", asyncHandler(async (req, res) => {
+    await assertFeature(req, "dashboard", "Dashboard indisponivel no plano atual");
+    const license = await getLicense(req);
+    const simplifiedDashboard = license.dashboardMode === "SIMPLIFIED";
     const userStoreIds = await getUserStoreIds(req);
     if (userStoreIds.length === 0) {
       return sendOk(res, req, {
+        dashboardMode: license.dashboardMode,
         filters: { stores: [], selectedStoreIds: [], startDate: null, endDate: null },
         salesToday: 0,
         grossRevenue: 0,
@@ -364,6 +538,7 @@ function buildApiRoutes({ prisma, log }) {
 
     if (selectedStoreIds.length === 0) {
       return sendOk(res, req, {
+        dashboardMode: license.dashboardMode,
         filters: {
           stores,
           selectedStoreIds: [],
@@ -407,7 +582,7 @@ function buildApiRoutes({ prisma, log }) {
       : null;
     const cashSession = openSession ? {
       id: openSession.id,
-      openedBy: openSession.openedBy?.name || "—",
+      openedBy: openSession.openedBy?.name || "â€”",
       openedAt: openSession.openedAt,
       initialCash: Number(openSession.initialCash),
     } : null;
@@ -508,6 +683,7 @@ function buildApiRoutes({ prisma, log }) {
       .slice(0, 15);
 
     return sendOk(res, req, {
+      dashboardMode: license.dashboardMode,
       filters: {
         stores,
         selectedStoreIds,
@@ -520,11 +696,11 @@ function buildApiRoutes({ prisma, log }) {
       itemsSold,
       cashSession,
       stockEvolution: {
-        quantityDelta: movementInQty - movementOutQty,
-        transferDelta: transferInQty - transferOutQty,
-        currentValue: Number(currentValue.toFixed(2)),
+        quantityDelta: simplifiedDashboard ? 0 : (movementInQty - movementOutQty),
+        transferDelta: simplifiedDashboard ? 0 : (transferInQty - transferOutQty),
+        currentValue: simplifiedDashboard ? 0 : Number(currentValue.toFixed(2)),
       },
-      profitabilityByProduct: profitabilityByProduct.map((p) => ({
+      profitabilityByProduct: simplifiedDashboard ? [] : profitabilityByProduct.map((p) => ({
         ...p,
         revenue: Number(p.revenue.toFixed(2)),
         cogs: Number(p.cogs.toFixed(2)),
@@ -533,16 +709,17 @@ function buildApiRoutes({ prisma, log }) {
       })),
       charts: {
         salesByDay: salesByDay.map((d) => ({ ...d, revenue: Number(d.revenue.toFixed(2)) })),
-        stockByStore: stockByStore.map((s) => ({ ...s, value: Number(s.value.toFixed(2)) })),
-        transferStatus,
+        stockByStore: simplifiedDashboard ? [] : stockByStore.map((s) => ({ ...s, value: Number(s.value.toFixed(2)) })),
+        transferStatus: simplifiedDashboard ? [] : transferStatus,
       },
     });
   }));
 
-  // ─── STORES ───
+  // â”€â”€â”€ STORES â”€â”€â”€
   router.get("/stores", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { all } = req.query; // ?all=true to include inactive
-    const where = all === "true" ? {} : { active: true };
+    const where = all === "true" ? { tenantId } : { tenantId, active: true };
     if (!isAdmin(req)) {
       where.accessUsers = { some: { userId: req.user?.id } };
     }
@@ -555,17 +732,22 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/stores", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { name, type, cnpj, phone, email, street, number, complement, district, city, state, zipCode } = req.body;
-    if (!name || !type) return res.status(400).json({ error: { code: 400, message: "name e type obrigatórios" } });
+    if (!name || !type) return res.status(400).json({ error: { code: 400, message: "name e type obrigatÃ³rios" } });
+    await assertStoreActivationAllowed(req, true);
 
     const store = await prisma.store.create({
-      data: { name, type, cnpj, phone, email, street, number, complement, district, city, state, zipCode, active: true },
+      data: { tenantId, name, type, cnpj, phone, email, street, number, complement, district, city, state, zipCode, active: true },
     });
     return sendOk(res, req, store, 201);
   }));
 
   router.put("/stores/:id", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { name, type, cnpj, phone, email, street, number, complement, district, city, state, zipCode, active, isDefault } = req.body;
+    const currentStore = await prisma.store.findFirst({ where: { id: req.params.id, tenantId }, select: { active: true } });
+    if (!currentStore) return res.status(404).json({ error: { code: 404, message: "Loja nao encontrada" } });
     const data = {};
     if (name !== undefined) data.name = name;
     if (type !== undefined) data.type = type;
@@ -579,7 +761,10 @@ function buildApiRoutes({ prisma, log }) {
     if (city !== undefined) data.city = city || null;
     if (state !== undefined) data.state = state || null;
     if (zipCode !== undefined) data.zipCode = zipCode || null;
-    if (active !== undefined) data.active = active;
+    if (active !== undefined) {
+      if (!currentStore.active && Boolean(active)) await assertStoreActivationAllowed(req, true);
+      data.active = active;
+    }
 
     // If setting as default, unset other stores first
     if (isDefault === true) {
@@ -593,18 +778,20 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, store);
   }));
 
-  // ─── CATEGORIES ───
+  // â”€â”€â”€ CATEGORIES â”€â”€â”€
   router.get("/categories", asyncHandler(async (req, res) => {
-    const categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
+    const tenantId = await resolveTenantId(req);
+    const categories = await prisma.category.findMany({ where: { tenantId }, orderBy: { name: "asc" } });
     return sendOk(res, req, categories);
   }));
 
-  // ─── PRODUCTS ───
+  // â”€â”€â”€ PRODUCTS â”€â”€â”€
   router.get("/products", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { search, categoryId, page = 1, limit = 50 } = req.query;
     const take = Number(limit);
     const skip = (Number(page) - 1) * take;
-    const where = { active: true };
+    const where = { tenantId, active: true };
     if (search) where.OR = [
       { name: { contains: search, mode: "insensitive" } },
       { ean: { contains: search } },
@@ -638,12 +825,14 @@ function buildApiRoutes({ prisma, log }) {
 
   // Price + stock lookup (consultation only, no sale creation)
   router.get("/inventory/lookup", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { search = "", limit = 20 } = req.query;
     const q = String(search || "").trim();
     if (q.length < 2) return sendOk(res, req, { products: [] });
 
     const products = await prisma.product.findMany({
       where: {
+        tenantId,
         active: true,
         OR: [
           { name: { contains: q, mode: "insensitive" } },
@@ -657,7 +846,7 @@ function buildApiRoutes({ prisma, log }) {
       orderBy: { name: "asc" },
     });
 
-    const storeIds = (await prisma.store.findMany({ where: { active: true }, select: { id: true, name: true, type: true } }));
+    const storeIds = (await prisma.store.findMany({ where: { tenantId, active: true }, select: { id: true, name: true, type: true } }));
     const productIds = products.map((p) => p.id);
     const lots = productIds.length > 0
       ? await prisma.inventoryLot.findMany({
@@ -717,11 +906,12 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/products", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { name, ean, brand, categoryId, controlled, price } = req.body;
-    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatório" } });
+    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatÃ³rio" } });
 
     const product = await prisma.product.create({
-      data: { name, ean: ean || null, brand: brand || null, categoryId: categoryId || null, controlled: !!controlled, active: true },
+      data: { tenantId, name, ean: ean || null, brand: brand || null, categoryId: categoryId || null, controlled: !!controlled, active: true },
     });
 
     if (price && Number(price) > 0) {
@@ -732,7 +922,10 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.put("/products/:id", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { name, ean, brand, categoryId, controlled, price } = req.body;
+    const currentProduct = await prisma.product.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true } });
+    if (!currentProduct) return res.status(404).json({ error: { code: 404, message: "Produto nao encontrado" } });
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data: { name, ean: ean || null, brand: brand || null, categoryId: categoryId || null, controlled: !!controlled },
@@ -746,10 +939,11 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, product);
   }));
 
-  // ─── DISCOUNTS ───
+  // â”€â”€â”€ DISCOUNTS â”€â”€â”€
   router.get("/discounts", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { productId, active } = req.query;
-    const where = {};
+    const where = { product: { tenantId } };
     if (productId) where.productId = productId;
     if (active === "true") {
       where.active = true;
@@ -764,13 +958,16 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/discounts", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { productId, type, value, startDate, endDate } = req.body;
     if (!productId || !type || value === undefined) {
-      return res.status(400).json({ error: { code: 400, message: "productId, type e value obrigatórios" } });
+      return res.status(400).json({ error: { code: 400, message: "productId, type e value obrigatÃ³rios" } });
     }
     if (!["PERCENT", "FIXED"].includes(type)) {
       return res.status(400).json({ error: { code: 400, message: "type deve ser PERCENT ou FIXED" } });
     }
+    const product = await prisma.product.findFirst({ where: { id: productId, tenantId }, select: { id: true } });
+    if (!product) return res.status(404).json({ error: { code: 404, message: "Produto nao encontrado no tenant" } });
 
     // Deactivate existing active discounts for this product
     await prisma.discount.updateMany({
@@ -780,6 +977,7 @@ function buildApiRoutes({ prisma, log }) {
 
     const discount = await prisma.discount.create({
       data: {
+        tenantId,
         productId,
         type,
         value: Number(value),
@@ -793,6 +991,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.put("/discounts/:id", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { type, value, startDate, endDate, active } = req.body;
     const data = {};
     if (type !== undefined) data.type = type;
@@ -800,6 +999,12 @@ function buildApiRoutes({ prisma, log }) {
     if (startDate !== undefined) data.startDate = safeDate(startDate);
     if (endDate !== undefined) data.endDate = endDate ? safeDate(endDate) : null;
     if (active !== undefined) data.active = active;
+
+    const existing = await prisma.discount.findFirst({
+      where: { id: req.params.id, product: { tenantId } },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: { code: 404, message: "Desconto nao encontrado" } });
 
     const discount = await prisma.discount.update({
       where: { id: req.params.id },
@@ -810,6 +1015,12 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.delete("/discounts/:id", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
+    const existing = await prisma.discount.findFirst({
+      where: { id: req.params.id, product: { tenantId } },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: { code: 404, message: "Desconto nao encontrado" } });
     await prisma.discount.update({
       where: { id: req.params.id },
       data: { active: false },
@@ -817,9 +1028,11 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { success: true });
   }));
 
-  // ─── USERS ───
+  // â”€â”€â”€ USERS â”€â”€â”€
   router.get("/users", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const users = await prisma.user.findMany({
+      where: { tenantId },
       select: {
         id: true, name: true, email: true, active: true, createdAt: true, lastSeenAt: true,
         role: { select: { id: true, name: true } },
@@ -837,23 +1050,25 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/users", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
     const { name, email, password, roleName, storeIds } = req.body;
     if (!name || !email || !password || !roleName) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: name, email, password, roleName" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: name, email, password, roleName" } });
     }
+    await assertUserCreationAllowed(req, roleName);
     const role = await prisma.role.findUnique({ where: { name: roleName } });
-    if (!role) return res.status(400).json({ error: { code: 400, message: `Role ${roleName} não encontrada` } });
+    if (!role) return res.status(400).json({ error: { code: 400, message: `Role ${roleName} nÃ£o encontrada` } });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
-      data: { name, email, passwordHash, active: true, roleId: role.id },
+      data: { tenantId, name, email, passwordHash, active: true, roleId: role.id },
     });
 
     // ADMIN has global access and does not require store link.
     let assignedStoreIds = Array.isArray(storeIds) ? storeIds.filter(Boolean) : [];
     if (roleName !== "ADMIN" && assignedStoreIds.length === 0) {
-      const defaultStore = await prisma.store.findFirst({ where: { active: true, type: "LOJA" }, orderBy: { createdAt: "asc" } });
+      const defaultStore = await prisma.store.findFirst({ where: { tenantId, active: true, type: "LOJA" }, orderBy: { createdAt: "asc" } });
       if (defaultStore) assignedStoreIds = [defaultStore.id];
     }
 
@@ -865,10 +1080,11 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.put("/users/:id", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
     const { name, email, password, roleName, active, storeIds } = req.body;
-    const currentUser = await prisma.user.findUnique({
-      where: { id: req.params.id },
+    const currentUser = await prisma.user.findFirst({
+      where: { id: req.params.id, tenantId },
       include: { role: { select: { name: true } } },
     });
     if (!currentUser) {
@@ -887,6 +1103,12 @@ function buildApiRoutes({ prisma, log }) {
       targetRoleName = roleName;
     }
 
+    const nextActive = active !== undefined ? Boolean(active) : Boolean(currentUser.active);
+    const roleChanged = !!roleName && String(roleName).toUpperCase() !== String(currentUser.role?.name || "").toUpperCase();
+    if (nextActive && (!currentUser.active || roleChanged)) {
+      await assertUserCreationAllowed(req, targetRoleName, { excludeUserId: currentUser.id });
+    }
+
     const user = await prisma.user.update({ where: { id: req.params.id }, data });
 
     // Update store access when requested, or clear links when user becomes ADMIN.
@@ -896,7 +1118,7 @@ function buildApiRoutes({ prisma, log }) {
       if (targetRoleName !== "ADMIN") {
         let finalStoreIds = requestedStoreIds;
         if (finalStoreIds.length === 0) {
-          const defaultStore = await prisma.store.findFirst({ where: { active: true, type: "LOJA" }, orderBy: { createdAt: "asc" } });
+          const defaultStore = await prisma.store.findFirst({ where: { tenantId, active: true, type: "LOJA" }, orderBy: { createdAt: "asc" } });
           if (defaultStore) finalStoreIds = [defaultStore.id];
         }
         for (const sid of finalStoreIds) {
@@ -908,28 +1130,29 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: user.id, name: user.name, email: user.email });
   }));
 
-  // ─── USER PROFILE (self-service email/password change) ───
+  // â”€â”€â”€ USER PROFILE (self-service email/password change) â”€â”€â”€
   router.put("/users/:id/profile", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
     const { email, currentPassword, newPassword } = req.body;
     const userId = req.params.id;
 
     // Users can only update their own profile
     if (req.user?.id !== userId) {
-      return res.status(403).json({ error: { code: 403, message: "Sem permissão" } });
+      return res.status(403).json({ error: { code: 403, message: "Sem permissÃ£o" } });
     }
 
     const data = {};
 
     if (email) {
-      const existing = await prisma.user.findFirst({ where: { email, NOT: { id: userId } } });
-      if (existing) return res.status(400).json({ error: { code: 400, message: "Email já em uso" } });
+      const existing = await prisma.user.findFirst({ where: { tenantId, email, NOT: { id: userId } } });
+      if (existing) return res.status(400).json({ error: { code: 400, message: "Email jÃ¡ em uso" } });
       data.email = email;
     }
 
     if (currentPassword && newPassword) {
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user) return res.status(404).json({ error: { code: 404, message: "Usuário não encontrado" } });
+      const user = await prisma.user.findFirst({ where: { id: userId, tenantId } });
+      if (!user) return res.status(404).json({ error: { code: 404, message: "UsuÃ¡rio nÃ£o encontrado" } });
       const valid = await bcrypt.compare(currentPassword, user.passwordHash);
       if (!valid) return res.status(400).json({ error: { code: 400, message: "Senha atual incorreta" } });
       data.passwordHash = await bcrypt.hash(newPassword, 10);
@@ -943,16 +1166,19 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: updated.id, name: updated.name, email: updated.email });
   }));
 
-  // ─── INVENTORY ───
+  // â”€â”€â”€ INVENTORY â”€â”€â”€
 
 
   // --- CHAT ---
   router.get("/chat/users", asyncHandler(async (req, res) => {
+    await assertFeature(req, "chat", "Chat indisponivel no plano atual");
+    const tenantId = await resolveTenantId(req);
     await touchChatPresence(req.user?.id);
     const search = String(req.query.search || "").trim();
     const limit = Math.min(Math.max(Number(req.query.limit || 30), 1), 100);
 
     const where = {
+      tenantId,
       active: true,
       id: { not: req.user?.id || "" },
     };
@@ -980,6 +1206,8 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/chat/conversations", asyncHandler(async (req, res) => {
+    await assertFeature(req, "chat", "Chat indisponivel no plano atual");
+    const tenantId = await resolveTenantId(req);
     await touchChatPresence(req.user?.id);
     const currentUserId = req.user?.id;
     if (!currentUserId) return sendOk(res, req, { conversations: [] });
@@ -990,6 +1218,7 @@ function buildApiRoutes({ prisma, log }) {
     const [messages, unreadAgg] = await Promise.all([
       prisma.chatMessage.findMany({
         where: {
+          tenantId,
           OR: [
             { senderId: currentUserId },
             { recipientId: currentUserId },
@@ -1004,7 +1233,7 @@ function buildApiRoutes({ prisma, log }) {
       }),
       prisma.chatMessage.groupBy({
         by: ["senderId"],
-        where: { recipientId: currentUserId, readAt: null },
+        where: { tenantId, recipientId: currentUserId, readAt: null },
         _count: { senderId: true },
       }),
     ]);
@@ -1045,6 +1274,8 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/chat/messages/:userId", asyncHandler(async (req, res) => {
+    await assertFeature(req, "chat", "Chat indisponivel no plano atual");
+    const tenantId = await resolveTenantId(req);
     await touchChatPresence(req.user?.id);
     const currentUserId = req.user?.id;
     const otherUserId = req.params.userId;
@@ -1052,7 +1283,7 @@ function buildApiRoutes({ prisma, log }) {
     if (!otherUserId) return res.status(400).json({ error: { code: 400, message: "userId obrigatorio" } });
 
     const otherUser = await prisma.user.findFirst({
-      where: { id: otherUserId, active: true },
+      where: { id: otherUserId, tenantId, active: true },
       select: { id: true, name: true, email: true, lastSeenAt: true, role: { select: { name: true } } },
     });
     if (!otherUser) return res.status(404).json({ error: { code: 404, message: "Usuario nao encontrado" } });
@@ -1061,6 +1292,7 @@ function buildApiRoutes({ prisma, log }) {
     const before = req.query.before ? new Date(String(req.query.before)) : null;
 
     const where = {
+      tenantId,
       OR: [
         { senderId: currentUserId, recipientId: otherUserId },
         { senderId: otherUserId, recipientId: currentUserId },
@@ -1096,6 +1328,7 @@ function buildApiRoutes({ prisma, log }) {
 
     await prisma.chatMessage.updateMany({
       where: {
+        tenantId,
         senderId: otherUserId,
         recipientId: currentUserId,
         readAt: null,
@@ -1110,6 +1343,8 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/chat/messages", asyncHandler(async (req, res) => {
+    await assertFeature(req, "chat", "Chat indisponivel no plano atual");
+    const tenantId = await resolveTenantId(req);
     await touchChatPresence(req.user?.id);
     const senderId = req.user?.id;
     const recipientId = String(req.body?.recipientId || "").trim();
@@ -1124,15 +1359,15 @@ function buildApiRoutes({ prisma, log }) {
     if (!content) return res.status(400).json({ error: { code: 400, message: "Mensagem obrigatoria" } });
 
     const recipient = await prisma.user.findFirst({
-      where: { id: recipientId, active: true },
+      where: { id: recipientId, tenantId, active: true },
       select: { id: true },
     });
     if (!recipient) return res.status(404).json({ error: { code: 404, message: "Destinatario nao encontrado" } });
 
     let replyToId = null;
     if (replyToMessageId) {
-      const replied = await prisma.chatMessage.findUnique({
-        where: { id: replyToMessageId },
+      const replied = await prisma.chatMessage.findFirst({
+        where: { id: replyToMessageId, tenantId },
         select: { id: true, senderId: true, recipientId: true },
       });
       if (!replied) return res.status(400).json({ error: { code: 400, message: "Mensagem respondida nao encontrada" } });
@@ -1147,6 +1382,7 @@ function buildApiRoutes({ prisma, log }) {
 
     const message = await prisma.chatMessage.create({
       data: {
+        tenantId,
         senderId,
         recipientId,
         content,
@@ -1178,6 +1414,8 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/chat/messages/:userId/read", asyncHandler(async (req, res) => {
+    await assertFeature(req, "chat", "Chat indisponivel no plano atual");
+    const tenantId = await resolveTenantId(req);
     await touchChatPresence(req.user?.id);
     const currentUserId = req.user?.id;
     const otherUserId = req.params.userId;
@@ -1185,6 +1423,7 @@ function buildApiRoutes({ prisma, log }) {
 
     const result = await prisma.chatMessage.updateMany({
       where: {
+        tenantId,
         senderId: otherUserId,
         recipientId: currentUserId,
         readAt: null,
@@ -1196,17 +1435,19 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/chat/presence", asyncHandler(async (req, res) => {
+    await assertFeature(req, "chat", "Chat indisponivel no plano atual");
     await touchChatPresence(req.user?.id);
     return sendOk(res, req, { ok: true, at: new Date() });
   }));
   // Multi-store overview: all products with per-store qty + recent entries/exits
   router.get("/inventory/overview", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { search } = req.query;
 
-    const stores = await prisma.store.findMany({ where: { active: true }, orderBy: [{ type: "asc" }, { name: "asc" }] });
+    const stores = await prisma.store.findMany({ where: { active: true, tenantId }, orderBy: [{ type: "asc" }, { name: "asc" }] });
 
     // Get all active lots
-    const lotWhere = { active: true, quantity: { gt: 0 } };
+    const lotWhere = { active: true, quantity: { gt: 0 }, store: { tenantId } };
     if (search) {
       lotWhere.product = {
         OR: [
@@ -1410,12 +1651,13 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/inventory/lots", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     const { search, productId, expiring, page = 1, limit = 20 } = req.query;
     const take = Number(limit);
     const skip = (Number(page) - 1) * take;
 
-    const where = { active: true, quantity: { gt: 0 } };
+    const where = { active: true, quantity: { gt: 0 }, store: { tenantId } };
     if (storeId) where.storeId = storeId;
     if (productId) where.productId = productId;
     if (search) {
@@ -1460,20 +1702,22 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/receive", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     const { productId, lotNumber, expiration, costUnit, quantity, reason } = req.body;
     if (!productId || !lotNumber || !expiration || !costUnit || !quantity) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: productId, lotNumber, expiration, costUnit, quantity" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: productId, lotNumber, expiration, costUnit, quantity" } });
     }
 
     const lot = await prisma.inventoryLot.upsert({
       where: { storeId_productId_lotNumber_expiration: { storeId, productId, lotNumber, expiration: safeDate(expiration) } },
       update: { quantity: { increment: Number(quantity) }, costUnit: Number(costUnit) },
-      create: { storeId, productId, lotNumber, expiration: safeDate(expiration), costUnit: Number(costUnit), quantity: Number(quantity), active: true },
+      create: { tenantId, storeId, productId, lotNumber, expiration: safeDate(expiration), costUnit: Number(costUnit), quantity: Number(quantity), active: true },
     });
 
     await prisma.inventoryMovement.create({
       data: {
+        tenantId,
         storeId, productId, lotId: lot.id, type: "IN",
         quantity: Number(quantity), reason: reason || "Recebimento",
         createdById: req.user?.id,
@@ -1481,9 +1725,9 @@ function buildApiRoutes({ prisma, log }) {
     });
 
     // Auto-update selling price if product has defaultMarkup
-    const product = await prisma.product.findUnique({ where: { id: productId }, select: { defaultMarkup: true } });
+    const product = await prisma.product.findFirst({ where: { id: productId, tenantId }, select: { defaultMarkup: true } });
     if (product?.defaultMarkup) {
-      const allLots = await prisma.inventoryLot.findMany({ where: { productId, active: true, quantity: { gt: 0 } } });
+      const allLots = await prisma.inventoryLot.findMany({ where: { productId, active: true, quantity: { gt: 0 }, store: { tenantId } } });
       const totalVal = allLots.reduce((s, l) => s + Number(l.costUnit) * l.quantity, 0);
       const totalQty = allLots.reduce((s, l) => s + l.quantity, 0);
       if (totalQty > 0) {
@@ -1498,33 +1742,37 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/adjust", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     let { productId, lotId, type, quantity, reason } = req.body;
     if (!type || !quantity || !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: type, quantity, reason" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: type, quantity, reason" } });
     }
 
     // Resolve productId from lotId if not provided
     if (lotId && !productId) {
-      const lot = await prisma.inventoryLot.findUnique({ where: { id: lotId } });
-      if (!lot) return res.status(400).json({ error: { code: 400, message: "Lote não encontrado" } });
+      const lot = await prisma.inventoryLot.findFirst({ where: { id: lotId, storeId, store: { tenantId } } });
+      if (!lot) return res.status(400).json({ error: { code: 400, message: "Lote nÃ£o encontrado" } });
       productId = lot.productId;
     }
 
     if (!productId) {
-      return res.status(400).json({ error: { code: 400, message: "productId ou lotId obrigatório" } });
+      return res.status(400).json({ error: { code: 400, message: "productId ou lotId obrigatÃ³rio" } });
     }
 
     const isPositive = type === "ADJUST_POS";
     if (lotId) {
+      const lot = await prisma.inventoryLot.findFirst({ where: { id: lotId, storeId, store: { tenantId } }, select: { id: true } });
+      if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote nao encontrado para esta loja" } });
       await prisma.inventoryLot.update({
-        where: { id: lotId },
+        where: { id: lot.id },
         data: { quantity: isPositive ? { increment: Number(quantity) } : { decrement: Number(quantity) } },
       });
     }
 
     await prisma.inventoryMovement.create({
       data: {
+        tenantId,
         storeId, productId, lotId: lotId || null, type,
         quantity: Number(quantity), reason,
         createdById: req.user?.id,
@@ -1536,6 +1784,8 @@ function buildApiRoutes({ prisma, log }) {
 
   // Transfers between stores (request -> send -> receive)
   router.get("/inventory/transfers", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     if (!storeId) return sendOk(res, req, { transfers: [] });
     const transfers = await prisma.stockTransfer.findMany({
@@ -1544,6 +1794,7 @@ function buildApiRoutes({ prisma, log }) {
           { originStoreId: storeId },
           { destinationStoreId: storeId },
         ],
+        tenantId,
       },
       include: {
         originStore: { select: { id: true, name: true } },
@@ -1559,6 +1810,8 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/transfers", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     const destinationStoreId = await resolveStoreId(req);
     const { originStoreId, note, items = [] } = req.body || {};
     if (!destinationStoreId) return res.status(400).json({ error: { code: 400, message: "Loja atual nao definida" } });
@@ -1571,6 +1824,7 @@ function buildApiRoutes({ prisma, log }) {
 
     const transfer = await prisma.stockTransfer.create({
       data: {
+        tenantId,
         originStoreId,
         destinationStoreId,
         status: "DRAFT",
@@ -1578,6 +1832,7 @@ function buildApiRoutes({ prisma, log }) {
         createdById: req.user?.id,
         items: {
           create: items.map((it) => ({
+            tenantId,
             productId: it.productId,
             quantity: Number(it.quantity || 0),
             costUnit: 0,
@@ -1607,11 +1862,13 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/transfers/:id/send", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const currentStoreId = await resolveStoreId(req);
     const requestedItems = Array.isArray(req.body?.items) ? req.body.items : null;
-    const transfer = await prisma.stockTransfer.findUnique({
-      where: { id: req.params.id },
+    const transfer = await prisma.stockTransfer.findFirst({
+      where: { id: req.params.id, tenantId },
       include: { items: true },
     });
     if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia nao encontrada" } });
@@ -1682,6 +1939,7 @@ function buildApiRoutes({ prisma, log }) {
           });
           await tx.inventoryMovement.create({
             data: {
+              tenantId,
               storeId: transfer.originStoreId,
               productId,
               lotId: lot.id,
@@ -1702,8 +1960,8 @@ function buildApiRoutes({ prisma, log }) {
       });
     });
 
-    const updated = await prisma.stockTransfer.findUnique({
-      where: { id: transfer.id },
+    const updated = await prisma.stockTransfer.findFirst({
+      where: { id: transfer.id, tenantId },
       include: {
         originStore: { select: { id: true, name: true } },
         destinationStore: { select: { id: true, name: true } },
@@ -1727,10 +1985,12 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/transfers/:id/receive", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const currentStoreId = await resolveStoreId(req);
-    const transfer = await prisma.stockTransfer.findUnique({
-      where: { id: req.params.id },
+    const transfer = await prisma.stockTransfer.findFirst({
+      where: { id: req.params.id, tenantId },
       include: {
         movements: {
           where: { type: "TRANSFER_OUT" },
@@ -1775,6 +2035,7 @@ function buildApiRoutes({ prisma, log }) {
             costUnit,
           },
           create: {
+            tenantId,
             storeId: transfer.destinationStoreId,
             productId: mov.productId,
             lotNumber,
@@ -1787,6 +2048,7 @@ function buildApiRoutes({ prisma, log }) {
 
         await tx.inventoryMovement.create({
           data: {
+            tenantId,
             storeId: transfer.destinationStoreId,
             productId: mov.productId,
             lotId: lot.id,
@@ -1805,8 +2067,8 @@ function buildApiRoutes({ prisma, log }) {
       });
     });
 
-    const updated = await prisma.stockTransfer.findUnique({
-      where: { id: transfer.id },
+    const updated = await prisma.stockTransfer.findFirst({
+      where: { id: transfer.id, tenantId },
       include: {
         originStore: { select: { id: true, name: true } },
         destinationStore: { select: { id: true, name: true } },
@@ -1818,7 +2080,9 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/transfers/:id/cancel", asyncHandler(async (req, res) => {
-    const transfer = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
+    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
+    const transfer = await prisma.stockTransfer.findFirst({ where: { id: req.params.id, tenantId } });
     if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia nao encontrada" } });
     if (transfer.status === "RECEIVED") return res.status(400).json({ error: { code: 400, message: "Transferencia recebida nao pode ser cancelada" } });
     if (transfer.status === "SENT") return res.status(400).json({ error: { code: 400, message: "Transferencia enviada deve ser recebida ou tratada por ajuste" } });
@@ -1832,6 +2096,8 @@ function buildApiRoutes({ prisma, log }) {
 
   // Reservation flow between stores
   router.get("/inventory/reservations", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     if (!storeId) return sendOk(res, req, { reservations: [] });
     const rows = await prisma.stockReservation.findMany({
@@ -1840,6 +2106,7 @@ function buildApiRoutes({ prisma, log }) {
           { requestStoreId: storeId },
           { sourceStoreId: storeId },
         ],
+        tenantId,
       },
       include: {
         requestStore: { select: { id: true, name: true } },
@@ -1856,6 +2123,8 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const requestStoreId = await resolveStoreId(req);
     const { sourceStoreId, customerId, note, items = [] } = req.body || {};
@@ -1869,6 +2138,7 @@ function buildApiRoutes({ prisma, log }) {
 
     const reservation = await prisma.stockReservation.create({
       data: {
+        tenantId,
         requestStoreId,
         sourceStoreId,
         customerId: customerId || null,
@@ -1877,7 +2147,7 @@ function buildApiRoutes({ prisma, log }) {
         requestedById: req.user?.id,
         items: {
           create: items
-            .map((it) => ({ productId: it.productId, quantity: Number(it.quantity || 0), reservedQty: 0 }))
+            .map((it) => ({ tenantId, productId: it.productId, quantity: Number(it.quantity || 0), reservedQty: 0 }))
             .filter((it) => it.productId && it.quantity > 0),
         },
       },
@@ -1893,10 +2163,12 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations/:id/approve", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const storeId = await resolveStoreId(req);
-    const reservation = await prisma.stockReservation.findUnique({
-      where: { id: req.params.id },
+    const reservation = await prisma.stockReservation.findFirst({
+      where: { id: req.params.id, tenantId },
       include: { items: true },
     });
     if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
@@ -1946,11 +2218,13 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations/:id/reject", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const storeId = await resolveStoreId(req);
     const { reason } = req.body || {};
     if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatorio" } });
-    const reservation = await prisma.stockReservation.findUnique({ where: { id: req.params.id } });
+    const reservation = await prisma.stockReservation.findFirst({ where: { id: req.params.id, tenantId } });
     if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
     if (reservation.sourceStoreId !== storeId) return res.status(403).json({ error: { code: 403, message: "Somente a loja origem pode rejeitar" } });
     if (reservation.status !== "REQUESTED") return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser rejeitada neste status" } });
@@ -1968,8 +2242,10 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations/:id/cancel", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    const reservation = await prisma.stockReservation.findUnique({ where: { id: req.params.id } });
+    const reservation = await prisma.stockReservation.findFirst({ where: { id: req.params.id, tenantId } });
     if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
     if (![reservation.requestStoreId, reservation.sourceStoreId].includes(storeId)) {
       return res.status(403).json({ error: { code: 403, message: "Sem permissao para cancelar reserva" } });
@@ -1986,9 +2262,11 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations/:id/fulfill", asyncHandler(async (req, res) => {
+    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const storeId = await resolveStoreId(req);
-    const reservation = await prisma.stockReservation.findUnique({ where: { id: req.params.id } });
+    const reservation = await prisma.stockReservation.findFirst({ where: { id: req.params.id, tenantId } });
     if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
     if (reservation.requestStoreId !== storeId) return res.status(403).json({ error: { code: 403, message: "Somente loja solicitante pode finalizar" } });
     if (reservation.status !== "APPROVED") return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser finalizada neste status" } });
@@ -2000,16 +2278,17 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { fulfilled: true });
   }));
 
-  // ─── INVENTORY EDIT (correct wrong entry) ───
+  // â”€â”€â”€ INVENTORY EDIT (correct wrong entry) â”€â”€â”€
   router.put("/inventory/lots/:id", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { quantity, costUnit, reason } = req.body;
     if (quantity === undefined && costUnit === undefined) {
       return res.status(400).json({ error: { code: 400, message: "Informe quantity ou costUnit" } });
     }
-    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório" } });
+    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio" } });
 
-    const lot = await prisma.inventoryLot.findUnique({ where: { id: req.params.id } });
-    if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote não encontrado" } });
+    const lot = await prisma.inventoryLot.findFirst({ where: { id: req.params.id, store: { tenantId } } });
+    if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote nÃ£o encontrado" } });
 
     const data = {};
     if (quantity !== undefined) data.quantity = Number(quantity);
@@ -2022,6 +2301,7 @@ function buildApiRoutes({ prisma, log }) {
       const diff = Number(quantity) - lot.quantity;
       await prisma.inventoryMovement.create({
         data: {
+          tenantId,
           storeId: lot.storeId, productId: lot.productId, lotId: lot.id,
           type: diff > 0 ? "ADJUST_POS" : "ADJUST_NEG",
           quantity: Math.abs(diff),
@@ -2034,8 +2314,9 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, updated);
   }));
 
-  // ─── STOCK VALUATION ───
+  // â”€â”€â”€ STOCK VALUATION â”€â”€â”€
   router.get("/inventory/valuation", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const storeId = req.query.storeId || null;
     const allowedStoreIds = await getUserStoreIds(req);
     if (!isAdmin(req) && allowedStoreIds.length === 0) {
@@ -2046,7 +2327,7 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     // Get all active lots grouped by product
-    const lotsWhere = { active: true };
+    const lotsWhere = { active: true, store: { tenantId } };
     if (storeId) lotsWhere.storeId = storeId;
     else if (!isAdmin(req)) lotsWhere.storeId = { in: allowedStoreIds };
 
@@ -2120,7 +2401,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // ─── AUTO-PRICE (calculate selling price from cost) ───
+  // â”€â”€â”€ AUTO-PRICE (calculate selling price from cost) â”€â”€â”€
   router.post("/products/:id/auto-price", asyncHandler(async (req, res) => {
     const { markup } = req.body; // markup percentage (e.g., 30 = 30%)
     if (!markup || markup <= 0) {
@@ -2155,13 +2436,14 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { avgCost: Math.round(avgCost * 100) / 100, markup: Number(markup), sellingPrice, price });
   }));
 
-  // ─── CUSTOMERS ───
+  // â”€â”€â”€ CUSTOMERS â”€â”€â”€
   router.get("/customers", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { search, page = 1, limit = 50 } = req.query;
     const take = Math.min(Number(limit) || 50, 200);
     const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
 
-    const where = {};
+    const where = { tenantId };
     if (search && search.length >= 2) {
       const digits = search.replace(/\D/g, "");
       if (digits.length >= 3) {
@@ -2182,17 +2464,19 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/customers", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { name, document, birthDate, whatsapp, phone, email } = req.body;
-    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatório" } });
+    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatÃ³rio" } });
 
     const cleanDoc = document ? document.replace(/\D/g, "") : null;
     if (cleanDoc) {
-      const existing = await prisma.customer.findUnique({ where: { document: cleanDoc } });
-      if (existing) return res.status(400).json({ error: { code: 400, message: "CPF já cadastrado" } });
+      const existing = await prisma.customer.findFirst({ where: { tenantId, document: cleanDoc } });
+      if (existing) return res.status(400).json({ error: { code: 400, message: "CPF jÃ¡ cadastrado" } });
     }
 
     const customer = await prisma.customer.create({
       data: {
+        tenantId,
         name,
         document: cleanDoc,
         birthDate: safeDate(birthDate),
@@ -2205,17 +2489,19 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/customers/:id", asyncHandler(async (req, res) => {
-    const customer = await prisma.customer.findUnique({
-      where: { id: req.params.id },
-      include: { sales: { where: { status: "PAID" }, orderBy: { createdAt: "desc" }, take: 10, include: { items: { include: { product: true } } } } },
+    const tenantId = await resolveTenantId(req);
+    const customer = await prisma.customer.findFirst({
+      where: { id: req.params.id, tenantId },
+      include: { sales: { where: { tenantId, status: "PAID" }, orderBy: { createdAt: "desc" }, take: 10, include: { items: { include: { product: true } } } } },
     });
-    if (!customer) return res.status(404).json({ error: { code: 404, message: "Cliente não encontrado" } });
+    if (!customer) return res.status(404).json({ error: { code: 404, message: "Cliente nÃ£o encontrado" } });
     return sendOk(res, req, customer);
   }));
 
   router.get("/customers/:id/purchases", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const sales = await prisma.sale.findMany({
-      where: { customerId: req.params.id, status: "PAID" },
+      where: { tenantId, customerId: req.params.id, status: "PAID" },
       orderBy: { createdAt: "desc" },
       include: { items: { include: { product: true } } },
     });
@@ -2237,9 +2523,10 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/customers/:id/repurchase", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     // Find all paid sales for this customer, with items that have usageDays
     const sales = await prisma.sale.findMany({
-      where: { customerId: req.params.id, status: "PAID" },
+      where: { tenantId, customerId: req.params.id, status: "PAID" },
       orderBy: { createdAt: "desc" },
       include: { items: { include: { product: true } } },
     });
@@ -2274,14 +2561,15 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { suggestions });
   }));
 
-  // ─── SALES ───
+  // â”€â”€â”€ SALES â”€â”€â”€
   router.get("/sales", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     const { status, search, page = 1, limit = 30 } = req.query;
     const take = Number(limit);
     const skip = (Number(page) - 1) * take;
 
-    const where = {};
+    const where = { tenantId };
     if (storeId) where.storeId = storeId;
     if (status) where.status = status;
     if (search) where.number = { contains: search };
@@ -2306,25 +2594,29 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/sales/:id", asyncHandler(async (req, res) => {
-    const sale = await loadFullSale(req.params.id);
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    const sale = await loadFullSale(req.params.id, await resolveTenantId(req));
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
     return sendOk(res, req, sale);
   }));
 
   router.put("/sales/:id", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { customerId, discount } = req.body;
+    const currentSale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true } });
+    if (!currentSale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
     const data = {};
     if (customerId !== undefined) data.customerId = customerId || null;
     if (discount !== undefined) data.discount = Number(discount);
 
-    await prisma.sale.update({ where: { id: req.params.id }, data });
-    const sale = await loadFullSale(req.params.id);
+    await prisma.sale.update({ where: { id: currentSale.id }, data });
+    const sale = await loadFullSale(currentSale.id, tenantId);
     return sendOk(res, req, sale);
   }));
 
   router.put("/sales/:id/controlled-dispensation", asyncHandler(async (req, res) => {
-    const sale = await prisma.sale.findUnique({
-      where: { id: req.params.id },
+    const tenantId = await resolveTenantId(req);
+    const sale = await prisma.sale.findFirst({
+      where: { id: req.params.id, tenantId },
       include: { items: { include: { product: { select: { controlled: true } } } } },
     });
     if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
@@ -2351,13 +2643,14 @@ function buildApiRoutes({ prisma, log }) {
       },
     });
 
-    const full = await loadFullSale(sale.id);
+    const full = await loadFullSale(sale.id, tenantId);
     return sendOk(res, req, full);
   }));
 
   router.post("/sales", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId não definido" } });
+    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
 
     // Robust sale number generation with retry for race conditions (e.g., React StrictMode double-mount)
     const maxRetries = 5;
@@ -2381,6 +2674,7 @@ function buildApiRoutes({ prisma, log }) {
       try {
         sale = await prisma.sale.create({
           data: {
+            tenantId,
             number, storeId, sellerId: req.user?.id,
             status: "DRAFT", channel: "BALCAO",
             total: 0, discount: 0,
@@ -2403,10 +2697,11 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/sales/:id/items", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { productId, quantity } = req.body;
-    if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatórios" } });
+    if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatÃ³rios" } });
 
-    const saleCtx = await prisma.sale.findUnique({ where: { id: req.params.id }, select: { id: true, storeId: true, status: true } });
+    const saleCtx = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true, storeId: true, status: true } });
     if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
     if (saleCtx.status !== "DRAFT" && saleCtx.status !== "CONFIRMED") {
       return res.status(400).json({ error: { code: 400, message: "Nao e possivel incluir itens neste status" } });
@@ -2423,7 +2718,7 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const price = await prisma.productPrice.findFirst({ where: { productId, active: true }, orderBy: { createdAt: "desc" } });
-    if (!price) return res.status(400).json({ error: { code: 400, message: "Produto sem preço" } });
+    if (!price) return res.status(400).json({ error: { code: 400, message: "Produto sem preÃ§o" } });
 
     const basePrice = Number(price.price);
     let priceUnit = basePrice;
@@ -2449,6 +2744,7 @@ function buildApiRoutes({ prisma, log }) {
 
     await prisma.saleItem.create({
       data: {
+        tenantId,
         saleId: saleCtx.id, productId,
         quantity: Number(quantity), priceUnit, priceOriginal, subtotal,
       },
@@ -2460,20 +2756,20 @@ function buildApiRoutes({ prisma, log }) {
     await prisma.sale.update({ where: { id: saleCtx.id }, data: { total } });
 
     // Return full sale
-    const sale = await loadFullSale(req.params.id);
+    const sale = await loadFullSale(saleCtx.id, tenantId);
     return sendOk(res, req, sale);
   }));
 
   // Update item quantity
   router.put("/sales/:saleId/items/:itemId", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { quantity } = req.body;
     if (!quantity || quantity < 1) return res.status(400).json({ error: { code: 400, message: "quantity deve ser >= 1" } });
 
-    const item = await prisma.saleItem.findUnique({ where: { id: req.params.itemId } });
-    if (!item) return res.status(404).json({ error: { code: 404, message: "Item não encontrado" } });
-
-    const saleCtx = await prisma.sale.findUnique({ where: { id: req.params.saleId }, select: { id: true, storeId: true, status: true } });
+    const saleCtx = await prisma.sale.findFirst({ where: { id: req.params.saleId, tenantId }, select: { id: true, storeId: true, status: true } });
     if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    const item = await prisma.saleItem.findFirst({ where: { id: req.params.itemId, saleId: saleCtx.id } });
+    if (!item) return res.status(404).json({ error: { code: 404, message: "Item nÃ£o encontrado" } });
     if (saleCtx.status !== "DRAFT" && saleCtx.status !== "CONFIRMED") {
       return res.status(400).json({ error: { code: 400, message: "Nao e possivel alterar itens neste status" } });
     }
@@ -2500,47 +2796,57 @@ function buildApiRoutes({ prisma, log }) {
     const total = items.reduce((s, i) => s + Number(i.subtotal), 0);
     await prisma.sale.update({ where: { id: req.params.saleId }, data: { total } });
 
-    const sale = await loadFullSale(req.params.saleId);
+    const sale = await loadFullSale(saleCtx.id, tenantId);
     return sendOk(res, req, sale);
   }));
 
   router.delete("/sales/:saleId/items/:itemId", asyncHandler(async (req, res) => {
-    await prisma.saleItem.delete({ where: { id: req.params.itemId } });
-    const items = await prisma.saleItem.findMany({ where: { saleId: req.params.saleId } });
+    const tenantId = await resolveTenantId(req);
+    const sale = await prisma.sale.findFirst({ where: { id: req.params.saleId, tenantId }, select: { id: true } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    const item = await prisma.saleItem.findFirst({ where: { id: req.params.itemId, saleId: sale.id }, select: { id: true } });
+    if (!item) return res.status(404).json({ error: { code: 404, message: "Item nao encontrado" } });
+
+    await prisma.saleItem.delete({ where: { id: item.id } });
+    const items = await prisma.saleItem.findMany({ where: { saleId: sale.id } });
     const total = items.reduce((s, i) => s + Number(i.subtotal), 0);
-    await prisma.sale.update({ where: { id: req.params.saleId }, data: { total } });
+    await prisma.sale.update({ where: { id: sale.id }, data: { total } });
 
     // Return full sale
-    const sale = await loadFullSale(req.params.saleId);
-    return sendOk(res, req, sale);
+    const fullSale = await loadFullSale(sale.id, tenantId);
+    return sendOk(res, req, fullSale);
   }));
 
   router.post("/sales/:id/confirm", asyncHandler(async (req, res) => {
-    await assertControlledDispensationIfRequired(req.params.id);
+    const tenantId = await resolveTenantId(req);
+    const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    await assertControlledDispensationIfRequired(sale.id, tenantId);
     await prisma.sale.update({
-      where: { id: req.params.id },
+      where: { id: sale.id },
       data: { status: "CONFIRMED" },
     });
-    const sale = await loadFullSale(req.params.id);
-    return sendOk(res, req, sale);
+    const updatedSale = await loadFullSale(sale.id, tenantId);
+    return sendOk(res, req, updatedSale);
   }));
 
   router.post("/sales/:id/pay", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { method, pos } = req.body || {};
-    if (!method) return res.status(400).json({ error: { code: 400, message: "method obrigatório (DINHEIRO, PIX, CARTAO_CREDITO, CARTAO_DEBITO)" } });
+    if (!method) return res.status(400).json({ error: { code: 400, message: "method obrigatÃ³rio (DINHEIRO, PIX, CARTAO_CREDITO, CARTAO_DEBITO)" } });
 
-    const sale = await prisma.sale.findUnique({
-      where: { id: req.params.id },
+    const sale = await prisma.sale.findFirst({
+      where: { id: req.params.id, tenantId },
       include: { items: { include: { product: true } } },
     });
 
     if (!sale || (sale.status !== "CONFIRMED" && sale.status !== "DRAFT")) {
-      return res.status(400).json({ error: { code: 400, message: "Venda não pode ser paga neste status" } });
+      return res.status(400).json({ error: { code: 400, message: "Venda nÃ£o pode ser paga neste status" } });
     }
 
     // Check open cash session
     const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o de caixa aberta" } });
 
     // FEFO + COGS for each item
     for (const item of sale.items) {
@@ -2578,6 +2884,7 @@ function buildApiRoutes({ prisma, log }) {
         await prisma.inventoryLot.update({ where: { id: lot.id }, data: { quantity: { decrement: take } } });
         await prisma.inventoryMovement.create({
           data: {
+            tenantId,
             storeId: sale.storeId, productId: item.productId, lotId: lot.id,
             type: "OUT", quantity: take, saleId: sale.id, createdById: req.user?.id,
           },
@@ -2595,12 +2902,13 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     // Create payment
-    const payment = await prisma.payment.create({ data: { saleId: sale.id, method, amount: sale.total } });
+    const payment = await prisma.payment.create({ data: { tenantId, saleId: sale.id, method, amount: sale.total } });
 
     // Optional POS metadata for card/PIX payments
     if (pos && (method === "CARTAO_CREDITO" || method === "CARTAO_DEBITO" || method === "PIX")) {
       await prisma.posTransaction.create({
         data: {
+          tenantId,
           saleId: sale.id,
           paymentId: payment.id,
           provider: String(pos.provider || "MANUAL").trim().toUpperCase(),
@@ -2627,14 +2935,15 @@ function buildApiRoutes({ prisma, log }) {
 
     // Update sale status and return full sale
     await prisma.sale.update({ where: { id: sale.id }, data: { status: "PAID" } });
-    const updated = await loadFullSale(sale.id);
+    const updated = await loadFullSale(sale.id, tenantId);
     return sendOk(res, req, updated);
   }));
 
   // Delete a DRAFT sale (permanent removal, not cancellation)
   router.delete("/sales/:id", asyncHandler(async (req, res) => {
-    const sale = await prisma.sale.findUnique({ where: { id: req.params.id } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    const tenantId = await resolveTenantId(req);
+    const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
     if (sale.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Somente rascunhos podem ser apagados" } });
 
     await prisma.saleItem.deleteMany({ where: { saleId: sale.id } });
@@ -2643,46 +2952,48 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/sales/:id/cancel", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { reason } = req.body || {};
-    const sale = await prisma.sale.findUnique({ where: { id: req.params.id } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
-    if (sale.status === "PAID") return res.status(400).json({ error: { code: 400, message: "Venda paga não pode ser cancelada (use estorno)" } });
+    const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (sale.status === "PAID") return res.status(400).json({ error: { code: 400, message: "Venda paga nÃ£o pode ser cancelada (use estorno)" } });
 
     // CONFIRMED sales require a reason
     if (sale.status === "CONFIRMED" && !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório para cancelar venda confirmada" } });
+      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio para cancelar venda confirmada" } });
     }
 
     await prisma.sale.update({
       where: { id: sale.id },
       data: { status: "CANCELED", cancelReason: reason || null },
     });
-    const updated = await loadFullSale(sale.id);
+    const updated = await loadFullSale(sale.id, tenantId);
     return sendOk(res, req, updated);
   }));
 
-  // ─── EXCHANGE (TROCA) ───
+  // â”€â”€â”€ EXCHANGE (TROCA) â”€â”€â”€
   router.post("/sales/:id/exchange", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { returnedItems, newItems, reason } = req.body;
-    // returnedItems: [{ saleItemId, quantity }] — items to return
-    // newItems: [{ productId, quantity }] — new items the customer takes
+    // returnedItems: [{ saleItemId, quantity }] â€” items to return
+    // newItems: [{ productId, quantity }] â€” new items the customer takes
     if ((!returnedItems || !returnedItems.length) && (!newItems || !newItems.length)) {
       return res.status(400).json({ error: { code: 400, message: "Informe os itens para troca" } });
     }
 
-    const sale = await prisma.sale.findUnique({
-      where: { id: req.params.id },
+    const sale = await prisma.sale.findFirst({
+      where: { id: req.params.id, tenantId },
       include: { items: { include: { product: true } } },
     });
 
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
     if (sale.status !== "PAID") return res.status(400).json({ error: { code: 400, message: "Somente vendas pagas podem ser trocadas" } });
 
     let totalReturn = 0;
     let totalNew = 0;
     const now = new Date();
 
-    // 1) Process returned items — refund + return to inventory
+    // 1) Process returned items â€” refund + return to inventory
     for (const ri of (returnedItems || [])) {
       const saleItem = sale.items.find((i) => i.id === ri.saleItemId);
       if (!saleItem) continue;
@@ -2699,15 +3010,16 @@ function buildApiRoutes({ prisma, log }) {
         await prisma.inventoryLot.update({ where: { id: lot.id }, data: { quantity: { increment: returnQty } } });
         await prisma.inventoryMovement.create({
           data: {
+            tenantId,
             storeId: sale.storeId, productId: saleItem.productId, lotId: lot.id,
-            type: "IN", quantity: returnQty, reason: reason || "Troca - Devolução",
+            type: "IN", quantity: returnQty, reason: reason || "Troca - DevoluÃ§Ã£o",
             refType: "EXCHANGE", refId: sale.id, createdById: req.user?.id,
           },
         });
       }
     }
 
-    // 2) Process new items — add to sale + deduct from inventory
+    // 2) Process new items â€” add to sale + deduct from inventory
     for (const ni of (newItems || [])) {
       if (!ni.productId || !ni.quantity || ni.quantity <= 0) continue;
 
@@ -2736,6 +3048,7 @@ function buildApiRoutes({ prisma, log }) {
 
       await prisma.saleItem.create({
         data: {
+          tenantId,
           saleId: sale.id, productId: ni.productId,
           quantity: ni.quantity, priceUnit, priceOriginal, subtotal,
         },
@@ -2767,6 +3080,7 @@ function buildApiRoutes({ prisma, log }) {
         await prisma.inventoryLot.update({ where: { id: lot.id }, data: { quantity: { decrement: ni.quantity } } });
         await prisma.inventoryMovement.create({
           data: {
+            tenantId,
             storeId: sale.storeId, productId: ni.productId, lotId: lot.id,
             type: "OUT", quantity: ni.quantity, reason: reason || "Troca - Novo item",
             refType: "EXCHANGE", refId: sale.id, createdById: req.user?.id,
@@ -2789,7 +3103,7 @@ function buildApiRoutes({ prisma, log }) {
       },
     });
 
-    const updated = await loadFullSale(sale.id);
+    const updated = await loadFullSale(sale.id, tenantId);
     return sendOk(res, req, {
       sale: updated,
       totalReturn: Number(totalReturn.toFixed(2)),
@@ -2799,16 +3113,17 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // ─── SETTLE EXCHANGE (CAIXA) ───
+  // â”€â”€â”€ SETTLE EXCHANGE (CAIXA) â”€â”€â”€
   router.post("/sales/:id/settle-exchange", asyncHandler(async (req, res) => {
-    const sale = await prisma.sale.findUnique({ where: { id: req.params.id } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    const tenantId = await resolveTenantId(req);
+    const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
     if (sale.exchangeBalance === null || Number(sale.exchangeBalance) === 0) {
       return res.status(400).json({ error: { code: 400, message: "Nenhuma troca pendente para esta venda" } });
     }
 
     const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o de caixa aberta" } });
 
     const amount = Number(sale.exchangeBalance);
 
@@ -2825,13 +3140,14 @@ function buildApiRoutes({ prisma, log }) {
 
     await prisma.sale.update({ where: { id: sale.id }, data: { exchangeBalance: null } });
 
-    const updated = await loadFullSale(sale.id);
+    const updated = await loadFullSale(sale.id, tenantId);
     return sendOk(res, req, { sale: updated, settled: Math.abs(amount) });
   }));
 
-  // ─── CASH OPERATOR AUTH ───
+  // â”€â”€â”€ CASH OPERATOR AUTH â”€â”€â”€
   // --- POS TRANSACTIONS (base integration) ---
   router.post("/pos/transactions", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const {
       saleId,
       method,
@@ -2850,7 +3166,7 @@ function buildApiRoutes({ prisma, log }) {
       return res.status(400).json({ error: { code: 400, message: "saleId, method, amount e provider obrigatorios" } });
     }
 
-    const sale = await prisma.sale.findUnique({ where: { id: String(saleId) }, select: { id: true, storeId: true } });
+    const sale = await prisma.sale.findFirst({ where: { id: String(saleId), tenantId }, select: { id: true, storeId: true } });
     if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
 
     const currentStoreId = await resolveStoreId(req);
@@ -2860,6 +3176,7 @@ function buildApiRoutes({ prisma, log }) {
 
     const trx = await prisma.posTransaction.create({
       data: {
+        tenantId,
         saleId: sale.id,
         paymentId: paymentId ? String(paymentId) : null,
         provider: String(provider).trim().toUpperCase(),
@@ -2878,6 +3195,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.put("/pos/transactions/:id", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const {
       status,
       transactionId,
@@ -2890,9 +3208,12 @@ function buildApiRoutes({ prisma, log }) {
 
     const existing = await prisma.posTransaction.findUnique({
       where: { id: req.params.id },
-      include: { sale: { select: { storeId: true } } },
+      include: { sale: { select: { tenantId: true, storeId: true } } },
     });
     if (!existing) return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+    if (existing.sale?.tenantId !== tenantId) {
+      return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+    }
 
     const currentStoreId = await resolveStoreId(req);
     if (!isAdmin(req) && currentStoreId && existing.sale?.storeId !== currentStoreId) {
@@ -2917,14 +3238,18 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/pos/transactions/:id", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const trx = await prisma.posTransaction.findUnique({
       where: { id: req.params.id },
       include: {
-        sale: { select: { id: true, number: true, storeId: true } },
+        sale: { select: { id: true, number: true, tenantId: true, storeId: true } },
         payment: { select: { id: true, method: true, amount: true, createdAt: true } },
       },
     });
     if (!trx) return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+    if (trx.sale?.tenantId !== tenantId) {
+      return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+    }
 
     const currentStoreId = await resolveStoreId(req);
     if (!isAdmin(req) && currentStoreId && trx.sale?.storeId !== currentStoreId) {
@@ -2935,9 +3260,10 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/cash/operator-auth", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
     const { matricula, password } = req.body;
-    if (!matricula || !password) return res.status(400).json({ error: { code: 400, message: "Matrícula e senha obrigatórios" } });
+    if (!matricula || !password) return res.status(400).json({ error: { code: 400, message: "MatrÃ­cula e senha obrigatÃ³rios" } });
 
     // Hard-coded master operator: 00000 / 00000
     if (matricula === "00000" && password === "00000") {
@@ -2945,9 +3271,9 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     // Matricula is sequential (0001, 0002, ...) based on user creation order
-    const users = await prisma.user.findMany({ where: { active: true }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, email: true, passwordHash: true } });
+    const users = await prisma.user.findMany({ where: { tenantId, active: true }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, email: true, passwordHash: true } });
     const idx = parseInt(matricula, 10) - 1;
-    if (idx < 0 || idx >= users.length) return res.status(401).json({ error: { code: 401, message: "Matrícula inválida" } });
+    if (idx < 0 || idx >= users.length) return res.status(401).json({ error: { code: 401, message: "MatrÃ­cula invÃ¡lida" } });
 
     const user = users[idx];
     const valid = password === "0000" || await bcrypt.compare(password, user.passwordHash);
@@ -2956,13 +3282,14 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: user.id, name: user.name, matricula: String(idx + 1).padStart(4, "0") });
   }));
 
-  // ─── CASH SESSIONS ───
+  // â”€â”€â”€ CASH SESSIONS â”€â”€â”€
   router.get("/cash/sessions/current", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     if (!storeId) return sendOk(res, req, null);
 
     const session = await prisma.cashSession.findFirst({
-      where: { storeId, closedAt: null },
+      where: { tenantId, storeId, closedAt: null },
       include: { openedBy: { select: { name: true } }, movements: { orderBy: { createdAt: "desc" } } },
     });
 
@@ -2970,29 +3297,31 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/cash/sessions/open", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId não definido" } });
+    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
 
-    const existing = await prisma.cashSession.findFirst({ where: { storeId, closedAt: null } });
-    if (existing) return res.status(400).json({ error: { code: 400, message: "Já existe sessão aberta para esta loja" } });
+    const existing = await prisma.cashSession.findFirst({ where: { tenantId, storeId, closedAt: null } });
+    if (existing) return res.status(400).json({ error: { code: 400, message: "JÃ¡ existe sessÃ£o aberta para esta loja" } });
 
     const { initialCash } = req.body;
     const session = await prisma.cashSession.create({
-      data: { storeId, openedById: req.user?.id, initialCash: Number(initialCash || 0) },
+      data: { tenantId, storeId, openedById: req.user?.id, initialCash: Number(initialCash || 0) },
     });
 
     return sendOk(res, req, session, 201);
   }));
 
   router.post("/cash/sessions/:id/close", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const { countedCash, note } = req.body;
-    const session = await prisma.cashSession.findUnique({
-      where: { id: req.params.id },
+    const session = await prisma.cashSession.findFirst({
+      where: { id: req.params.id, tenantId },
       include: { movements: true },
     });
 
-    if (!session) return res.status(404).json({ error: { code: 404, message: "Sessão não encontrada" } });
-    if (session.closedAt) return res.status(400).json({ error: { code: 400, message: "Sessão já fechada" } });
+    if (!session) return res.status(404).json({ error: { code: 404, message: "SessÃ£o nÃ£o encontrada" } });
+    if (session.closedAt) return res.status(400).json({ error: { code: 400, message: "SessÃ£o jÃ¡ fechada" } });
 
     // Calculate expected cash
     let expected = Number(session.initialCash);
@@ -3016,14 +3345,15 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/cash/movements", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    const session = await prisma.cashSession.findFirst({ where: { storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão aberta" } });
+    const session = await prisma.cashSession.findFirst({ where: { tenantId, storeId, closedAt: null } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o aberta" } });
 
     const { type, amount, reason, method } = req.body;
-    if (!type || !amount) return res.status(400).json({ error: { code: 400, message: "type e amount obrigatórios" } });
+    if (!type || !amount) return res.status(400).json({ error: { code: 400, message: "type e amount obrigatÃ³rios" } });
     if ((type === "SANGRIA" || type === "AJUSTE") && !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório para sangria/ajuste" } });
+      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio para sangria/ajuste" } });
     }
 
     const movement = await prisma.cashMovement.create({
@@ -3036,8 +3366,9 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, movement, 201);
   }));
 
-  // ─── REPORTS ───
+  // â”€â”€â”€ REPORTS â”€â”€â”€
   router.get("/reports/cash-closings", asyncHandler(async (req, res) => {
+    await assertFeature(req, "reportsCashClosings", "Relatorio de fechamento de caixa indisponivel no plano atual");
     const storeId = await resolveStoreId(req);
     const { from, to, page = 1, limit = 20 } = req.query;
     const take = Number(limit);
@@ -3103,6 +3434,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/reports/sales", asyncHandler(async (req, res) => {
+    await assertFeature(req, "reportsSales", "Relatorio de vendas indisponivel no plano atual");
     const storeId = await resolveStoreId(req);
     const { from, to, status, sellerId, customerId, page = 1, limit = 30 } = req.query;
     const take = Number(limit);
@@ -3186,6 +3518,9 @@ function buildApiRoutes({ prisma, log }) {
 
   router.get("/reports/export-pdf", asyncHandler(async (req, res) => {
     const type = String(req.query.type || "vendas");
+    if (type === "vendas") await assertFeature(req, "reportsSales", "Relatorio de vendas indisponivel no plano atual");
+    if (type === "caixa") await assertFeature(req, "reportsCashClosings", "Relatorio de fechamento de caixa indisponivel no plano atual");
+    if (type === "transferencias") await assertFeature(req, "reportsTransfers", "Relatorio de transferencias indisponivel no plano atual");
     const from = req.query.from ? safeDate(req.query.from) : null;
     const to = req.query.to ? safeDate(req.query.to) : null;
     if (to) to.setHours(23, 59, 59, 999);
@@ -3240,8 +3575,10 @@ function buildApiRoutes({ prisma, log }) {
       ];
     } else if (type === "transferencias") {
       reportName = "Relatorio de Transferencias";
+      const tenantId = await resolveTenantId(req);
       const allowedStoreIds = await getUserStoreIds(req);
       const andWhere = [
+        { tenantId },
         {
           OR: [
             { originStoreId: { in: allowedStoreIds } },
@@ -3315,10 +3652,10 @@ function buildApiRoutes({ prisma, log }) {
         take: 500,
       });
       const [originStore, destinationStore, requesterUser, senderUser] = await Promise.all([
-        originStoreId ? prisma.store.findUnique({ where: { id: originStoreId }, select: { name: true } }) : Promise.resolve(null),
-        destinationStoreId ? prisma.store.findUnique({ where: { id: destinationStoreId }, select: { name: true } }) : Promise.resolve(null),
-        requesterId ? prisma.user.findUnique({ where: { id: requesterId }, select: { name: true } }) : Promise.resolve(null),
-        senderId ? prisma.user.findUnique({ where: { id: senderId }, select: { name: true } }) : Promise.resolve(null),
+        originStoreId ? prisma.store.findFirst({ where: { id: originStoreId, tenantId }, select: { name: true } }) : Promise.resolve(null),
+        destinationStoreId ? prisma.store.findFirst({ where: { id: destinationStoreId, tenantId }, select: { name: true } }) : Promise.resolve(null),
+        requesterId ? prisma.user.findFirst({ where: { id: requesterId, tenantId }, select: { name: true } }) : Promise.resolve(null),
+        senderId ? prisma.user.findFirst({ where: { id: senderId, tenantId }, select: { name: true } }) : Promise.resolve(null),
       ]);
 
       const dateOnly = (v) => {
@@ -3339,7 +3676,7 @@ function buildApiRoutes({ prisma, log }) {
       const truncate = (v, max = 24) => {
         const s = String(v || "-");
         if (s.length <= max) return s;
-        return `${s.slice(0, Math.max(0, max - 1))}…`;
+        return `${s.slice(0, Math.max(0, max - 1))}â€¦`;
       };
 
       const pdfBuf = await makeReportCustomPdfBuffer({
@@ -3539,6 +3876,8 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.get("/reports/transfers", asyncHandler(async (req, res) => {
+    await assertFeature(req, "reportsTransfers", "Relatorio de transferencias indisponivel no plano atual");
+    const tenantId = await resolveTenantId(req);
     const {
       originStoreId,
       destinationStoreId,
@@ -3566,6 +3905,7 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const andWhere = [
+      { tenantId },
       {
         OR: [
           { originStoreId: { in: allowedStoreIds } },
@@ -3634,12 +3974,12 @@ function buildApiRoutes({ prisma, log }) {
       }),
       prisma.stockTransfer.count({ where }),
       prisma.store.findMany({
-        where: { id: { in: allowedStoreIds }, active: true },
+        where: { id: { in: allowedStoreIds }, tenantId, active: true },
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
       prisma.user.findMany({
-        where: { active: true },
+        where: { tenantId, active: true },
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
