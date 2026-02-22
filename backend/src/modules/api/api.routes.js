@@ -732,7 +732,12 @@ function buildApiRoutes({ prisma, log }) {
 
   // First-login lock: user must change provisional password before using other modules.
   router.use(asyncHandler(async (req, res, next) => {
-    if (!req.user?.id || !req.user?.mustChangePassword) return next();
+    if (!req.user?.id) return next();
+    const userRow = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { mustChangePassword: true },
+    });
+    if (!userRow?.mustChangePassword) return next();
     const p = String(req.path || "");
     const selfProfilePath = `/users/${req.user.id}/profile`;
     if (p === selfProfilePath || p === "/license/me") return next();
