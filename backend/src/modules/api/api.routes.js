@@ -821,7 +821,7 @@ function buildApiRoutes({ prisma, log }) {
   router.get("/users", asyncHandler(async (req, res) => {
     const users = await prisma.user.findMany({
       select: {
-        id: true, name: true, email: true, active: true, createdAt: true,
+        id: true, name: true, email: true, active: true, createdAt: true, lastSeenAt: true,
         role: { select: { id: true, name: true } },
         stores: { include: { store: { select: { id: true, name: true, type: true } } } },
       },

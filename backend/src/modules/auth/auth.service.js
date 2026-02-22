@@ -1,4 +1,4 @@
-const bcrypt = require("bcryptjs");
+﻿const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../../common/prisma");
 
@@ -23,7 +23,7 @@ function verifyToken(token) {
 }
 
 async function login(email, password) {
-  const user = await prisma.user.findUnique({
+  const foundUser = await prisma.user.findUnique({
     where: { email },
     include: {
       role: { include: { perms: true } },
@@ -31,11 +31,19 @@ async function login(email, password) {
     },
   });
 
-  if (!user || !user.active) throw Object.assign(new Error("Credenciais inválidas"), { statusCode: 401 });
+  if (!foundUser || !foundUser.active) throw Object.assign(new Error("Credenciais inválidas"), { statusCode: 401 });
 
-  const match = await bcrypt.compare(password, user.passwordHash);
+  const match = await bcrypt.compare(password, foundUser.passwordHash);
   if (!match) throw Object.assign(new Error("Credenciais inválidas"), { statusCode: 401 });
 
+  const user = await prisma.user.update({
+    where: { id: foundUser.id },
+    data: { lastSeenAt: new Date() },
+    include: {
+      role: { include: { perms: true } },
+      stores: { include: { store: true }, where: { store: { active: true } } },
+    },
+  });
   const roleName = user.role?.name || "USER";
   const permissions = (user.role?.perms || []).map((p) => p.permissionKey);
   let stores = user.stores.map((su) => ({
@@ -70,17 +78,17 @@ async function refresh(refreshToken) {
   try {
     payload = jwt.verify(refreshToken, SECRET);
   } catch {
-    throw Object.assign(new Error("Token inválido"), { statusCode: 401 });
+    throw Object.assign(new Error("Token invÃ¡lido"), { statusCode: 401 });
   }
 
-  if (payload.type !== "refresh") throw Object.assign(new Error("Token inválido"), { statusCode: 401 });
+  if (payload.type !== "refresh") throw Object.assign(new Error("Token invÃ¡lido"), { statusCode: 401 });
 
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
     include: { role: true },
   });
 
-  if (!user || !user.active) throw Object.assign(new Error("Usuário inativo"), { statusCode: 401 });
+  if (!user || !user.active) throw Object.assign(new Error("UsuÃ¡rio inativo"), { statusCode: 401 });
 
   const roleName = user.role?.name || "USER";
   const accessToken = signAccess(user, roleName);
@@ -97,7 +105,7 @@ async function getMe(userId) {
     },
   });
 
-  if (!user) throw Object.assign(new Error("Usuário não encontrado"), { statusCode: 404 });
+  if (!user) throw Object.assign(new Error("UsuÃ¡rio nÃ£o encontrado"), { statusCode: 404 });
 
   const roleName = user.role?.name || "USER";
   const permissions = (user.role?.perms || []).map((p) => p.permissionKey);
@@ -124,3 +132,4 @@ async function getMe(userId) {
 }
 
 module.exports = { login, refresh, getMe, verifyToken };
+

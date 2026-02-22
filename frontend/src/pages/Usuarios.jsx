@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
-import { formatDate } from "../lib/format";
+import { formatDate, formatDateTime } from "../lib/format";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
@@ -106,6 +106,9 @@ export default function UsuariosPage() {
     )},
     { key: "createdAt", label: "Criado em", render: (r) => (
       <span className="text-xs text-gray-400">{r.createdAt ? formatDate(r.createdAt) : "—"}</span>
+    )},
+    { key: "lastSeenAt", label: "Último acesso", render: (r) => (
+      <span className="text-xs text-gray-500">{r.lastSeenAt ? formatDateTime(r.lastSeenAt) : "Nunca"}</span>
     )},
     { key: "actions", label: "", className: "w-10", render: (r) => (
       <button onClick={() => openEdit(r)} className="p-1 text-gray-400 hover:text-primary-600 rounded">
