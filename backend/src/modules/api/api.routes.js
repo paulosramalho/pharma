@@ -260,6 +260,21 @@ function buildApiRoutes({ prisma, log }) {
     });
   }
 
+  // License lock: when tenant license is inactive, ADMIN can only regularize license.
+  router.use(asyncHandler(async (req, res, next) => {
+    if (!isAdmin(req)) return next();
+    const license = await getLicense(req);
+    if (isLicenseActive(license)) return next();
+    const p = String(req.path || "");
+    if (p === "/license/me") return next();
+    return res.status(403).json({
+      error: {
+        code: 403,
+        message: "Licenca inativa. Regularize em Configuracoes > Licenciamento.",
+      },
+    });
+  }));
+
   function normalizeDocument(value) {
     return String(value || "").replace(/\D/g, "");
   }
@@ -449,12 +464,15 @@ function buildApiRoutes({ prisma, log }) {
 
     const previous = await prisma.tenantLicense.findUnique({ where: { tenantId } });
     const now = new Date();
+    const defaultEndsAt = new Date(now);
+    defaultEndsAt.setFullYear(defaultEndsAt.getFullYear() + 1);
+    const endsAtInput = req.body?.endsAt ? safeDate(req.body.endsAt) : defaultEndsAt;
     const updated = await prisma.tenantLicense.upsert({
       where: { tenantId },
       update: {
         planCode: nextPlan,
         status: nextStatus,
-        endsAt: req.body?.endsAt ? safeDate(req.body.endsAt) : null,
+        endsAt: endsAtInput,
         graceUntil: req.body?.graceUntil ? safeDate(req.body.graceUntil) : null,
         updatedById: req.user?.id || null,
         updatedByName: req.user?.name || req.user?.email || "Admin",
@@ -464,7 +482,7 @@ function buildApiRoutes({ prisma, log }) {
         planCode: nextPlan,
         status: nextStatus,
         startsAt: now,
-        endsAt: req.body?.endsAt ? safeDate(req.body.endsAt) : null,
+        endsAt: endsAtInput,
         graceUntil: req.body?.graceUntil ? safeDate(req.body.graceUntil) : null,
         updatedById: req.user?.id || null,
         updatedByName: req.user?.name || req.user?.email || "Admin",

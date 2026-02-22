@@ -61,6 +61,8 @@ export function AuthProvider({ children }) {
     return Boolean(license.features[key]);
   }, [license]);
 
+  const isLicenseActive = ["TRIAL", "ACTIVE", "GRACE"].includes(String(license?.status || "ACTIVE").toUpperCase());
+
   // Restore session on mount
   useEffect(() => {
     if (!getToken()) { setLoading(false); return; }
@@ -77,7 +79,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout, stores, storeId, switchStore, permissions, hasPermission, license, hasFeature }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout, stores, storeId, switchStore, permissions, hasPermission, license, hasFeature, isLicenseActive }}>
       {children}
     </AuthContext.Provider>
   );

@@ -49,8 +49,39 @@ const ROLES = [
   { name: "FARMACEUTICO", perms: ["products.manage", "inventory.receive", "inventory.adjust", "sales.create", "cash.open", "cash.close", "cash.refund", "reports.view"] },
 ];
 
+const STATUS_LABELS = {
+  TRIAL: "Teste",
+  ACTIVE: "Ativa",
+  GRACE: "Carência",
+  SUSPENDED: "Suspensa",
+  EXPIRED: "Expirada",
+  CANCELED: "Cancelada",
+};
+
+const PERFIL_LABELS = {
+  ADMIN: "Administrador",
+  VENDEDOR: "Vendedor",
+  CAIXA: "Caixa",
+  FARMACEUTICO: "Farmacêutico",
+};
+
+const MODULO_LABELS = {
+  dashboard: "Dashboard",
+  sales: "Vendas",
+  cash: "Caixa",
+  inventory: "Estoque",
+  inventoryTransfers: "Transferências de estoque",
+  inventoryReservations: "Reservas de estoque",
+  products: "Produtos",
+  chat: "Chat",
+  config: "Configurações",
+  reportsSales: "Relatórios de vendas",
+  reportsCashClosings: "Relatórios de caixa",
+  reportsTransfers: "Relatórios de transferências",
+};
+
 export default function Config() {
-  const { user } = useAuth();
+  const { user, isLicenseActive } = useAuth();
   const { addToast } = useToast();
   const [tab, setTab] = useState("lojas");
   const [loading, setLoading] = useState(true);
@@ -74,12 +105,17 @@ export default function Config() {
   const [customerEditId, setCustomerEditId] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [licenseData, setLicenseData] = useState(null);
-  const [licenseForm, setLicenseForm] = useState({ planCode: "MINIMO", status: "ACTIVE", reason: "" });
+  const [licenseForm, setLicenseForm] = useState({ planCode: "MINIMO", status: "ACTIVE", endsAt: "", reason: "" });
 
   const [submitting, setSubmitting] = useState(false);
+  const adminLicenseLocked = user?.role === "ADMIN" && !isLicenseActive;
 
   // Load data based on tab
   useEffect(() => {
+    if (adminLicenseLocked && tab !== "licenciamento") {
+      setTab("licenciamento");
+      return;
+    }
     setLoading(true);
     if (tab === "lojas") {
       apiFetch("/api/stores?all=true").then((res) => setStores(res.data || [])).catch((err) => addToast(err.message, "error")).finally(() => setLoading(false));
@@ -100,11 +136,16 @@ export default function Config() {
       apiFetch("/api/license/me")
         .then((res) => {
           const lic = res.data || null;
+          const now = new Date();
+          const oneYear = new Date(now);
+          oneYear.setFullYear(oneYear.getFullYear() + 1);
+          const endsAtDefault = oneYear.toISOString().slice(0, 10);
           setLicenseData(lic);
           setLicenseForm((prev) => ({
             ...prev,
             planCode: String(lic?.planCode || "MINIMO").toUpperCase(),
             status: String(lic?.status || "ACTIVE").toUpperCase(),
+            endsAt: lic?.endsAt ? String(lic.endsAt).slice(0, 10) : endsAtDefault,
           }));
         })
         .catch((err) => addToast(err.message, "error"))
@@ -112,7 +153,7 @@ export default function Config() {
     } else {
       setLoading(false);
     }
-  }, [tab]);
+  }, [tab, adminLicenseLocked]);
 
   const loadCustomers = (search) => {
     setLoading(true);
@@ -233,6 +274,7 @@ export default function Config() {
         body: JSON.stringify({
           planCode: String(licenseForm.planCode || "").toUpperCase(),
           status: String(licenseForm.status || "").toUpperCase(),
+          endsAt: licenseForm.endsAt || null,
           reason: String(licenseForm.reason || "").trim() || null,
         }),
       });
@@ -246,6 +288,15 @@ export default function Config() {
   };
 
   const dateLabel = (v) => (v ? formatDate(v) : "—");
+  const moduloHabilitado = (features = {}) =>
+    Object.entries(features)
+      .filter(([, enabled]) => Boolean(enabled))
+      .map(([key]) => MODULO_LABELS[key] || key);
+
+  const perfisContratados = (limits = {}) =>
+    Object.entries(limits?.maxRoleActive || {})
+      .filter(([, qty]) => Number(qty) > 0)
+      .map(([role, qty]) => `${PERFIL_LABELS[role] || role}: ${qty}`);
 
   return (
     <div className="space-y-6">
@@ -253,7 +304,7 @@ export default function Config() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-        {TABS.map((t) => (
+        {(adminLicenseLocked ? TABS.filter((t) => t.key === "licenciamento") : TABS).map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${tab === t.key ? "bg-white text-primary-700 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
             <t.icon size={16} /> {t.label}
@@ -406,62 +457,75 @@ export default function Config() {
         <Card>
           <CardHeader className="flex items-center gap-2">
             <Settings size={18} className="text-gray-400" />
-            <h3 className="font-semibold text-gray-900">Licenciamento do Tenant</h3>
+            <h3 className="font-semibold text-gray-900">Licenciamento da Empresa</h3>
           </CardHeader>
           {loading ? <PageSpinner /> : (
             <CardBody className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
                   <p className="text-xs text-gray-500">Plano atual</p>
-                  <p className="font-semibold text-gray-900">{licenseData?.planCode || "—"}</p>
+                  <p className="font-semibold text-gray-900">{licenseData?.planName || licenseData?.planCode || "—"}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
                   <p className="text-xs text-gray-500">Status</p>
-                  <p className="font-semibold text-gray-900">{licenseData?.status || "—"}</p>
+                  <p className="font-semibold text-gray-900">{STATUS_LABELS[String(licenseData?.status || "").toUpperCase()] || licenseData?.status || "—"}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
                   <p className="text-xs text-gray-500">Início</p>
                   <p className="font-semibold text-gray-900">{dateLabel(licenseData?.startsAt)}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <p className="text-xs text-gray-500">Atualizado em</p>
-                  <p className="font-semibold text-gray-900">{dateLabel(licenseData?.updatedAt)}</p>
+                  <p className="text-xs text-gray-500">Validade</p>
+                  <p className="font-semibold text-gray-900">{dateLabel(licenseData?.endsAt)}</p>
                 </div>
               </div>
 
-              <div className="grid md:grid-cols-3 gap-3">
+              <div className="grid md:grid-cols-4 gap-3">
                 <div className="space-y-1">
                   <label className="block text-sm font-medium text-gray-700">Plano</label>
                   <select
                     className={inputClass}
                     value={licenseForm.planCode}
-                    onChange={(e) => setLicenseForm((p) => ({ ...p, planCode: e.target.value }))}
+                    onChange={(e) => setLicenseForm((prev) => ({ ...prev, planCode: e.target.value }))}
                     disabled={!canManageLicense}
                   >
                     {(licenseData?.catalog || []).map((p) => (
-                      <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
+                      <option key={p.code} value={p.code}>{p.name}</option>
                     ))}
                   </select>
                 </div>
+
                 <div className="space-y-1">
                   <label className="block text-sm font-medium text-gray-700">Status</label>
                   <select
                     className={inputClass}
                     value={licenseForm.status}
-                    onChange={(e) => setLicenseForm((p) => ({ ...p, status: e.target.value }))}
+                    onChange={(e) => setLicenseForm((prev) => ({ ...prev, status: e.target.value }))}
                     disabled={!canManageLicense}
                   >
                     {["TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED", "CANCELED"].map((s) => (
-                      <option key={s} value={s}>{s}</option>
+                      <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>
                     ))}
                   </select>
                 </div>
+
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Data de encerramento</label>
+                  <input
+                    type="date"
+                    className={inputClass}
+                    value={licenseForm.endsAt}
+                    onChange={(e) => setLicenseForm((prev) => ({ ...prev, endsAt: e.target.value }))}
+                    disabled={!canManageLicense}
+                  />
+                </div>
+
                 <div className="space-y-1">
                   <label className="block text-sm font-medium text-gray-700">Motivo</label>
                   <input
                     className={inputClass}
                     value={licenseForm.reason}
-                    onChange={(e) => setLicenseForm((p) => ({ ...p, reason: e.target.value }))}
+                    onChange={(e) => setLicenseForm((prev) => ({ ...prev, reason: e.target.value }))}
                     placeholder="Opcional"
                     disabled={!canManageLicense}
                   />
@@ -470,11 +534,37 @@ export default function Config() {
 
               {canManageLicense ? (
                 <div className="flex justify-end">
-                  <Button onClick={submitLicense} loading={submitting}>Salvar Licença</Button>
+                  <Button onClick={submitLicense} loading={submitting}>Salvar licença</Button>
                 </div>
               ) : (
-                <p className="text-xs text-gray-500">Somente ADMIN pode alterar licença.</p>
+                <p className="text-xs text-gray-500">Somente administrador pode alterar licença.</p>
               )}
+
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg border border-gray-200 bg-white">
+                  <p className="text-sm font-semibold text-gray-900 mb-2">Pacote contratado (visão do licenciado)</p>
+                  <ul className="text-sm text-gray-700 space-y-1">
+                    <li>Validade: {dateLabel(licenseData?.endsAt)}</li>
+                    <li>Usuários contratados: {Number(licenseData?.limits?.maxActiveUsers || 0)}</li>
+                    <li>Tipos de usuários: {(perfisContratados(licenseData?.limits).join(", ") || "Sem limite por perfil")}</li>
+                    <li>Módulos: {(moduloHabilitado(licenseData?.features).join(", ") || "Nenhum módulo habilitado")}</li>
+                  </ul>
+                </div>
+
+                <div className="p-3 rounded-lg border border-gray-200 bg-white">
+                  <p className="text-sm font-semibold text-gray-900 mb-2">Configuração dos pacotes (admin do desenvolvedor)</p>
+                  <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
+                    {(licenseData?.catalog || []).map((p) => (
+                      <div key={p.code} className="text-xs text-gray-700 border border-gray-100 rounded p-2">
+                        <p className="font-semibold text-sm text-gray-900">{p.name}</p>
+                        <p>Usuários: {Number(p?.limits?.maxActiveUsers || 0)}</p>
+                        <p>Tipos de usuários: {(perfisContratados(p?.limits).join(", ") || "Sem limite por perfil")}</p>
+                        <p>Módulos: {(moduloHabilitado(p?.features).join(", ") || "Nenhum módulo habilitado")}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </CardBody>
           )}
         </Card>

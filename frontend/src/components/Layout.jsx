@@ -26,14 +26,16 @@ const ROLE_NAV_RESTRICT = {
 };
 
 export default function Layout() {
-  const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature } = useAuth();
+  const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   const roleRestrict = ROLE_NAV_RESTRICT[user?.role];
+  const adminLicenseLocked = user?.role === "ADMIN" && !isLicenseActive;
   const visibleItems = NAV_ITEMS.filter((item) => {
+    if (adminLicenseLocked) return item.to === "/config";
     if (item.feature && !hasFeature(item.feature)) return false;
     if (roleRestrict) return roleRestrict.includes(item.to);
     if (item.to === "/caixa" && user?.role === "FARMACEUTICO") return true;

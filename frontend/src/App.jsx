@@ -37,7 +37,8 @@ function PublicRoute({ children }) {
 }
 
 function DefaultRedirect() {
-  const { user } = useAuth();
+  const { user, isLicenseActive } = useAuth();
+  if (user?.role === "ADMIN" && !isLicenseActive) return <Navigate to="/config" replace />;
   const role = user?.role;
   if (role === "CAIXA") return <Navigate to="/caixa" replace />;
   if (role === "VENDEDOR") return <Navigate to="/vendas" replace />;
@@ -45,22 +46,23 @@ function DefaultRedirect() {
 }
 
 function AppRoutes() {
-  const { hasFeature } = useAuth();
+  const { hasFeature, user, isLicenseActive } = useAuth();
+  const adminLicenseLocked = user?.role === "ADMIN" && !isLicenseActive;
   return (
     <Routes>
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/vendas" element={<Vendas />} />
-        <Route path="/vendas/nova" element={<VendaNova />} />
-        <Route path="/caixa" element={<Caixa />} />
-        <Route path="/estoque" element={<Estoque />} />
-        <Route path="/produtos" element={<Produtos />} />
-        <Route path="/usuarios" element={<Usuarios />} />
+        <Route path="/dashboard" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Dashboard />} />
+        <Route path="/vendas" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Vendas />} />
+        <Route path="/vendas/nova" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <VendaNova />} />
+        <Route path="/caixa" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Caixa />} />
+        <Route path="/estoque" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Estoque />} />
+        <Route path="/produtos" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Produtos />} />
+        <Route path="/usuarios" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Usuarios />} />
         <Route path="/config" element={<Config />} />
-        <Route path="/perfil" element={<MeuPerfil />} />
-        <Route path="/chat" element={hasFeature("chat") ? <Chat /> : <Navigate to="/dashboard" replace />} />
-        <Route path="/relatorios" element={<Relatorios />} />
+        <Route path="/perfil" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <MeuPerfil />} />
+        <Route path="/chat" element={adminLicenseLocked ? <Navigate to="/config" replace /> : (hasFeature("chat") ? <Chat /> : <Navigate to="/dashboard" replace />)} />
+        <Route path="/relatorios" element={adminLicenseLocked ? <Navigate to="/config" replace /> : <Relatorios />} />
       </Route>
       <Route path="*" element={<DefaultRedirect />} />
     </Routes>

@@ -115,6 +115,9 @@ function buildLicenseFromPlan(planCode, statusRaw) {
       currency: p.currency,
       monthlyPriceCents: p.monthlyPriceCents,
       annualPriceCents: p.annualPriceCents,
+      limits: p.limits,
+      features: p.features,
+      dashboardMode: p.dashboardMode,
     })),
   };
 }
