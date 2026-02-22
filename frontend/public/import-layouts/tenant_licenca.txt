@@ -1,0 +1,8 @@
+﻿# Layout TXT - tenant_licenca.txt
+# Separador: ;
+# Ordem das colunas:
+# plan_code;status;inicio_yyyy-mm-dd;fim_yyyy-mm-dd
+# plan_code: MINIMO | PROFISSIONAL | ENTERPRISE
+# status: ACTIVE | TRIAL | GRACE | SUSPENDED | EXPIRED | CANCELED
+
+MINIMO;ACTIVE;2026-02-22;2027-02-22

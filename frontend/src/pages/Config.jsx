@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
-import { cnpjMask, phoneMask, cpfMask, whatsappMask, formatDate } from "../lib/format";
+import { cnpjMask, phoneMask, cpfMask, cpfCnpjMask, validateCPFOrCNPJ, whatsappMask, formatDate } from "../lib/format";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
@@ -116,6 +116,8 @@ export default function Config() {
     email: "",
     logoFile: "",
   });
+  const [novoContratanteMode, setNovoContratanteMode] = useState(false);
+  const contractorLogoInputRef = useRef(null);
 
   const [submitting, setSubmitting] = useState(false);
   const adminLicenseLocked = user?.role === "ADMIN" && !isLicenseActive;
@@ -182,6 +184,20 @@ export default function Config() {
   };
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
+
+  const cepMask = (v) => {
+    const d = String(v || "").replace(/\D/g, "").slice(0, 8);
+    if (d.length <= 5) return d;
+    return `${d.slice(0, 5)}-${d.slice(5)}`;
+  };
+
+  const readFileAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
 
   // â”€â”€â”€ STORE HANDLERS â”€â”€â”€
   const openCreateStore = () => { setStoreForm(emptyStoreForm); setStoreEditId(null); setStoreModal(true); };
@@ -312,16 +328,31 @@ export default function Config() {
       addToast("Informe o nome/razao social do contratante", "warning");
       return;
     }
+    const contractorDocDigits = String(contractorForm.document || "").replace(/\D/g, "");
+    if (contractorDocDigits && !validateCPFOrCNPJ(contractorDocDigits)) {
+      addToast("CPF/CNPJ invalido", "error");
+      return;
+    }
+    const contractorZipDigits = String(contractorForm.zipCode || "").replace(/\D/g, "");
+    if (contractorZipDigits && contractorZipDigits.length !== 8) {
+      addToast("CEP invalido", "error");
+      return;
+    }
+    const phoneDigits = String(contractorForm.phoneWhatsapp || "").replace(/\D/g, "");
+    if (phoneDigits && phoneDigits.length !== 10 && phoneDigits.length !== 11) {
+      addToast("Telefone/WhatsApp invalido", "error");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await apiFetch("/api/license/me/contractor", {
         method: "PUT",
         body: JSON.stringify({
-          document: String(contractorForm.document || "").replace(/\D/g, "") || null,
+          document: contractorDocDigits || null,
           nameOrCompany: String(contractorForm.nameOrCompany || "").trim(),
           addressFull: String(contractorForm.addressFull || "").trim() || null,
-          zipCode: String(contractorForm.zipCode || "").replace(/\D/g, "") || null,
-          phoneWhatsapp: String(contractorForm.phoneWhatsapp || "").replace(/\D/g, "") || null,
+          zipCode: contractorZipDigits || null,
+          phoneWhatsapp: phoneDigits || null,
           email: String(contractorForm.email || "").trim() || null,
           logoFile: String(contractorForm.logoFile || "").trim() || null,
         }),
@@ -345,6 +376,20 @@ export default function Config() {
     }
   };
 
+  const onContractorLogoFilePicked = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setContractorForm((prev) => ({ ...prev, logoFile: dataUrl }));
+      addToast("Arquivo de logo carregado", "success");
+    } catch {
+      addToast("Nao foi possivel ler o arquivo", "error");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   const dateLabel = (v) => (v ? formatDate(v) : "—");
   const moduloHabilitado = (features = {}) =>
     Object.entries(features)
@@ -362,7 +407,7 @@ export default function Config() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-        {(adminLicenseLocked ? TABS.filter((t) => t.key === "licenciamento") : TABS).map((t) => (
+        {((adminLicenseLocked || novoContratanteMode) ? TABS.filter((t) => t.key === "licenciamento") : TABS).map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${tab === t.key ? "bg-white text-primary-700 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
             <t.icon size={16} /> {t.label}
@@ -519,6 +564,29 @@ export default function Config() {
           </CardHeader>
           {loading ? <PageSpinner /> : (
             <CardBody className="space-y-4">
+              {canManageLicense ? (
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant={novoContratanteMode ? "secondary" : "primary"}
+                    onClick={() => setNovoContratanteMode(false)}
+                  >
+                    Contratante atual
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={novoContratanteMode ? "primary" : "secondary"}
+                    onClick={() => {
+                      setNovoContratanteMode(true);
+                      setTab("licenciamento");
+                    }}
+                  >
+                    Novo contratante
+                  </Button>
+                </div>
+              ) : null}
+
+              <div className={novoContratanteMode ? "hidden" : "space-y-4"}>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
                   <p className="text-xs text-gray-500">Plano atual</p>
@@ -606,11 +674,14 @@ export default function Config() {
                     <label className="block text-sm font-medium text-gray-700">CPF/CNPJ</label>
                     <input
                       className={inputClass}
-                      value={contractorForm.document}
+                      value={cpfCnpjMask(contractorForm.document)}
                       onChange={(e) => setContractorForm((prev) => ({ ...prev, document: String(e.target.value || "").replace(/\D/g, "").slice(0, 14) }))}
                       placeholder="Somente numeros"
                       disabled={!canManageLicense}
                     />
+                    {contractorForm.document && !validateCPFOrCNPJ(contractorForm.document) ? (
+                      <p className="text-xs text-red-600">CPF/CNPJ invalido</p>
+                    ) : null}
                   </div>
                   <div className="space-y-1">
                     <label className="block text-sm font-medium text-gray-700">Nome/Razao social</label>
@@ -634,7 +705,7 @@ export default function Config() {
                     <label className="block text-sm font-medium text-gray-700">CEP</label>
                     <input
                       className={inputClass}
-                      value={contractorForm.zipCode}
+                      value={cepMask(contractorForm.zipCode)}
                       onChange={(e) => setContractorForm((prev) => ({ ...prev, zipCode: String(e.target.value || "").replace(/\D/g, "").slice(0, 8) }))}
                       disabled={!canManageLicense}
                     />
@@ -668,6 +739,18 @@ export default function Config() {
                     disabled={!canManageLicense}
                   />
                 </div>
+                <div className="flex justify-end">
+                  <input
+                    ref={contractorLogoInputRef}
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.svg,image/*"
+                    onChange={onContractorLogoFilePicked}
+                    className="hidden"
+                  />
+                  <Button type="button" variant="secondary" onClick={() => contractorLogoInputRef.current?.click()} disabled={!canManageLicense}>
+                    Inserir arquivo
+                  </Button>
+                </div>
                 {canManageLicense ? (
                   <div className="flex justify-end">
                     <Button onClick={submitContractor} loading={submitting}>Salvar contratante</Button>
@@ -698,7 +781,23 @@ export default function Config() {
                   </div>
                 </div>
               </div>
+              </div>
 
+              {novoContratanteMode ? (
+              <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-2">
+                <p className="text-sm font-semibold text-gray-900">Layouts TXT para importacao</p>
+                <p className="text-xs text-gray-500">
+                  Use estes arquivos como modelo para preparar dados do novo licenciado.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_contratante.txt" target="_blank" rel="noreferrer">tenant_contratante.txt</a>
+                  <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_licenca.txt" target="_blank" rel="noreferrer">tenant_licenca.txt</a>
+                  <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/usuario_admin.txt" target="_blank" rel="noreferrer">usuario_admin.txt</a>
+                </div>
+              </div>
+              ) : null}
+
+              {novoContratanteMode ? (
               <OnboardingLicencaWizard
                 canManage={canManageLicense}
                 catalog={licenseData?.catalog || []}
@@ -714,8 +813,10 @@ export default function Config() {
                     endsAt: payload.endsAt || prev?.endsAt,
                     contractor: payload.contractor || prev?.contractor,
                   }));
+                  setNovoContratanteMode(false);
                 }}
               />
+              ) : null}
             </CardBody>
           )}
         </Card>

@@ -1,0 +1,6 @@
+﻿# Layout TXT - tenant_contratante.txt
+# Separador: ;
+# Ordem das colunas:
+# nome_razao_social;cpf_cnpj;cep;logradouro;numero;complemento;bairro;cidade;uf;telefone_whatsapp;email;logo_url_ou_base64
+
+Farmacia Exemplo LTDA;12345678000195;66000000;Av. Exemplo;100;Sala 2;Centro;Belem;PA;91999999999;contato@farmaciaexemplo.com.br;https://cdn.exemplo.com/logo.png

@@ -1,0 +1,6 @@
+﻿# Layout TXT - usuario_admin.txt
+# Separador: ;
+# Ordem das colunas:
+# nome_admin;email_admin
+
+Administrador Contratante;admin@contratante.com.br

@@ -172,6 +172,91 @@ function buildApiRoutes({ prisma, log }) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
   }
 
+  function slugify(input) {
+    return String(input || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 50);
+  }
+
+  async function nextTenantSlug(baseInput) {
+    const base = slugify(baseInput) || "tenant";
+    let candidate = base;
+    let idx = 1;
+    while (true) {
+      // eslint-disable-next-line no-await-in-loop
+      const exists = await prisma.tenant.findUnique({ where: { slug: candidate }, select: { id: true } });
+      if (!exists) return candidate;
+      idx += 1;
+      candidate = `${base}-${idx}`;
+    }
+  }
+
+  async function isDeveloperTenantById(tenantId) {
+    if (!tenantId) return false;
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { isDeveloperTenant: true },
+    });
+    return Boolean(tenant?.isDeveloperTenant);
+  }
+
+  async function assertDeveloperAdmin(req) {
+    if (!isAdmin(req)) {
+      throw Object.assign(new Error("Somente admin pode criar novo licenciado"), { statusCode: 403 });
+    }
+    const tenantId = await resolveTenantId(req);
+    const isDev = await isDeveloperTenantById(tenantId);
+    if (!isDev) {
+      throw Object.assign(new Error("Apenas admin da licenca do desenvolvedor pode criar novos licenciados"), { statusCode: 403 });
+    }
+    return tenantId;
+  }
+
+  function isValidPhone(phone) {
+    const d = String(phone || "").replace(/\D/g, "");
+    if (!d) return true;
+    return d.length === 10 || d.length === 11;
+  }
+
+  function isValidCpf(digits) {
+    const d = String(digits || "").replace(/\D/g, "");
+    if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+    for (let t = 9; t < 11; t += 1) {
+      let sum = 0;
+      for (let i = 0; i < t; i += 1) sum += Number(d[i]) * (t + 1 - i);
+      const digit = ((sum * 10) % 11) % 10;
+      if (Number(d[t]) !== digit) return false;
+    }
+    return true;
+  }
+
+  function isValidCnpj(digits) {
+    const d = String(digits || "").replace(/\D/g, "");
+    if (d.length !== 14 || /^(\d)\1+$/.test(d)) return false;
+    const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    for (let t = 0; t < 2; t += 1) {
+      const w = t === 0 ? w1 : w2;
+      let sum = 0;
+      for (let i = 0; i < w.length; i += 1) sum += Number(d[i]) * w[i];
+      const digit = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+      if (Number(d[12 + t]) !== digit) return false;
+    }
+    return true;
+  }
+
+  function isValidCpfCnpj(doc) {
+    const d = String(doc || "").replace(/\D/g, "");
+    if (!d) return true;
+    if (d.length === 11) return isValidCpf(d);
+    if (d.length === 14) return isValidCnpj(d);
+    return false;
+  }
+
   function validateOnboardingPayload(payload) {
     const contractor = normalizeContractorPayload(payload?.contractor || {});
     const planCode = String(payload?.planCode || "").trim().toUpperCase();
@@ -179,10 +264,12 @@ function buildApiRoutes({ prisma, log }) {
     const adminEmail = String(payload?.admin?.email || "").trim().toLowerCase();
 
     if (!contractor.nameOrCompany) throw Object.assign(new Error("Nome/Razao social do contratante e obrigatorio"), { statusCode: 400 });
+    if (contractor.document && !isValidCpfCnpj(contractor.document)) throw Object.assign(new Error("CPF/CNPJ do contratante invalido"), { statusCode: 400 });
     if (!contractor.zipCode || contractor.zipCode.length !== 8) throw Object.assign(new Error("CEP do contratante invalido"), { statusCode: 400 });
     if (!contractor.street || !contractor.district || !contractor.city || !contractor.state) {
       throw Object.assign(new Error("Endereco do contratante incompleto"), { statusCode: 400 });
     }
+    if (!isValidPhone(contractor.phoneWhatsapp)) throw Object.assign(new Error("Telefone/WhatsApp do contratante invalido"), { statusCode: 400 });
     if (contractor.email && !isValidEmail(contractor.email)) throw Object.assign(new Error("Email do contratante invalido"), { statusCode: 400 });
     if (!planCode) throw Object.assign(new Error("Pacote/planCode obrigatorio"), { statusCode: 400 });
     if (!adminName || !adminEmail) throw Object.assign(new Error("Nome e email do usuario admin sao obrigatorios"), { statusCode: 400 });
@@ -652,6 +739,18 @@ function buildApiRoutes({ prisma, log }) {
     if (!contractor.nameOrCompany) {
       return res.status(400).json({ error: { code: 400, message: "Nome/Razao social do contratante e obrigatorio" } });
     }
+    if (contractor.document && !isValidCpfCnpj(contractor.document)) {
+      return res.status(400).json({ error: { code: 400, message: "CPF/CNPJ do contratante invalido" } });
+    }
+    if (contractor.zipCode && contractor.zipCode.length !== 8) {
+      return res.status(400).json({ error: { code: 400, message: "CEP do contratante invalido" } });
+    }
+    if (!isValidPhone(contractor.phoneWhatsapp)) {
+      return res.status(400).json({ error: { code: 400, message: "Telefone/WhatsApp do contratante invalido" } });
+    }
+    if (contractor.email && !isValidEmail(contractor.email)) {
+      return res.status(400).json({ error: { code: 400, message: "Email do contratante invalido" } });
+    }
 
     await prisma.tenant.update({
       where: { id: tenantId },
@@ -715,11 +814,8 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/license/onboarding/finalize", asyncHandler(async (req, res) => {
-    if (!isAdmin(req)) {
-      return res.status(403).json({ error: { code: 403, message: "Somente admin pode executar onboarding de licenca" } });
-    }
-    const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+    const sourceTenantId = await assertDeveloperAdmin(req);
+    if (!sourceTenantId) return res.status(400).json({ error: { code: 400, message: "Tenant do desenvolvedor nao identificado" } });
 
     const validated = validateOnboardingPayload(req.body || {});
     const passwordTemp = generateProvisionalPassword();
@@ -730,17 +826,24 @@ function buildApiRoutes({ prisma, log }) {
     endsAt.setFullYear(endsAt.getFullYear() + 1);
 
     const result = await prisma.$transaction(async (tx) => {
+      const slugSeed = validated.contractor.document || validated.contractor.nameOrCompany || "tenant";
+      const slug = await nextTenantSlug(slugSeed);
+      const tenantName = validated.contractor.nameOrCompany;
+
       const existingAdminEmail = await tx.user.findFirst({
-        where: { email: validated.adminEmail, tenantId },
+        where: { email: validated.adminEmail },
         select: { id: true },
       });
       if (existingAdminEmail) {
-        throw Object.assign(new Error("Email de admin ja existe neste tenant"), { statusCode: 400 });
+        throw Object.assign(new Error("Email de admin ja existe"), { statusCode: 400 });
       }
 
-      await tx.tenant.update({
-        where: { id: tenantId },
+      const newTenant = await tx.tenant.create({
         data: {
+          name: tenantName,
+          slug,
+          active: true,
+          isDeveloperTenant: false,
           contractorDocument: validated.contractor.document,
           contractorNameOrCompany: validated.contractor.nameOrCompany,
           contractorAddressFull: validated.contractor.addressFull,
@@ -755,22 +858,12 @@ function buildApiRoutes({ prisma, log }) {
           contractorEmail: validated.contractor.email,
           contractorLogoFile: validated.contractor.logoFile,
         },
+        select: { id: true, name: true, slug: true },
       });
 
-      const previous = await tx.tenantLicense.findUnique({ where: { tenantId } });
-      const license = await tx.tenantLicense.upsert({
-        where: { tenantId },
-        update: {
-          planCode: validated.planCode,
-          status: "ACTIVE",
-          startsAt: now,
-          endsAt,
-          graceUntil: null,
-          updatedById: req.user?.id || null,
-          updatedByName: req.user?.name || req.user?.email || "Admin",
-        },
-        create: {
-          tenantId,
+      const license = await tx.tenantLicense.create({
+        data: {
+          tenantId: newTenant.id,
           planCode: validated.planCode,
           status: "ACTIVE",
           startsAt: now,
@@ -785,7 +878,7 @@ function buildApiRoutes({ prisma, log }) {
       if (!role?.id) throw Object.assign(new Error("Role ADMIN nao encontrada"), { statusCode: 500 });
       const adminUser = await tx.user.create({
         data: {
-          tenantId,
+          tenantId: newTenant.id,
           name: validated.adminName,
           email: validated.adminEmail,
           passwordHash,
@@ -797,28 +890,16 @@ function buildApiRoutes({ prisma, log }) {
         select: { id: true, name: true, email: true },
       });
 
-      const defaultStore = await tx.store.findFirst({
-        where: { tenantId, active: true, isDefault: true },
-        select: { id: true },
-      });
-      if (defaultStore?.id) {
-        await tx.storeUser.upsert({
-          where: { storeId_userId: { storeId: defaultStore.id, userId: adminUser.id } },
-          update: { isDefault: true },
-          create: { storeId: defaultStore.id, userId: adminUser.id, isDefault: true },
-        });
-      }
-
       await tx.tenantLicenseAudit.create({
         data: {
-          tenantId,
-          previousPlan: previous?.planCode || null,
+          tenantId: newTenant.id,
+          previousPlan: null,
           newPlan: license.planCode,
-          previousStatus: previous?.status || null,
+          previousStatus: null,
           newStatus: license.status,
           changedById: req.user?.id || null,
           changedByName: req.user?.name || req.user?.email || "Admin",
-          reason: "Onboarding de licenca com contratante e admin provisÃ³rio",
+          reason: "Onboarding de novo licenciado com admin provisório",
           payload: {
             contractor: validated.contractor,
             adminUserId: adminUser.id,
@@ -828,13 +909,17 @@ function buildApiRoutes({ prisma, log }) {
         },
       });
 
-      return { license, adminUser };
+      return { license, adminUser, tenant: newTenant };
     });
 
-    const profile = await getTenantLicenseProfile(req);
     return sendOk(res, req, {
-      tenantId,
-      contractor: profile.contractor,
+      tenantId: result.tenant.id,
+      tenant: result.tenant,
+      contractor: {
+        tenantName: result.tenant.name,
+        tenantSlug: result.tenant.slug,
+        ...validated.contractor,
+      },
       planCode: result.license.planCode,
       status: result.license.status,
       startsAt: result.license.startsAt,
