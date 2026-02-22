@@ -714,7 +714,7 @@ function buildApiRoutes({ prisma, log }) {
           where: { tenantId, name },
           select: { id: true },
         });
-        const data = { tenantId, name, active: parseBool(r.active, true) };
+        const data = { tenantId, name };
         if (existing?.id) {
           await tx.category.update({ where: { id: existing.id }, data });
         } else {
@@ -735,7 +735,7 @@ function buildApiRoutes({ prisma, log }) {
         let categoryId = null;
         if (categoryName) {
           let cat = await tx.category.findFirst({ where: { tenantId, name: categoryName }, select: { id: true } });
-          if (!cat) cat = await tx.category.create({ data: { tenantId, name: categoryName, active: true }, select: { id: true } });
+          if (!cat) cat = await tx.category.create({ data: { tenantId, name: categoryName }, select: { id: true } });
           categoryId = cat.id;
         }
         const existing = ean
@@ -781,7 +781,6 @@ function buildApiRoutes({ prisma, log }) {
           whatsapp: String(r.whatsapp || "").replace(/\D/g, "") || null,
           phone: String(r.phone || "").replace(/\D/g, "") || null,
           email,
-          active: true,
         };
         if (existing?.id) {
           await tx.customer.update({ where: { id: existing.id }, data });
