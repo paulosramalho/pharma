@@ -747,7 +747,6 @@ function buildApiRoutes({ prisma, log }) {
           name,
           ean,
           active: parseBool(r.active, true),
-          requiresPrescription: parseBool(r.requiresPrescription, false),
           controlled: parseBool(r.controlled, false),
           defaultMarkup: parseNum(r.defaultMarkup, 0),
           basePrice: parseNum(r.basePrice, 0),
