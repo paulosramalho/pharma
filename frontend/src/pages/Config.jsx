@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -14,22 +14,22 @@ import { Settings, Store, Shield, Plus, Pencil, Users, UserCheck } from "lucide-
 
 const TABS = [
   { key: "lojas", label: "Lojas", icon: Store },
-  { key: "usuarios", label: "Usuários", icon: Users },
+  { key: "usuarios", label: "UsuÃ¡rios", icon: Users },
   { key: "clientes", label: "Clientes", icon: UserCheck },
   { key: "licenciamento", label: "Licenciamento", icon: Settings },
-  { key: "permissoes", label: "Permissões", icon: Shield },
+  { key: "permissoes", label: "PermissÃµes", icon: Shield },
 ];
 
-const TYPE_LABELS = { CENTRAL: "Central (Depósito)", LOJA: "Loja" };
+const TYPE_LABELS = { CENTRAL: "Central (DepÃ³sito)", LOJA: "Loja" };
 const ROLE_COLORS = { ADMIN: "purple", CAIXA: "blue", VENDEDOR: "green", FARMACUTICO: "yellow" };
-const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "Farmacêutico" };
+const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "FarmacÃªutico" };
 
 const emptyStoreForm = { name: "", type: "LOJA", cnpj: "", phone: "", email: "", street: "", number: "", complement: "", district: "", city: "", state: "", zipCode: "" };
 const emptyUserForm = { name: "", email: "", password: "", passwordConfirm: "", roleName: "VENDEDOR", storeIds: [] };
 const emptyCustomerForm = { name: "", document: "", birthDate: "", whatsapp: "", phone: "", email: "" };
 
 const PERMISSIONS = [
-  { key: "users.manage", label: "Gerenciar usuários" },
+  { key: "users.manage", label: "Gerenciar usuÃ¡rios" },
   { key: "stores.manage", label: "Gerenciar lojas" },
   { key: "products.manage", label: "Gerenciar produtos" },
   { key: "inventory.receive", label: "Receber estoque" },
@@ -39,7 +39,7 @@ const PERMISSIONS = [
   { key: "cash.open", label: "Abrir caixa" },
   { key: "cash.close", label: "Fechar caixa" },
   { key: "cash.refund", label: "Estornar" },
-  { key: "reports.view", label: "Ver relatórios" },
+  { key: "reports.view", label: "Ver relatÃ³rios" },
 ];
 
 const ROLES = [
@@ -52,7 +52,7 @@ const ROLES = [
 const STATUS_LABELS = {
   TRIAL: "Teste",
   ACTIVE: "Ativa",
-  GRACE: "Carência",
+  GRACE: "CarÃªncia",
   SUSPENDED: "Suspensa",
   EXPIRED: "Expirada",
   CANCELED: "Cancelada",
@@ -62,7 +62,7 @@ const PERFIL_LABELS = {
   ADMIN: "Administrador",
   VENDEDOR: "Vendedor",
   CAIXA: "Caixa",
-  FARMACEUTICO: "Farmacêutico",
+  FARMACEUTICO: "FarmacÃªutico",
 };
 
 const MODULO_LABELS = {
@@ -70,14 +70,14 @@ const MODULO_LABELS = {
   sales: "Vendas",
   cash: "Caixa",
   inventory: "Estoque",
-  inventoryTransfers: "Transferências de estoque",
+  inventoryTransfers: "TransferÃªncias de estoque",
   inventoryReservations: "Reservas de estoque",
   products: "Produtos",
   chat: "Chat",
-  config: "Configurações",
-  reportsSales: "Relatórios de vendas",
-  reportsCashClosings: "Relatórios de caixa",
-  reportsTransfers: "Relatórios de transferências",
+  config: "ConfiguraÃ§Ãµes",
+  reportsSales: "RelatÃ³rios de vendas",
+  reportsCashClosings: "RelatÃ³rios de caixa",
+  reportsTransfers: "RelatÃ³rios de transferÃªncias",
 };
 
 export default function Config() {
@@ -106,6 +106,15 @@ export default function Config() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [licenseData, setLicenseData] = useState(null);
   const [licenseForm, setLicenseForm] = useState({ planCode: "MINIMO", status: "ACTIVE", endsAt: "", reason: "" });
+  const [contractorForm, setContractorForm] = useState({
+    document: "",
+    nameOrCompany: "",
+    addressFull: "",
+    zipCode: "",
+    phoneWhatsapp: "",
+    email: "",
+    logoFile: "",
+  });
 
   const [submitting, setSubmitting] = useState(false);
   const adminLicenseLocked = user?.role === "ADMIN" && !isLicenseActive;
@@ -147,6 +156,15 @@ export default function Config() {
             status: String(lic?.status || "ACTIVE").toUpperCase(),
             endsAt: lic?.endsAt ? String(lic.endsAt).slice(0, 10) : endsAtDefault,
           }));
+          setContractorForm({
+            document: String(lic?.contractor?.document || ""),
+            nameOrCompany: String(lic?.contractor?.nameOrCompany || ""),
+            addressFull: String(lic?.contractor?.addressFull || ""),
+            zipCode: String(lic?.contractor?.zipCode || ""),
+            phoneWhatsapp: String(lic?.contractor?.phoneWhatsapp || ""),
+            email: String(lic?.contractor?.email || ""),
+            logoFile: String(lic?.contractor?.logoFile || ""),
+          });
         })
         .catch((err) => addToast(err.message, "error"))
         .finally(() => setLoading(false));
@@ -164,7 +182,7 @@ export default function Config() {
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
 
-  // â”€â”€â”€ STORE HANDLERS â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ STORE HANDLERS Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const openCreateStore = () => { setStoreForm(emptyStoreForm); setStoreEditId(null); setStoreModal(true); };
   const openEditStore = (s) => {
     setStoreForm({ name: s.name || "", type: s.type || "LOJA", cnpj: s.cnpj || "", phone: s.phone || "", email: s.email || "", street: s.street || "", number: s.number || "", complement: s.complement || "", district: s.district || "", city: s.city || "", state: s.state || "", zipCode: s.zipCode || "" });
@@ -196,12 +214,12 @@ export default function Config() {
   const toggleStoreDefault = async (s) => {
     try {
       await apiFetch(`/api/stores/${s.id}`, { method: "PUT", body: JSON.stringify({ isDefault: !s.isDefault }) });
-      addToast(s.isDefault ? "Removido como padrão" : `${s.name} definida como padrão`, "success");
+      addToast(s.isDefault ? "Removido como padrÃ£o" : `${s.name} definida como padrÃ£o`, "success");
       apiFetch("/api/stores?all=true").then((res) => setStores(res.data || []));
     } catch (err) { addToast(err.message, "error"); }
   };
 
-  // â”€â”€â”€ USER HANDLERS â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ USER HANDLERS Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const openCreateUser = () => { setUserForm(emptyUserForm); setUserEditId(null); setUserModal(true); };
   const openEditUser = (u) => {
     setUserForm({
@@ -216,7 +234,7 @@ export default function Config() {
   };
   const submitUser = async () => {
     if (userForm.password && userForm.password !== userForm.passwordConfirm) {
-      addToast("As senhas não coincidem", "error"); return;
+      addToast("As senhas nÃ£o coincidem", "error"); return;
     }
     if (userForm.roleName !== "ADMIN" && (!userForm.storeIds || userForm.storeIds.length === 0)) {
       addToast("Selecione ao menos uma loja para este perfil", "warning");
@@ -229,11 +247,11 @@ export default function Config() {
       if (userForm.password) body.password = userForm.password;
       if (userEditId) {
         await apiFetch(`/api/users/${userEditId}`, { method: "PUT", body: JSON.stringify(body) });
-        addToast("Usuário atualizado!", "success");
+        addToast("UsuÃ¡rio atualizado!", "success");
       } else {
-        if (!userForm.password) { addToast("Senha obrigatória", "error"); setSubmitting(false); return; }
+        if (!userForm.password) { addToast("Senha obrigatÃ³ria", "error"); setSubmitting(false); return; }
         await apiFetch("/api/users", { method: "POST", body: JSON.stringify(body) });
-        addToast("Usuário criado!", "success");
+        addToast("UsuÃ¡rio criado!", "success");
       }
       setUserModal(false);
       apiFetch("/api/users").then((res) => setUsers(res.data || []));
@@ -241,7 +259,7 @@ export default function Config() {
     setSubmitting(false);
   };
 
-  // â”€â”€â”€ CUSTOMER HANDLERS â”€â”€â”€
+  // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ CUSTOMER HANDLERS Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const openCreateCustomer = () => { setCustomerForm(emptyCustomerForm); setCustomerEditId(null); setCustomerModal(true); };
   const submitCustomer = async () => {
     setSubmitting(true);
@@ -262,7 +280,7 @@ export default function Config() {
     setSubmitting(false);
   };
 
-  const roleName = (u) => u.role?.name || u.role || "—";
+  const roleName = (u) => u.role?.name || u.role || "â€”";
   const canManageLicense = user?.role === "ADMIN";
 
   const submitLicense = async () => {
@@ -279,15 +297,54 @@ export default function Config() {
         }),
       });
       setLicenseData(res.data || null);
-      addToast("Licença atualizada com sucesso!", "success");
+      addToast("LicenÃ§a atualizada com sucesso!", "success");
     } catch (err) {
-      addToast(err.message || "Erro ao atualizar licença", "error");
+      addToast(err.message || "Erro ao atualizar licenÃ§a", "error");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const dateLabel = (v) => (v ? formatDate(v) : "—");
+  const submitContractor = async () => {
+    if (!canManageLicense) return;
+    if (!String(contractorForm.nameOrCompany || "").trim()) {
+      addToast("Informe o nome/razao social do contratante", "warning");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await apiFetch("/api/license/me/contractor", {
+        method: "PUT",
+        body: JSON.stringify({
+          document: String(contractorForm.document || "").replace(/\D/g, "") || null,
+          nameOrCompany: String(contractorForm.nameOrCompany || "").trim(),
+          addressFull: String(contractorForm.addressFull || "").trim() || null,
+          zipCode: String(contractorForm.zipCode || "").replace(/\D/g, "") || null,
+          phoneWhatsapp: String(contractorForm.phoneWhatsapp || "").replace(/\D/g, "") || null,
+          email: String(contractorForm.email || "").trim() || null,
+          logoFile: String(contractorForm.logoFile || "").trim() || null,
+        }),
+      });
+      const lic = res.data || null;
+      setLicenseData(lic);
+      setContractorForm({
+        document: String(lic?.contractor?.document || ""),
+        nameOrCompany: String(lic?.contractor?.nameOrCompany || ""),
+        addressFull: String(lic?.contractor?.addressFull || ""),
+        zipCode: String(lic?.contractor?.zipCode || ""),
+        phoneWhatsapp: String(lic?.contractor?.phoneWhatsapp || ""),
+        email: String(lic?.contractor?.email || ""),
+        logoFile: String(lic?.contractor?.logoFile || ""),
+      });
+      addToast("Dados do contratante atualizados!", "success");
+    } catch (err) {
+      addToast(err.message || "Erro ao atualizar contratante", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const dateLabel = (v) => (v ? formatDate(v) : "â€”");
   const moduloHabilitado = (features = {}) =>
     Object.entries(features)
       .filter(([, enabled]) => Boolean(enabled))
@@ -300,7 +357,7 @@ export default function Config() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
+      <h1 className="text-2xl font-bold text-gray-900">ConfiguraÃ§Ãµes</h1>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
@@ -312,13 +369,13 @@ export default function Config() {
         ))}
       </div>
 
-      {/* â•â•â• LOJAS TAB â•â•â• */}
+      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â LOJAS TAB Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
       {tab === "lojas" && (
         <Card>
           <CardHeader className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Store size={18} className="text-gray-400" />
-              <h3 className="font-semibold text-gray-900">Lojas e Depósitos</h3>
+              <h3 className="font-semibold text-gray-900">Lojas e DepÃ³sitos</h3>
             </div>
             <Button size="sm" onClick={openCreateStore}><Plus size={14} /> Nova Loja</Button>
           </CardHeader>
@@ -330,7 +387,7 @@ export default function Config() {
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-gray-900">{s.name}</p>
                       <Badge color={s.type === "CENTRAL" ? "blue" : "green"}>{TYPE_LABELS[s.type] || s.type}</Badge>
-                      {s.isDefault && <Badge color="purple">Padrão</Badge>}
+                      {s.isDefault && <Badge color="purple">PadrÃ£o</Badge>}
                       {!s.active && <Badge color="red">Inativa</Badge>}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
@@ -340,14 +397,14 @@ export default function Config() {
                       {!s.cnpj && !s.phone && !s.city && <span className="text-gray-400 italic">Sem dados cadastrais</span>}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
-                      <span>{s._count?.accessUsers || 0} usuários</span>
+                      <span>{s._count?.accessUsers || 0} usuÃ¡rios</span>
                       <span>{s._count?.sales || 0} vendas</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     <button onClick={() => toggleStoreDefault(s)}
                       className={`text-xs px-2 py-1 rounded ${s.isDefault ? "text-purple-600 hover:bg-purple-50 font-medium" : "text-gray-500 hover:bg-gray-100"}`}>
-                      {s.isDefault ? "Padrão" : "Def. Padrão"}
+                      {s.isDefault ? "PadrÃ£o" : "Def. PadrÃ£o"}
                     </button>
                     <button onClick={() => toggleStoreActive(s)}
                       className={`text-xs px-2 py-1 rounded ${s.active ? "text-red-600 hover:bg-red-50" : "text-emerald-600 hover:bg-emerald-50"}`}>
@@ -363,20 +420,20 @@ export default function Config() {
         </Card>
       )}
 
-      {/* â•â•â• USUARIOS TAB â•â•â• */}
+      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â USUARIOS TAB Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
       {tab === "usuarios" && (
         <Card>
           <CardHeader className="flex items-center justify-between">
-            <div className="flex items-center gap-2"><Users size={18} className="text-gray-400" /><h3 className="font-semibold text-gray-900">Usuários</h3></div>
-            <Button size="sm" onClick={openCreateUser}><Plus size={14} /> Novo Usuário</Button>
+            <div className="flex items-center gap-2"><Users size={18} className="text-gray-400" /><h3 className="font-semibold text-gray-900">UsuÃ¡rios</h3></div>
+            <Button size="sm" onClick={openCreateUser}><Plus size={14} /> Novo UsuÃ¡rio</Button>
           </CardHeader>
           {loading ? <PageSpinner /> : users.length === 0 ? (
-            <EmptyState icon={Users} title="Nenhum usuário" />
+            <EmptyState icon={Users} title="Nenhum usuÃ¡rio" />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-gray-200 text-left">
-                  <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Matrícula</th>
+                  <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">MatrÃ­cula</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Nome</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Email</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Perfil</th>
@@ -390,13 +447,13 @@ export default function Config() {
                     const rn = roleName(u);
                     return (
                       <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{u.matricula || "—"}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{u.matricula || "â€”"}</td>
                         <td className="px-4 py-2 font-medium text-gray-900">{u.name}</td>
                         <td className="px-4 py-2 text-gray-500">{u.email}</td>
                         <td className="px-4 py-2"><Badge color={ROLE_COLORS[rn] || "gray"}>{ROLE_LABELS[rn] || rn}</Badge></td>
                         <td className="px-4 py-2 text-gray-500">{u.storeCount ?? u.stores?.length ?? 0}</td>
                         <td className="px-4 py-2"><Badge color={u.active ? "green" : "red"}>{u.active ? "Ativo" : "Inativo"}</Badge></td>
-                        <td className="px-4 py-2 text-xs text-gray-400">{u.createdAt ? formatDate(u.createdAt) : "—"}</td>
+                        <td className="px-4 py-2 text-xs text-gray-400">{u.createdAt ? formatDate(u.createdAt) : "â€”"}</td>
                         <td className="px-4 py-2">
                           <button onClick={() => openEditUser(u)} className="p-1 text-gray-400 hover:text-primary-600 rounded">
                             <Pencil size={14} />
@@ -412,7 +469,7 @@ export default function Config() {
         </Card>
       )}
 
-      {/* â•â•â• CLIENTES TAB â•â•â• */}
+      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â CLIENTES TAB Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
       {tab === "clientes" && (
         <Card>
           <CardHeader className="flex items-center justify-between">
@@ -439,10 +496,10 @@ export default function Config() {
                   {customers.map((c) => (
                     <tr key={c.id} className="hover:bg-gray-50">
                       <td className="px-4 py-2 font-medium text-gray-900">{c.name}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.document ? cpfMask(c.document) : "—"}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.whatsapp ? whatsappMask(c.whatsapp) : "—"}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.birthDate ? formatDate(c.birthDate) : "—"}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.email || "—"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.document ? cpfMask(c.document) : "â€”"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.whatsapp ? whatsappMask(c.whatsapp) : "â€”"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.birthDate ? formatDate(c.birthDate) : "â€”"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.email || "â€”"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -452,7 +509,7 @@ export default function Config() {
         </Card>
       )}
 
-      {/* ═══ LICENCIAMENTO TAB ═══ */}
+      {/* â•â•â• LICENCIAMENTO TAB â•â•â• */}
       {tab === "licenciamento" && (
         <Card>
           <CardHeader className="flex items-center gap-2">
@@ -464,14 +521,14 @@ export default function Config() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
                   <p className="text-xs text-gray-500">Plano atual</p>
-                  <p className="font-semibold text-gray-900">{licenseData?.planName || licenseData?.planCode || "—"}</p>
+                  <p className="font-semibold text-gray-900">{licenseData?.planName || licenseData?.planCode || "â€”"}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
                   <p className="text-xs text-gray-500">Status</p>
-                  <p className="font-semibold text-gray-900">{STATUS_LABELS[String(licenseData?.status || "").toUpperCase()] || licenseData?.status || "—"}</p>
+                  <p className="font-semibold text-gray-900">{STATUS_LABELS[String(licenseData?.status || "").toUpperCase()] || licenseData?.status || "â€”"}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <p className="text-xs text-gray-500">Início</p>
+                  <p className="text-xs text-gray-500">InÃ­cio</p>
                   <p className="font-semibold text-gray-900">{dateLabel(licenseData?.startsAt)}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
@@ -534,32 +591,107 @@ export default function Config() {
 
               {canManageLicense ? (
                 <div className="flex justify-end">
-                  <Button onClick={submitLicense} loading={submitting}>Salvar licença</Button>
+                  <Button onClick={submitLicense} loading={submitting}>Salvar licenÃ§a</Button>
                 </div>
               ) : (
-                <p className="text-xs text-gray-500">Somente administrador pode alterar licença.</p>
+                <p className="text-xs text-gray-500">Somente administrador pode alterar licenÃ§a.</p>
               )}
 
               <div className="grid md:grid-cols-2 gap-3">
+              <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                <p className="text-sm font-semibold text-gray-900 mb-1">Dados do contratante</p>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">CPF/CNPJ</label>
+                    <input
+                      className={inputClass}
+                      value={contractorForm.document}
+                      onChange={(e) => setContractorForm((prev) => ({ ...prev, document: String(e.target.value || "").replace(/\D/g, "").slice(0, 14) }))}
+                      placeholder="Somente numeros"
+                      disabled={!canManageLicense}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Nome/Razao social</label>
+                    <input
+                      className={inputClass}
+                      value={contractorForm.nameOrCompany}
+                      onChange={(e) => setContractorForm((prev) => ({ ...prev, nameOrCompany: e.target.value }))}
+                      disabled={!canManageLicense}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Endereco completo</label>
+                    <input
+                      className={inputClass}
+                      value={contractorForm.addressFull}
+                      onChange={(e) => setContractorForm((prev) => ({ ...prev, addressFull: e.target.value }))}
+                      disabled={!canManageLicense}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">CEP</label>
+                    <input
+                      className={inputClass}
+                      value={contractorForm.zipCode}
+                      onChange={(e) => setContractorForm((prev) => ({ ...prev, zipCode: String(e.target.value || "").replace(/\D/g, "").slice(0, 8) }))}
+                      disabled={!canManageLicense}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">Telefone/WhatsApp</label>
+                    <input
+                      className={inputClass}
+                      value={phoneMask(contractorForm.phoneWhatsapp)}
+                      onChange={(e) => setContractorForm((prev) => ({ ...prev, phoneWhatsapp: String(e.target.value || "").replace(/\D/g, "").slice(0, 11) }))}
+                      disabled={!canManageLicense}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">E-mail</label>
+                    <input
+                      type="email"
+                      className={inputClass}
+                      value={contractorForm.email}
+                      onChange={(e) => setContractorForm((prev) => ({ ...prev, email: e.target.value }))}
+                      disabled={!canManageLicense}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">Arquivo da logo (URL/base64)</label>
+                  <input
+                    className={inputClass}
+                    value={contractorForm.logoFile}
+                    onChange={(e) => setContractorForm((prev) => ({ ...prev, logoFile: e.target.value }))}
+                    disabled={!canManageLicense}
+                  />
+                </div>
+                {canManageLicense ? (
+                  <div className="flex justify-end">
+                    <Button onClick={submitContractor} loading={submitting}>Salvar contratante</Button>
+                  </div>
+                ) : null}
+              </div>
                 <div className="p-3 rounded-lg border border-gray-200 bg-white">
-                  <p className="text-sm font-semibold text-gray-900 mb-2">Pacote contratado (visão do licenciado)</p>
+                  <p className="text-sm font-semibold text-gray-900 mb-2">Pacote contratado (visÃ£o do licenciado)</p>
                   <ul className="text-sm text-gray-700 space-y-1">
                     <li>Validade: {dateLabel(licenseData?.endsAt)}</li>
-                    <li>Usuários contratados: {Number(licenseData?.limits?.maxActiveUsers || 0)}</li>
-                    <li>Tipos de usuários: {(perfisContratados(licenseData?.limits).join(", ") || "Sem limite por perfil")}</li>
-                    <li>Módulos: {(moduloHabilitado(licenseData?.features).join(", ") || "Nenhum módulo habilitado")}</li>
+                    <li>UsuÃ¡rios contratados: {Number(licenseData?.limits?.maxActiveUsers || 0)}</li>
+                    <li>Tipos de usuÃ¡rios: {(perfisContratados(licenseData?.limits).join(", ") || "Sem limite por perfil")}</li>
+                    <li>MÃ³dulos: {(moduloHabilitado(licenseData?.features).join(", ") || "Nenhum mÃ³dulo habilitado")}</li>
                   </ul>
                 </div>
 
                 <div className="p-3 rounded-lg border border-gray-200 bg-white">
-                  <p className="text-sm font-semibold text-gray-900 mb-2">Configuração dos pacotes (admin do desenvolvedor)</p>
+                  <p className="text-sm font-semibold text-gray-900 mb-2">ConfiguraÃ§Ã£o dos pacotes (admin do desenvolvedor)</p>
                   <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
                     {(licenseData?.catalog || []).map((p) => (
                       <div key={p.code} className="text-xs text-gray-700 border border-gray-100 rounded p-2">
                         <p className="font-semibold text-sm text-gray-900">{p.name}</p>
-                        <p>Usuários: {Number(p?.limits?.maxActiveUsers || 0)}</p>
-                        <p>Tipos de usuários: {(perfisContratados(p?.limits).join(", ") || "Sem limite por perfil")}</p>
-                        <p>Módulos: {(moduloHabilitado(p?.features).join(", ") || "Nenhum módulo habilitado")}</p>
+                        <p>UsuÃ¡rios: {Number(p?.limits?.maxActiveUsers || 0)}</p>
+                        <p>Tipos de usuÃ¡rios: {(perfisContratados(p?.limits).join(", ") || "Sem limite por perfil")}</p>
+                        <p>MÃ³dulos: {(moduloHabilitado(p?.features).join(", ") || "Nenhum mÃ³dulo habilitado")}</p>
                       </div>
                     ))}
                   </div>
@@ -569,17 +701,17 @@ export default function Config() {
           )}
         </Card>
       )}
-      {/* â•â•â• PERMISSOES TAB â•â•â• */}
+      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â PERMISSOES TAB Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
       {tab === "permissoes" && (
         <Card>
           <CardHeader className="flex items-center gap-2">
             <Shield size={18} className="text-gray-400" />
-            <h3 className="font-semibold text-gray-900">Matriz de Permissões</h3>
+            <h3 className="font-semibold text-gray-900">Matriz de PermissÃµes</h3>
           </CardHeader>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-200">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Permissão</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">PermissÃ£o</th>
                 {ROLES.map((r) => <th key={r.name} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{r.name}</th>)}
               </tr></thead>
               <tbody className="divide-y divide-gray-100">
@@ -599,12 +731,12 @@ export default function Config() {
         </Card>
       )}
 
-      {/* â•â•â• STORE MODAL â•â•â• */}
+      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â STORE MODAL Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
       <Modal open={storeModal} onClose={() => setStoreModal(false)} title={storeEditId ? "Editar Loja" : "Nova Loja"} size="lg">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 space-y-1"><label className="block text-sm font-medium text-gray-700">Nome *</label><input value={storeForm.name} onChange={(e) => setStoreForm({ ...storeForm, name: e.target.value })} className={inputClass} /></div>
-            <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Tipo *</label><select value={storeForm.type} onChange={(e) => setStoreForm({ ...storeForm, type: e.target.value })} className={inputClass}><option value="LOJA">Loja</option><option value="CENTRAL">Central (Depósito)</option></select></div>
+            <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Tipo *</label><select value={storeForm.type} onChange={(e) => setStoreForm({ ...storeForm, type: e.target.value })} className={inputClass}><option value="LOJA">Loja</option><option value="CENTRAL">Central (DepÃ³sito)</option></select></div>
             <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">CNPJ</label><input value={cnpjMask(storeForm.cnpj)} onChange={(e) => setStoreForm({ ...storeForm, cnpj: e.target.value.replace(/\D/g, "").slice(0, 14) })} placeholder="00.000.000/0000-00" className={inputClass} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -612,10 +744,10 @@ export default function Config() {
             <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Email</label><input type="email" value={storeForm.email} onChange={(e) => setStoreForm({ ...storeForm, email: e.target.value })} className={inputClass} /></div>
           </div>
           <div className="border-t pt-3">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Endereço</p>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">EndereÃ§o</p>
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2 space-y-1"><label className="block text-sm font-medium text-gray-700">Rua</label><input value={storeForm.street} onChange={(e) => setStoreForm({ ...storeForm, street: e.target.value })} className={inputClass} /></div>
-              <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Número</label><input value={storeForm.number} onChange={(e) => setStoreForm({ ...storeForm, number: e.target.value })} className={inputClass} /></div>
+              <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">NÃºmero</label><input value={storeForm.number} onChange={(e) => setStoreForm({ ...storeForm, number: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Complemento</label><input value={storeForm.complement} onChange={(e) => setStoreForm({ ...storeForm, complement: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Bairro</label><input value={storeForm.district} onChange={(e) => setStoreForm({ ...storeForm, district: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">CEP</label><input value={storeForm.zipCode} onChange={(e) => setStoreForm({ ...storeForm, zipCode: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="00000-000" className={inputClass} /></div>
@@ -630,19 +762,19 @@ export default function Config() {
         </div>
       </Modal>
 
-      {/* â•â•â• USER MODAL â•â•â• */}
-      <Modal open={userModal} onClose={() => setUserModal(false)} title={userEditId ? "Editar Usuário" : "Novo Usuário"}>
+      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â USER MODAL Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
+      <Modal open={userModal} onClose={() => setUserModal(false)} title={userEditId ? "Editar UsuÃ¡rio" : "Novo UsuÃ¡rio"}>
         <div className="space-y-4">
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Nome *</label><input value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} className={inputClass} /></div>
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Email *</label><input type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} className={inputClass} /></div>
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">{userEditId ? "Nova Senha (deixe vazio para manter)" : "Senha *"}</label><input type="password" value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} onPaste={(e) => e.preventDefault()} autoComplete="new-password" className={inputClass} /></div>
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Confirmar Senha {!userEditId && "*"}</label><input type="password" value={userForm.passwordConfirm} onChange={(e) => setUserForm({ ...userForm, passwordConfirm: e.target.value })} onPaste={(e) => e.preventDefault()} autoComplete="new-password" className={inputClass} /></div>
           {userForm.password && userForm.passwordConfirm && userForm.password !== userForm.passwordConfirm && (
-            <p className="text-xs text-red-600">As senhas não coincidem</p>
+            <p className="text-xs text-red-600">As senhas nÃ£o coincidem</p>
           )}
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Perfil</label>
             <select value={userForm.roleName} onChange={(e) => setUserForm({ ...userForm, roleName: e.target.value, storeIds: e.target.value === "ADMIN" ? [] : userForm.storeIds })} className={inputClass}>
-              <option value="ADMIN">Administrador</option><option value="VENDEDOR">Vendedor</option><option value="CAIXA">Caixa</option><option value="FARMACEUTICO">Farmacêutico</option>
+              <option value="ADMIN">Administrador</option><option value="VENDEDOR">Vendedor</option><option value="CAIXA">Caixa</option><option value="FARMACEUTICO">FarmacÃªutico</option>
             </select>
           </div>
           {userForm.roleName !== "ADMIN" ? (
@@ -664,7 +796,7 @@ export default function Config() {
                     <span>{s.name}</span>
                   </label>
                 ))}
-                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponível</p>}
+                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponÃ­vel</p>}
               </div>
             </div>
           ) : (
@@ -677,7 +809,7 @@ export default function Config() {
         </div>
       </Modal>
 
-      {/* â•â•â• CUSTOMER MODAL â•â•â• */}
+      {/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â CUSTOMER MODAL Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */}
       <Modal open={customerModal} onClose={() => setCustomerModal(false)} title="Novo Cliente">
         <div className="space-y-4">
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Nome *</label><input value={customerForm.name} onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })} className={inputClass} /></div>

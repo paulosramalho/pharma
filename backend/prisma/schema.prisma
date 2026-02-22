@@ -87,6 +87,14 @@ model Tenant {
   slug      String   @unique
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
+  isDeveloperTenant           Boolean @default(false)
+  contractorDocument          String?
+  contractorNameOrCompany     String?
+  contractorAddressFull       String?
+  contractorZipCode           String?
+  contractorPhoneWhatsapp     String?
+  contractorEmail             String?
+  contractorLogoFile          String?
 
   users        User[]
   stores       Store[]

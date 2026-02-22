@@ -80,6 +80,57 @@ function buildApiRoutes({ prisma, log }) {
     return resolveTenantLicense(row);
   }
 
+  async function getTenantLicenseProfile(req) {
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) {
+      return { tenantId: null, contractor: null };
+    }
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        isDeveloperTenant: true,
+        contractorDocument: true,
+        contractorNameOrCompany: true,
+        contractorAddressFull: true,
+        contractorZipCode: true,
+        contractorPhoneWhatsapp: true,
+        contractorEmail: true,
+        contractorLogoFile: true,
+      },
+    });
+    if (!tenant) return { tenantId, contractor: null };
+    return {
+      tenantId: tenant.id,
+      contractor: {
+        tenantName: tenant.name,
+        tenantSlug: tenant.slug,
+        isDeveloperTenant: Boolean(tenant.isDeveloperTenant),
+        document: tenant.contractorDocument || null,
+        nameOrCompany: tenant.contractorNameOrCompany || null,
+        addressFull: tenant.contractorAddressFull || null,
+        zipCode: tenant.contractorZipCode || null,
+        phoneWhatsapp: tenant.contractorPhoneWhatsapp || null,
+        email: tenant.contractorEmail || null,
+        logoFile: tenant.contractorLogoFile || null,
+      },
+    };
+  }
+
+  function normalizeContractorPayload(raw = {}) {
+    return {
+      document: String(raw.document || "").replace(/\D/g, "") || null,
+      nameOrCompany: String(raw.nameOrCompany || "").trim() || null,
+      addressFull: String(raw.addressFull || "").trim() || null,
+      zipCode: String(raw.zipCode || "").replace(/\D/g, "") || null,
+      phoneWhatsapp: String(raw.phoneWhatsapp || "").replace(/\D/g, "") || null,
+      email: String(raw.email || "").trim().toLowerCase() || null,
+      logoFile: String(raw.logoFile || "").trim() || null,
+    };
+  }
+
   async function assertFeature(req, featureKey, message) {
     const license = await getLicense(req);
     if (!isFeatureEnabled(featureKey, license)) {
@@ -266,7 +317,7 @@ function buildApiRoutes({ prisma, log }) {
     const license = await getLicense(req);
     if (isLicenseActive(license)) return next();
     const p = String(req.path || "");
-    if (p === "/license/me") return next();
+    if (p === "/license/me" || p === "/license/me/contractor") return next();
     return res.status(403).json({
       error: {
         code: 403,
@@ -445,9 +496,9 @@ function buildApiRoutes({ prisma, log }) {
 
   // â”€â”€â”€ DASHBOARD â”€â”€â”€
   router.get("/license/me", asyncHandler(async (req, res) => {
-    const tenantId = await resolveTenantId(req);
     const license = await getLicense(req);
-    return sendOk(res, req, { ...license, tenantId });
+    const profile = await getTenantLicenseProfile(req);
+    return sendOk(res, req, { ...license, tenantId: profile.tenantId, contractor: profile.contractor });
   }));
 
   router.put("/license/me", asyncHandler(async (req, res) => {
@@ -507,7 +558,52 @@ function buildApiRoutes({ prisma, log }) {
     });
 
     const license = await getLicense(req);
-    return sendOk(res, req, { ...license, tenantId });
+    const profile = await getTenantLicenseProfile(req);
+    return sendOk(res, req, { ...license, tenantId: profile.tenantId, contractor: profile.contractor });
+  }));
+
+  router.put("/license/me/contractor", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: { code: 403, message: "Somente admin pode alterar dados do contratante" } });
+    }
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+
+    const contractor = normalizeContractorPayload(req.body || {});
+    if (!contractor.nameOrCompany) {
+      return res.status(400).json({ error: { code: 400, message: "Nome/Razao social do contratante e obrigatorio" } });
+    }
+
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        contractorDocument: contractor.document,
+        contractorNameOrCompany: contractor.nameOrCompany,
+        contractorAddressFull: contractor.addressFull,
+        contractorZipCode: contractor.zipCode,
+        contractorPhoneWhatsapp: contractor.phoneWhatsapp,
+        contractorEmail: contractor.email,
+        contractorLogoFile: contractor.logoFile,
+      },
+    });
+
+    await prisma.tenantLicenseAudit.create({
+      data: {
+        tenantId,
+        previousPlan: null,
+        newPlan: "CONTRACTOR_PROFILE",
+        previousStatus: null,
+        newStatus: "ACTIVE",
+        changedById: req.user?.id || null,
+        changedByName: req.user?.name || req.user?.email || "Admin",
+        reason: "Atualizacao de dados do contratante",
+        payload: { contractor },
+      },
+    });
+
+    const license = await getLicense(req);
+    const profile = await getTenantLicenseProfile(req);
+    return sendOk(res, req, { ...license, tenantId: profile.tenantId, contractor: profile.contractor });
   }));
 
   router.get("/dashboard", asyncHandler(async (req, res) => {
