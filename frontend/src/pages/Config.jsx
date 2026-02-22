@@ -333,16 +333,19 @@ export default function Config() {
   };
 
   const validateSelectedImports = async () => {
-    if (!selectedLicense?.id) {
-      addToast("Selecione um contratante para validar importação", "warning");
+    const targetTenantId = isDeveloperAdmin ? selectedLicense?.id : licenseData?.tenantId;
+    if (!targetTenantId) {
+      addToast("Licenciado não identificado para validar importação", "warning");
       return false;
     }
     setImportValidating(true);
     try {
       const files = await buildImportFilesPayload();
-      const res = await apiFetch("/api/license/admin/import/validate", {
+      const endpoint = isDeveloperAdmin ? "/api/license/admin/import/validate" : "/api/license/me/import/validate";
+      const body = isDeveloperAdmin ? { tenantId: targetTenantId, files } : { files };
+      const res = await apiFetch(endpoint, {
         method: "POST",
-        body: JSON.stringify({ tenantId: selectedLicense.id, files }),
+        body: JSON.stringify(body),
       });
       const validation = res?.data?.validation || [];
       setImportValidation(validation);
@@ -359,8 +362,9 @@ export default function Config() {
   };
 
   const executeSelectedImports = async () => {
-    if (!selectedLicense?.id) {
-      addToast("Selecione um contratante para importar", "warning");
+    const targetTenantId = isDeveloperAdmin ? selectedLicense?.id : licenseData?.tenantId;
+    if (!targetTenantId) {
+      addToast("Licenciado não identificado para importar", "warning");
       return;
     }
     setImportExecuting(true);
@@ -374,15 +378,22 @@ export default function Config() {
         addToast("Importação bloqueada. Corrija os arquivos incompatíveis.", "warning");
         return;
       }
-      const res = await apiFetch("/api/license/admin/import/execute", {
+      const endpoint = isDeveloperAdmin ? "/api/license/admin/import/execute" : "/api/license/me/import/execute";
+      const body = isDeveloperAdmin ? { tenantId: targetTenantId, files } : { files };
+      const res = await apiFetch(endpoint, {
         method: "POST",
-        body: JSON.stringify({ tenantId: selectedLicense.id, files }),
+        body: JSON.stringify(body),
       });
       const imported = res?.data?.imported || [];
       setImportResult(imported);
       addToast("Importação concluída com sucesso", "success");
-      const listRes = await apiFetch("/api/license/admin/licenses");
-      setLicensesList(listRes?.data?.licenses || []);
+      if (isDeveloperAdmin) {
+        const listRes = await apiFetch("/api/license/admin/licenses");
+        setLicensesList(listRes?.data?.licenses || []);
+      } else {
+        const meRes = await apiFetch("/api/license/me");
+        setLicenseData(meRes?.data || null);
+      }
     } catch (err) {
       addToast(err.message || "Falha na importação", "error");
     } finally {
@@ -862,53 +873,45 @@ export default function Config() {
                     </div>
                   ) : null}
 
-                  {isDeveloperAdmin ? (
+                  {canManageLicense && !isDeveloperAdmin ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <div>
                         <p className="text-sm font-semibold text-gray-900">Importação de tabelas</p>
                         <p className="text-xs text-gray-500">Selecione uma ou mais tabelas, anexe os arquivos e valide antes de importar.</p>
                       </div>
-                      {!selectedLicense ? (
-                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                          Selecione um contratante para habilitar a importação.
-                        </p>
-                      ) : (
-                        <>
-                          <div className="grid md:grid-cols-2 gap-2">
-                            {IMPORT_TABLE_OPTIONS.map((opt) => (
-                              <div key={opt.key} className="rounded border border-gray-200 p-2">
-                                <label className="flex items-center gap-2 text-sm text-gray-800">
-                                  <input
-                                    type="checkbox"
-                                    checked={Boolean(importSelections[opt.key]?.selected)}
-                                    onChange={(e) => toggleImportTable(opt.key, e.target.checked)}
-                                  />
-                                  <span className="font-medium">{opt.label}</span>
-                                </label>
-                                <p className="text-[11px] text-gray-500 mt-1">Colunas: {opt.columns}</p>
-                                <input
-                                  type="file"
-                                  accept=".txt,.csv"
-                                  className="mt-2 block w-full text-xs text-gray-600"
-                                  onChange={(e) => pickImportFile(opt.key, e.target.files?.[0] || null)}
-                                  disabled={!importSelections[opt.key]?.selected}
-                                />
-                                {importSelections[opt.key]?.file ? (
-                                  <p className="text-[11px] text-gray-500 mt-1">Arquivo: {importSelections[opt.key].file.name}</p>
-                                ) : null}
-                              </div>
-                            ))}
+                      <div className="grid md:grid-cols-2 gap-2">
+                        {IMPORT_TABLE_OPTIONS.map((opt) => (
+                          <div key={opt.key} className="rounded border border-gray-200 p-2">
+                            <label className="flex items-center gap-2 text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(importSelections[opt.key]?.selected)}
+                                onChange={(e) => toggleImportTable(opt.key, e.target.checked)}
+                              />
+                              <span className="font-medium">{opt.label}</span>
+                            </label>
+                            <p className="text-[11px] text-gray-500 mt-1">Colunas: {opt.columns}</p>
+                            <input
+                              type="file"
+                              accept=".txt,.csv"
+                              className="mt-2 block w-full text-xs text-gray-600"
+                              onChange={(e) => pickImportFile(opt.key, e.target.files?.[0] || null)}
+                              disabled={!importSelections[opt.key]?.selected}
+                            />
+                            {importSelections[opt.key]?.file ? (
+                              <p className="text-[11px] text-gray-500 mt-1">Arquivo: {importSelections[opt.key].file.name}</p>
+                            ) : null}
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Button type="button" variant="secondary" onClick={validateSelectedImports} loading={importValidating}>
-                              Validar arquivos
-                            </Button>
-                            <Button type="button" onClick={executeSelectedImports} loading={importExecuting}>
-                              Importar selecionadas
-                            </Button>
-                          </div>
-                        </>
-                      )}
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="secondary" onClick={validateSelectedImports} loading={importValidating}>
+                          Validar arquivos
+                        </Button>
+                        <Button type="button" onClick={executeSelectedImports} loading={importExecuting}>
+                          Importar selecionadas
+                        </Button>
+                      </div>
 
                       {importValidation.length > 0 ? (
                         <div className="overflow-x-auto">

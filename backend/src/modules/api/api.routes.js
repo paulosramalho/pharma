@@ -1271,6 +1271,117 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
+  router.post("/license/me/import/validate", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: { code: 403, message: "Somente admin pode validar importacao" } });
+    }
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    const files = Array.isArray(req.body?.files) ? req.body.files : [];
+    if (files.length === 0) return res.status(400).json({ error: { code: 400, message: "Informe ao menos um arquivo para validacao" } });
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Importacao indisponivel para licenca Desenvolvedor" } });
+    }
+
+    const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
+    const duplicated = tables.find((t, idx) => tables.indexOf(t) !== idx);
+    if (duplicated) {
+      return res.status(400).json({ error: { code: 400, message: `Tabela duplicada no envio: ${duplicated}` } });
+    }
+
+    const validation = files.map((f) => validateImportFile({
+      table: String(f?.table || "").trim(),
+      fileName: String(f?.fileName || "").trim(),
+      content: String(f?.content || ""),
+    }));
+    const compatible = validation.every((item) => item.compatible);
+    return sendOk(res, req, { tenantId, tenantName: tenant.name, compatible, validation });
+  }));
+
+  router.post("/license/me/import/execute", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: { code: 403, message: "Somente admin pode importar dados" } });
+    }
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    const files = Array.isArray(req.body?.files) ? req.body.files : [];
+    if (files.length === 0) return res.status(400).json({ error: { code: 400, message: "Informe ao menos um arquivo para importacao" } });
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Importacao indisponivel para licenca Desenvolvedor" } });
+    }
+
+    const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
+    const duplicated = tables.find((t, idx) => tables.indexOf(t) !== idx);
+    if (duplicated) {
+      return res.status(400).json({ error: { code: 400, message: `Tabela duplicada no envio: ${duplicated}` } });
+    }
+
+    const validation = files.map((f) => validateImportFile({
+      table: String(f?.table || "").trim(),
+      fileName: String(f?.fileName || "").trim(),
+      content: String(f?.content || ""),
+    }));
+    const incompatible = validation.filter((item) => !item.compatible);
+    if (incompatible.length > 0) {
+      return res.status(400).json({
+        error: { code: 400, message: "Existe arquivo incompativel. Corrija antes de importar." },
+        data: { compatible: false, validation },
+      });
+    }
+
+    const summary = [];
+    await prisma.$transaction(async (tx) => {
+      for (const item of validation) {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await applyImportRows({
+          tx,
+          tenantId: tenant.id,
+          table: item.table,
+          rows: item.parsedRows || [],
+        });
+        summary.push({
+          table: item.table,
+          label: item.label || item.table,
+          fileName: item.fileName || "-",
+          totalRows: Number(item.totalRows || 0),
+          imported: Number(result?.imported || 0),
+        });
+      }
+      await tx.tenantLicenseAudit.create({
+        data: {
+          tenantId: tenant.id,
+          actorUserId: req.user.id,
+          actorEmail: req.user.email || null,
+          action: "LICENSE_IMPORT_DATA_SELF",
+          fromPlanCode: null,
+          toPlanCode: null,
+          fromStatus: null,
+          toStatus: null,
+          reason: "Importacao de dados pelo admin do licenciado",
+          payload: { importedTables: summary },
+        },
+      });
+    });
+
+    return sendOk(res, req, {
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      imported: summary,
+    });
+  }));
+
   router.post("/license/onboarding/finalize", asyncHandler(async (req, res) => {
     const sourceTenantId = await assertDeveloperAdmin(req);
     if (!sourceTenantId) return res.status(400).json({ error: { code: 400, message: "Tenant do desenvolvedor nao identificado" } });
