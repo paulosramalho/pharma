@@ -749,7 +749,6 @@ function buildApiRoutes({ prisma, log }) {
           active: parseBool(r.active, true),
           controlled: parseBool(r.controlled, false),
           defaultMarkup: parseNum(r.defaultMarkup, 0),
-          basePrice: parseNum(r.basePrice, 0),
         };
         if (existing?.id) {
           await tx.product.update({ where: { id: existing.id }, data });
