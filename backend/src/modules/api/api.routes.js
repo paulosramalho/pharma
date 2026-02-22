@@ -455,6 +455,64 @@ function buildApiRoutes({ prisma, log }) {
     await tx.tenant.delete({ where: { id: tenantId } });
   }
 
+  async function buildProvisionalAdminByTenantMap(tenantIds = []) {
+    const ids = Array.from(new Set((tenantIds || []).filter(Boolean)));
+    if (ids.length === 0) return {};
+
+    const [auditRows, pendingAdmins] = await Promise.all([
+      prisma.tenantLicenseAudit.findMany({
+        where: {
+          tenantId: { in: ids },
+          reason: "Onboarding de novo licenciado com admin provisório",
+        },
+        select: {
+          tenantId: true,
+          createdAt: true,
+          payload: true,
+        },
+        orderBy: [{ tenantId: "asc" }, { createdAt: "desc" }],
+      }),
+      prisma.user.findMany({
+        where: {
+          tenantId: { in: ids },
+          role: { name: "ADMIN" },
+          mustChangePassword: true,
+          active: true,
+        },
+        select: { id: true, tenantId: true, name: true, email: true, mustChangePassword: true },
+      }),
+    ]);
+
+    const latestAuditByTenant = {};
+    for (const row of auditRows) {
+      if (!latestAuditByTenant[row.tenantId]) latestAuditByTenant[row.tenantId] = row;
+    }
+
+    const pendingAdminByTenant = {};
+    for (const admin of pendingAdmins) {
+      if (!pendingAdminByTenant[admin.tenantId]) pendingAdminByTenant[admin.tenantId] = admin;
+    }
+
+    const out = {};
+    for (const tenantId of ids) {
+      const audit = latestAuditByTenant[tenantId];
+      const pendingAdmin = pendingAdminByTenant[tenantId];
+      const payload = audit?.payload && typeof audit.payload === "object" ? audit.payload : null;
+      const adminUserId = payload?.adminUserId ? String(payload.adminUserId) : null;
+      const temporaryPassword = payload?.temporaryPassword ? String(payload.temporaryPassword) : null;
+      if (!pendingAdmin || !temporaryPassword) continue;
+      if (adminUserId && pendingAdmin.id !== adminUserId) continue;
+      out[tenantId] = {
+        id: pendingAdmin.id,
+        name: pendingAdmin.name,
+        email: pendingAdmin.email,
+        mustChangePassword: Boolean(pendingAdmin.mustChangePassword),
+        temporaryPassword,
+      };
+    }
+    return out;
+  }
+
   async function assertFeature(req, featureKey, message) {
     const license = await getLicense(req);
     if (!isFeatureEnabled(featureKey, license)) {
@@ -1029,6 +1087,7 @@ function buildApiRoutes({ prisma, log }) {
             contractor: validated.contractor,
             adminUserId: adminUser.id,
             adminEmail: adminUser.email,
+            temporaryPassword: passwordTemp,
             mustChangePassword: true,
           },
         },
@@ -1092,7 +1151,12 @@ function buildApiRoutes({ prisma, log }) {
       },
       orderBy: [{ isDeveloperTenant: "desc" }, { createdAt: "asc" }],
     });
-    return sendOk(res, req, { licenses: rows });
+    const provisionalByTenant = await buildProvisionalAdminByTenantMap(rows.map((r) => r.id));
+    const licenses = rows.map((row) => ({
+      ...row,
+      provisionalAdmin: provisionalByTenant[row.id] || null,
+    }));
+    return sendOk(res, req, { licenses });
   }));
 
   router.get("/license/admin/licenses/:tenantId", asyncHandler(async (req, res) => {
@@ -1135,6 +1199,7 @@ function buildApiRoutes({ prisma, log }) {
     });
     if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
     const license = await resolveLicenseByTenantId(tenant.id);
+    const provisionalByTenant = await buildProvisionalAdminByTenantMap([tenant.id]);
     return sendOk(res, req, {
       tenant: {
         id: tenant.id,
@@ -1159,6 +1224,7 @@ function buildApiRoutes({ prisma, log }) {
         counts: tenant._count || { users: 0, stores: 0, customers: 0 },
       },
       license,
+      provisionalAdmin: provisionalByTenant[tenant.id] || null,
     });
   }));
 

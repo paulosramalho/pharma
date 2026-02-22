@@ -731,7 +731,14 @@ export default function Config() {
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="p-3 rounded-lg border border-gray-200 bg-white">
                       <p className="text-sm font-semibold text-gray-900 mb-2">Plano contratado</p>
-                        <ul className="text-sm text-gray-700 space-y-1">
+                      {isDeveloperAdmin && selectedLicense?.provisionalAdmin?.temporaryPassword ? (
+                        <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                          <p className="font-semibold">Senha temporária do Admin (até ser alterada)</p>
+                          <p>Usuário: {selectedLicense.provisionalAdmin.email || "-"}</p>
+                          <p>Senha: <span className="font-mono">{selectedLicense.provisionalAdmin.temporaryPassword}</span></p>
+                        </div>
+                      ) : null}
+                      <ul className="text-sm text-gray-700 space-y-1">
                           <li>Licenciado: {isDeveloperAdmin ? (selectedLicense?.name || "-") : (licenseData?.contractor?.tenantName || "-")}</li>
                           <li>Status: {STATUS_LABELS[String((isDeveloperAdmin ? selectedLicense?.license?.status : licenseData?.status) || "").toUpperCase()] || (isDeveloperAdmin ? selectedLicense?.license?.status : licenseData?.status) || "-"}</li>
                           <li>Validade: {dateLabel(isDeveloperAdmin ? selectedLicense?.license?.endsAt : licenseData?.endsAt)}</li>
