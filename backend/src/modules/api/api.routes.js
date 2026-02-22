@@ -3,9 +3,13 @@ const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
 const { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer, makeReportCustomPdfBuffer } = require("../reports/reportPdfTemplate");
 const {
+  PLAN_CATALOG,
   getActiveLicense,
   resolveTenantLicense,
   normalizeStatus,
+  normalizeRoleCaps,
+  totalRoleCaps,
+  findBestPlanForRoleCaps,
   isFeatureEnabled,
   isLicenseActive,
 } = require("../../common/licensing/license.service");
@@ -89,6 +93,11 @@ function buildApiRoutes({ prisma, log }) {
         startsAt: true,
         endsAt: true,
         graceUntil: true,
+        addonMaxActiveUsers: true,
+        addonMaxRoleActive: true,
+        overrideMonthlyPriceCents: true,
+        overrideAnnualPriceCents: true,
+        extrasDescription: true,
         updatedAt: true,
       },
     });
@@ -119,6 +128,11 @@ function buildApiRoutes({ prisma, log }) {
         startsAt: true,
         endsAt: true,
         graceUntil: true,
+        addonMaxActiveUsers: true,
+        addonMaxRoleActive: true,
+        overrideMonthlyPriceCents: true,
+        overrideAnnualPriceCents: true,
+        extrasDescription: true,
         updatedAt: true,
       },
     });
@@ -1177,6 +1191,10 @@ function buildApiRoutes({ prisma, log }) {
     }
     const tenantId = await resolveTenantId(req);
     if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+    const isDevTenant = await isDeveloperTenantById(tenantId);
+    if (!isDevTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Contratante nao pode alterar licenca diretamente" } });
+    }
 
     await upsertTenantLicenseWithAudit({ tenantId, actor: req.user, body: req.body });
 
@@ -1271,6 +1289,316 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
+  function parseRequestedRoleCaps(raw) {
+    const caps = normalizeRoleCaps(raw || {});
+    if (!Number(caps.ADMIN || 0)) throw Object.assign(new Error("Informe ao menos 1 usuario ADMIN"), { statusCode: 400 });
+    const total = totalRoleCaps(caps);
+    if (total <= 0) throw Object.assign(new Error("Quantidade de usuarios invalida"), { statusCode: 400 });
+    return { caps, total };
+  }
+
+  function serializeChangeRequest(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      tenantId: row.tenantId,
+      status: row.status,
+      currentPlanCode: row.currentPlanCode,
+      currentEndsAt: row.currentEndsAt,
+      currentMonthlyPriceCents: row.currentMonthlyPriceCents,
+      currentAnnualPriceCents: row.currentAnnualPriceCents,
+      requestedTotalUsers: row.requestedTotalUsers,
+      requestedRoleCaps: row.requestedRoleCaps || {},
+      requestedNote: row.requestedNote || null,
+      requestedByName: row.requestedByName || null,
+      requestedByEmail: row.requestedByEmail || null,
+      proposedPlanCode: row.proposedPlanCode || null,
+      proposedIsExistingPlan: Boolean(row.proposedIsExistingPlan),
+      proposedTotalUsers: row.proposedTotalUsers ?? null,
+      proposedRoleCaps: row.proposedRoleCaps || null,
+      proposedMonthlyPriceCents: row.proposedMonthlyPriceCents ?? null,
+      proposedAnnualPriceCents: row.proposedAnnualPriceCents ?? null,
+      proposedExtrasDescription: row.proposedExtrasDescription || null,
+      proposedDifferenceMonthlyCents: row.proposedDifferenceMonthlyCents ?? null,
+      proposedDifferenceAnnualCents: row.proposedDifferenceAnnualCents ?? null,
+      proposedNote: row.proposedNote || null,
+      reviewedByName: row.reviewedByName || null,
+      reviewedByEmail: row.reviewedByEmail || null,
+      reviewedAt: row.reviewedAt || null,
+      decisionByName: row.decisionByName || null,
+      decisionByEmail: row.decisionByEmail || null,
+      decisionNote: row.decisionNote || null,
+      decidedAt: row.decidedAt || null,
+      appliedAt: row.appliedAt || null,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  function buildProposalFromRoleCaps({ currentPlanCode, roleCaps, monthlyPriceCents, annualPriceCents, extrasDescription, note }) {
+    const requestedCaps = normalizeRoleCaps(roleCaps || {});
+    const requestedTotal = totalRoleCaps(requestedCaps);
+    const bestPlan = findBestPlanForRoleCaps(requestedCaps);
+    const currentPlan = PLAN_CATALOG[String(currentPlanCode || "MINIMO").toUpperCase()] || PLAN_CATALOG.MINIMO;
+    const currentMonthly = Number(currentPlan?.monthlyPriceCents || 0);
+    const currentAnnual = Number(currentPlan?.annualPriceCents || 0);
+
+    if (bestPlan) {
+      return {
+        proposedPlanCode: bestPlan.code,
+        proposedIsExistingPlan: true,
+        proposedRoleCaps: bestPlan.limits?.maxRoleActive || {},
+        proposedTotalUsers: Number(bestPlan.limits?.maxActiveUsers || 0),
+        proposedMonthlyPriceCents: Number(bestPlan.monthlyPriceCents || 0),
+        proposedAnnualPriceCents: Number(bestPlan.annualPriceCents || 0),
+        proposedExtrasDescription: null,
+        proposedDifferenceMonthlyCents: Number(bestPlan.monthlyPriceCents || 0) - currentMonthly,
+        proposedDifferenceAnnualCents: Number(bestPlan.annualPriceCents || 0) - currentAnnual,
+        proposedNote: note || null,
+        _requestedCaps: requestedCaps,
+        _requestedTotal: requestedTotal,
+      };
+    }
+
+    const finalMonthly = Number.isFinite(Number(monthlyPriceCents)) ? Number(monthlyPriceCents) : currentMonthly;
+    const finalAnnual = Number.isFinite(Number(annualPriceCents)) ? Number(annualPriceCents) : currentAnnual;
+    return {
+      proposedPlanCode: currentPlan.code,
+      proposedIsExistingPlan: false,
+      proposedRoleCaps: requestedCaps,
+      proposedTotalUsers: requestedTotal,
+      proposedMonthlyPriceCents: finalMonthly,
+      proposedAnnualPriceCents: finalAnnual,
+      proposedExtrasDescription: String(extrasDescription || "").trim() || "Ajuste de usuarios fora dos pacotes padrao",
+      proposedDifferenceMonthlyCents: finalMonthly - currentMonthly,
+      proposedDifferenceAnnualCents: finalAnnual - currentAnnual,
+      proposedNote: note || null,
+      _requestedCaps: requestedCaps,
+      _requestedTotal: requestedTotal,
+    };
+  }
+
+  router.get("/license/me/change-requests", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) return res.status(403).json({ error: { code: 403, message: "Somente admin pode consultar solicitacoes" } });
+    const tenantId = await resolveTenantId(req);
+    const rows = await prisma.tenantLicenseChangeRequest.findMany({
+      where: { tenantId },
+      orderBy: [{ createdAt: "desc" }],
+      take: 20,
+    });
+    return sendOk(res, req, { requests: rows.map(serializeChangeRequest) });
+  }));
+
+  router.post("/license/me/change-requests", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) return res.status(403).json({ error: { code: 403, message: "Somente admin pode solicitar ajuste" } });
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, isDeveloperTenant: true } });
+    if (!tenant || tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Solicitacao indisponivel para licenca Desenvolvedor" } });
+    }
+
+    const open = await prisma.tenantLicenseChangeRequest.findFirst({
+      where: { tenantId, status: { in: ["PENDING_MASTER_REVIEW", "PENDING_CONTRACTOR_APPROVAL"] } },
+      select: { id: true },
+    });
+    if (open?.id) {
+      return res.status(409).json({ error: { code: 409, message: "Ja existe solicitacao em andamento para este licenciado" } });
+    }
+
+    const { caps, total } = parseRequestedRoleCaps(req.body?.roleCaps || {});
+    const current = await getLicense(req);
+    const created = await prisma.tenantLicenseChangeRequest.create({
+      data: {
+        tenantId,
+        status: "PENDING_MASTER_REVIEW",
+        currentPlanCode: current.planCode,
+        currentEndsAt: current.endsAt ? new Date(current.endsAt) : null,
+        currentMonthlyPriceCents: Number(current.pricing?.monthlyPriceCents || 0),
+        currentAnnualPriceCents: Number(current.pricing?.annualPriceCents || 0),
+        requestedTotalUsers: total,
+        requestedRoleCaps: caps,
+        requestedNote: String(req.body?.note || "").trim() || null,
+        requestedByUserId: req.user?.id || null,
+        requestedByName: req.user?.name || null,
+        requestedByEmail: req.user?.email || null,
+      },
+    });
+    return sendOk(res, req, { request: serializeChangeRequest(created) });
+  }));
+
+  router.post("/license/me/change-requests/:id/approve", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) return res.status(403).json({ error: { code: 403, message: "Somente admin pode aprovar proposta" } });
+    const tenantId = await resolveTenantId(req);
+    const id = String(req.params.id || "").trim();
+    const request = await prisma.tenantLicenseChangeRequest.findFirst({ where: { id, tenantId } });
+    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitacao nao encontrada" } });
+    if (request.status !== "PENDING_CONTRACTOR_APPROVAL") {
+      return res.status(400).json({ error: { code: 400, message: "Solicitacao ainda nao esta pronta para aprovacao do contratante" } });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const license = await tx.tenantLicense.findUnique({ where: { tenantId }, select: { id: true, endsAt: true, status: true } });
+      if (!license?.id) throw Object.assign(new Error("Licenca nao encontrada"), { statusCode: 404 });
+      const appliedPlan = PLAN_CATALOG[String(request.proposedPlanCode || request.currentPlanCode || "MINIMO").toUpperCase()] || PLAN_CATALOG.MINIMO;
+      const appliedRoleCaps = normalizeRoleCaps(request.proposedRoleCaps || {});
+      const appliedTotalUsers = Number(request.proposedTotalUsers || totalRoleCaps(appliedRoleCaps));
+      const baseRoleCaps = normalizeRoleCaps(appliedPlan?.limits?.maxRoleActive || {});
+      const baseTotalUsers = Number(appliedPlan?.limits?.maxActiveUsers || 0);
+      const addonRoleCaps = Object.keys(appliedRoleCaps).reduce((acc, role) => {
+        const delta = Number(appliedRoleCaps[role] || 0) - Number(baseRoleCaps[role] || 0);
+        acc[role] = delta > 0 ? delta : 0;
+        return acc;
+      }, {});
+      const addonTotalUsers = Math.max(0, appliedTotalUsers - baseTotalUsers);
+      const hasAddonRole = Object.values(addonRoleCaps).some((n) => Number(n || 0) > 0);
+
+      await tx.tenantLicense.update({
+        where: { tenantId },
+        data: {
+          planCode: request.proposedPlanCode || request.currentPlanCode,
+          status: license.status || "ACTIVE",
+          endsAt: license.endsAt,
+          addonMaxActiveUsers: request.proposedIsExistingPlan ? 0 : addonTotalUsers,
+          addonMaxRoleActive: request.proposedIsExistingPlan ? {} : (hasAddonRole ? addonRoleCaps : {}),
+          overrideMonthlyPriceCents: request.proposedIsExistingPlan ? null : (request.proposedMonthlyPriceCents ?? null),
+          overrideAnnualPriceCents: request.proposedIsExistingPlan ? null : (request.proposedAnnualPriceCents ?? null),
+          extrasDescription: request.proposedIsExistingPlan ? null : (request.proposedExtrasDescription || null),
+          updatedById: req.user?.id || null,
+          updatedByName: req.user?.name || req.user?.email || "Admin",
+        },
+      });
+
+      await tx.tenantLicenseChangeRequest.update({
+        where: { id: request.id },
+        data: {
+          status: "APPLIED",
+          decisionByUserId: req.user?.id || null,
+          decisionByName: req.user?.name || null,
+          decisionByEmail: req.user?.email || null,
+          decisionNote: String(req.body?.note || "").trim() || null,
+          decidedAt: new Date(),
+          appliedAt: new Date(),
+        },
+      });
+      await tx.tenantLicenseAudit.create({
+        data: {
+          tenantId,
+          previousPlan: request.currentPlanCode || null,
+          newPlan: request.proposedPlanCode || request.currentPlanCode,
+          previousStatus: "ACTIVE",
+          newStatus: "ACTIVE",
+          changedById: req.user?.id || null,
+          changedByName: req.user?.name || req.user?.email || "Admin",
+          reason: "Aprovacao de ajuste de licenca pelo contratante",
+          payload: {
+            requestId: request.id,
+            requestedRoleCaps: request.requestedRoleCaps,
+            proposedRoleCaps: request.proposedRoleCaps,
+            proposedIsExistingPlan: request.proposedIsExistingPlan,
+            proposedExtrasDescription: request.proposedExtrasDescription,
+          },
+        },
+      });
+    });
+
+    const applied = await prisma.tenantLicenseChangeRequest.findUnique({ where: { id } });
+    return sendOk(res, req, { request: serializeChangeRequest(applied) });
+  }));
+
+  router.get("/license/admin/change-requests", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const statusRaw = String(req.query.status || "").trim().toUpperCase();
+    const where = {};
+    if (statusRaw) where.status = statusRaw;
+    const rows = await prisma.tenantLicenseChangeRequest.findMany({
+      where,
+      include: {
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            contractorNameOrCompany: true,
+            contractorTradeName: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: "desc" }],
+      take: 100,
+    });
+    return sendOk(res, req, {
+      requests: rows.map((row) => ({
+        ...serializeChangeRequest(row),
+        tenant: row.tenant ? {
+          id: row.tenant.id,
+          name: row.tenant.name,
+          contractorNameOrCompany: row.tenant.contractorNameOrCompany || null,
+          contractorTradeName: row.tenant.contractorTradeName || null,
+        } : null,
+      })),
+    });
+  }));
+
+  router.put("/license/admin/change-requests/:id/review", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const id = String(req.params.id || "").trim();
+    const action = String(req.body?.action || "PROPOSE").trim().toUpperCase();
+    const request = await prisma.tenantLicenseChangeRequest.findUnique({ where: { id } });
+    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitacao nao encontrada" } });
+    if (request.status !== "PENDING_MASTER_REVIEW") {
+      return res.status(400).json({ error: { code: 400, message: "Solicitacao nao esta pendente para revisao do Desenvolvedor" } });
+    }
+
+    if (action === "REJECT") {
+      const rejected = await prisma.tenantLicenseChangeRequest.update({
+        where: { id },
+        data: {
+          status: "REJECTED",
+          reviewedByUserId: req.user?.id || null,
+          reviewedByName: req.user?.name || null,
+          reviewedByEmail: req.user?.email || null,
+          reviewedAt: new Date(),
+          proposedNote: String(req.body?.note || "").trim() || null,
+        },
+      });
+      return sendOk(res, req, { request: serializeChangeRequest(rejected) });
+    }
+
+    const roleCapsSource = req.body?.roleCaps && typeof req.body.roleCaps === "object"
+      ? req.body.roleCaps
+      : request.requestedRoleCaps;
+    const proposal = buildProposalFromRoleCaps({
+      currentPlanCode: request.currentPlanCode,
+      roleCaps: roleCapsSource,
+      monthlyPriceCents: req.body?.monthlyPriceCents,
+      annualPriceCents: req.body?.annualPriceCents,
+      extrasDescription: req.body?.extrasDescription,
+      note: req.body?.note,
+    });
+
+    const reviewed = await prisma.tenantLicenseChangeRequest.update({
+      where: { id },
+      data: {
+        status: "PENDING_CONTRACTOR_APPROVAL",
+        proposedPlanCode: proposal.proposedPlanCode,
+        proposedIsExistingPlan: proposal.proposedIsExistingPlan,
+        proposedRoleCaps: proposal.proposedRoleCaps,
+        proposedTotalUsers: proposal.proposedTotalUsers,
+        proposedMonthlyPriceCents: proposal.proposedMonthlyPriceCents,
+        proposedAnnualPriceCents: proposal.proposedAnnualPriceCents,
+        proposedExtrasDescription: proposal.proposedExtrasDescription,
+        proposedDifferenceMonthlyCents: proposal.proposedDifferenceMonthlyCents,
+        proposedDifferenceAnnualCents: proposal.proposedDifferenceAnnualCents,
+        proposedNote: proposal.proposedNote,
+        reviewedByUserId: req.user?.id || null,
+        reviewedByName: req.user?.name || null,
+        reviewedByEmail: req.user?.email || null,
+        reviewedAt: new Date(),
+      },
+    });
+    return sendOk(res, req, { request: serializeChangeRequest(reviewed) });
+  }));
+
   router.post("/license/me/import/validate", asyncHandler(async (req, res) => {
     if (!isAdmin(req)) {
       return res.status(403).json({ error: { code: 403, message: "Somente admin pode validar importacao" } });
@@ -1342,6 +1670,7 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const summary = [];
+    const targetLicense = await resolveLicenseByTenantId(tenant.id);
     await prisma.$transaction(async (tx) => {
       for (const item of validation) {
         // eslint-disable-next-line no-await-in-loop
@@ -1362,13 +1691,12 @@ function buildApiRoutes({ prisma, log }) {
       await tx.tenantLicenseAudit.create({
         data: {
           tenantId: tenant.id,
-          actorUserId: req.user.id,
-          actorEmail: req.user.email || null,
-          action: "LICENSE_IMPORT_DATA_SELF",
-          fromPlanCode: null,
-          toPlanCode: null,
-          fromStatus: null,
-          toStatus: null,
+          previousPlan: targetLicense?.planCode || null,
+          newPlan: targetLicense?.planCode || "MINIMO",
+          previousStatus: targetLicense?.status || null,
+          newStatus: targetLicense?.status || "ACTIVE",
+          changedById: req.user?.id || null,
+          changedByName: req.user?.name || req.user?.email || "Admin",
           reason: "Importacao de dados pelo admin do licenciado",
           payload: { importedTables: summary },
         },
@@ -1753,6 +2081,7 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const summary = [];
+    const sourceLicense = await resolveLicenseByTenantId(sourceTenantId);
     await prisma.$transaction(async (tx) => {
       for (const item of validation) {
         // eslint-disable-next-line no-await-in-loop
@@ -1773,13 +2102,12 @@ function buildApiRoutes({ prisma, log }) {
       await tx.tenantLicenseAudit.create({
         data: {
           tenantId: sourceTenantId,
-          actorUserId: req.user.id,
-          actorEmail: req.user.email || null,
-          action: "LICENSE_IMPORT_DATA",
-          fromPlanCode: null,
-          toPlanCode: null,
-          fromStatus: null,
-          toStatus: null,
+          previousPlan: sourceLicense?.planCode || null,
+          newPlan: sourceLicense?.planCode || "ENTERPRISE",
+          previousStatus: sourceLicense?.status || null,
+          newStatus: sourceLicense?.status || "ACTIVE",
+          changedById: req.user?.id || null,
+          changedByName: req.user?.name || req.user?.email || "Admin",
           reason: "Importacao de dados para licenciado",
           payload: {
             targetTenantId: tenant.id,
@@ -5396,3 +5724,4 @@ function buildApiRoutes({ prisma, log }) {
 }
 
 module.exports = { buildApiRoutes };
+
