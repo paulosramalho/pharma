@@ -81,6 +81,14 @@ enum LicenseStatus {
   CANCELED
 }
 
+enum LicenseChangeRequestStatus {
+  PENDING_MASTER_REVIEW
+  PENDING_CONTRACTOR_APPROVAL
+  APPLIED
+  REJECTED
+  CANCELED
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
@@ -117,6 +125,7 @@ model Tenant {
 
   license      TenantLicense?
   licenseAudit TenantLicenseAudit[]
+  licenseChangeRequests TenantLicenseChangeRequest[]
   inventoryLots        InventoryLot[]
   inventoryMovements   InventoryMovement[]
   saleItems            SaleItem[]
@@ -140,10 +149,61 @@ model TenantLicense {
   graceUntil     DateTime?
   updatedById    String?
   updatedByName  String?
+  addonMaxActiveUsers Int @default(0)
+  addonMaxRoleActive Json?
+  overrideMonthlyPriceCents Int?
+  overrideAnnualPriceCents Int?
+  extrasDescription String?
   updatedAt      DateTime      @updatedAt
   createdAt      DateTime      @default(now())
 
   @@index([planCode, status])
+}
+
+model TenantLicenseChangeRequest {
+  id String @id @default(uuid())
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenantId String
+  status LicenseChangeRequestStatus @default(PENDING_MASTER_REVIEW)
+
+  currentPlanCode String
+  currentEndsAt DateTime?
+  currentMonthlyPriceCents Int
+  currentAnnualPriceCents Int
+
+  requestedTotalUsers Int
+  requestedRoleCaps Json
+  requestedNote String?
+  requestedByUserId String?
+  requestedByName String?
+  requestedByEmail String?
+
+  proposedPlanCode String?
+  proposedIsExistingPlan Boolean? @default(false)
+  proposedTotalUsers Int?
+  proposedRoleCaps Json?
+  proposedMonthlyPriceCents Int?
+  proposedAnnualPriceCents Int?
+  proposedExtrasDescription String?
+  proposedDifferenceMonthlyCents Int?
+  proposedDifferenceAnnualCents Int?
+  proposedNote String?
+  reviewedByUserId String?
+  reviewedByName String?
+  reviewedByEmail String?
+  reviewedAt DateTime?
+
+  decisionByUserId String?
+  decisionByName String?
+  decisionByEmail String?
+  decisionNote String?
+  decidedAt DateTime?
+  appliedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status, createdAt])
 }
 
 model TenantLicenseAudit {

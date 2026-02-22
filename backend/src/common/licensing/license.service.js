@@ -122,6 +122,40 @@ function buildLicenseFromPlan(planCode, statusRaw) {
   };
 }
 
+function normalizeRoleCaps(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  ["ADMIN", "VENDEDOR", "CAIXA", "FARMACEUTICO"].forEach((role) => {
+    const val = Number(src?.[role] || 0);
+    out[role] = Number.isFinite(val) && val > 0 ? Math.floor(val) : 0;
+  });
+  return out;
+}
+
+function totalRoleCaps(roleCaps) {
+  const caps = normalizeRoleCaps(roleCaps);
+  return Object.values(caps).reduce((sum, n) => sum + Number(n || 0), 0);
+}
+
+function planSupportsRoleCaps(plan, roleCaps) {
+  const wanted = normalizeRoleCaps(roleCaps);
+  const maxRole = plan?.limits?.maxRoleActive || {};
+  const hasUnlimitedRoles = Object.keys(maxRole).length === 0;
+  if (!hasUnlimitedRoles) {
+    for (const role of Object.keys(wanted)) {
+      if ((wanted[role] || 0) > Number(maxRole?.[role] || 0)) return false;
+    }
+  }
+  const wantedTotal = totalRoleCaps(wanted);
+  const maxUsers = Number(plan?.limits?.maxActiveUsers || 0);
+  return wantedTotal <= maxUsers;
+}
+
+function findBestPlanForRoleCaps(roleCaps) {
+  const plans = Object.values(PLAN_CATALOG).slice().sort((a, b) => Number(a.monthlyPriceCents || 0) - Number(b.monthlyPriceCents || 0));
+  return plans.find((plan) => planSupportsRoleCaps(plan, roleCaps)) || null;
+}
+
 function getActiveLicense() {
   return buildLicenseFromPlan(null, null);
 }
@@ -129,8 +163,39 @@ function getActiveLicense() {
 function resolveTenantLicense(tenantLicenseRow) {
   if (!tenantLicenseRow) return getActiveLicense();
   const base = buildLicenseFromPlan(tenantLicenseRow.planCode, tenantLicenseRow.status);
+  const addonRole = normalizeRoleCaps(tenantLicenseRow.addonMaxRoleActive || {});
+  const baseRole = normalizeRoleCaps(base?.limits?.maxRoleActive || {});
+  const mergedRole = Object.keys(baseRole).reduce((acc, role) => {
+    acc[role] = Number(baseRole[role] || 0) + Number(addonRole[role] || 0);
+    return acc;
+  }, {});
+  const hasUnlimitedRole = Object.keys(base?.limits?.maxRoleActive || {}).length === 0;
+  const addonUsers = Number(tenantLicenseRow.addonMaxActiveUsers || 0);
+  const maxActiveUsersBase = Number(base?.limits?.maxActiveUsers || 0);
+  const maxActiveUsers = maxActiveUsersBase + (addonUsers > 0 ? addonUsers : 0);
+  const monthly = Number.isFinite(Number(tenantLicenseRow.overrideMonthlyPriceCents))
+    ? Number(tenantLicenseRow.overrideMonthlyPriceCents)
+    : Number(base?.pricing?.monthlyPriceCents || 0);
+  const annual = Number.isFinite(Number(tenantLicenseRow.overrideAnnualPriceCents))
+    ? Number(tenantLicenseRow.overrideAnnualPriceCents)
+    : Number(base?.pricing?.annualPriceCents || 0);
   return {
     ...base,
+    limits: {
+      ...base.limits,
+      maxActiveUsers,
+      maxRoleActive: hasUnlimitedRole ? {} : mergedRole,
+    },
+    pricing: {
+      ...base.pricing,
+      monthlyPriceCents: monthly,
+      annualPriceCents: annual,
+    },
+    extras: {
+      addonMaxActiveUsers: addonUsers,
+      addonMaxRoleActive: addonRole,
+      description: tenantLicenseRow.extrasDescription || null,
+    },
     startsAt: tenantLicenseRow.startsAt || null,
     endsAt: tenantLicenseRow.endsAt || null,
     graceUntil: tenantLicenseRow.graceUntil || null,
@@ -151,6 +216,9 @@ function isFeatureEnabled(featureKey, license = getActiveLicense()) {
 module.exports = {
   PLAN_CATALOG,
   normalizeStatus,
+  normalizeRoleCaps,
+  totalRoleCaps,
+  findBestPlanForRoleCaps,
   buildLicenseFromPlan,
   getActiveLicense,
   resolveTenantLicense,

@@ -187,3 +187,35 @@
   - `StockReservationItem`
 - Backend ajustado para gravar `tenantId` nessas entidades em fluxos de escrita.
 - `tenant-audit` ampliado com validacoes de mismatch de `tenantId` nas tabelas filhas.
+
+### Licenciamento - Melhorias e Ajustes do Padrao (v2)
+- Governanca de alteracao comercial reforcada:
+  - Contratante nao altera mais a licenca diretamente.
+  - Ajuste de licenca passa por fluxo de solicitacao e aprovacao.
+- Novo fluxo operacional:
+  - Contratante solicita alteracao de quantidade e tipo de usuarios.
+  - Desenvolvedor (Master) revisa, recalcula valores e envia proposta.
+  - Contratante aprova a proposta e so entao a configuracao e aplicada.
+- Regra de plano:
+  - Se a configuracao solicitada encaixa em plano existente, o plano da licenca e atualizado para esse plano.
+  - Se nao encaixa, a proposta e aplicada como extra comercial.
+- Validade:
+  - Data de encerramento da licenca permanece inalterada na aplicacao da proposta.
+- Persistencia de fluxo:
+  - Novo modelo `TenantLicenseChangeRequest` para ciclo de solicitacao, revisao e decisao.
+  - `TenantLicense` ampliada para suportar extras (`addonMaxActiveUsers`, `addonMaxRoleActive`, `overrideMonthlyPriceCents`, `overrideAnnualPriceCents`, `extrasDescription`).
+- Endpoints adicionados:
+  - Contratante:
+    - `GET /api/license/me/change-requests`
+    - `POST /api/license/me/change-requests`
+    - `POST /api/license/me/change-requests/:id/approve`
+  - Desenvolvedor (Master):
+    - `GET /api/license/admin/change-requests`
+    - `PUT /api/license/admin/change-requests/:id/review`
+- Importacao de dados por licenciamento:
+  - Modulo de importacao posicionado no contratante (nao no desenvolvedor).
+  - Validacao previa por esquema de tabela, com bloqueio de arquivos incompativeis.
+  - Auditoria de importacao ajustada para o schema atual de `TenantLicenseAudit`.
+- Endpoints de importacao:
+  - `POST /api/license/me/import/validate`
+  - `POST /api/license/me/import/execute`

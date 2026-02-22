@@ -81,6 +81,16 @@ const MODULO_LABELS = {
   reportsTransfers: "Relatórios de transferências",
 };
 
+const LICENSE_REQUEST_STATUS = {
+  PENDING_MASTER_REVIEW: "Pendente do Desenvolvedor",
+  PENDING_CONTRACTOR_APPROVAL: "Pendente do Contratante",
+  APPLIED: "Aplicada",
+  REJECTED: "Rejeitada",
+  CANCELED: "Cancelada",
+};
+
+const USER_ROLE_ORDER = ["ADMIN", "VENDEDOR", "CAIXA", "FARMACEUTICO"];
+
 const IMPORT_TABLE_OPTIONS = [
   { key: "stores", label: "Lojas", columns: "name;type;active;isDefault;cnpj;phone;email;street;number;complement;district;city;state;zipCode" },
   { key: "categories", label: "Categorias", columns: "name;active" },
@@ -135,6 +145,22 @@ export default function Config() {
   const [cleanupTarget, setCleanupTarget] = useState(null);
   const [cleanupConfirm, setCleanupConfirm] = useState("");
   const [cleanupSubmitting, setCleanupSubmitting] = useState(false);
+  const [myLicenseRequests, setMyLicenseRequests] = useState([]);
+  const [adminLicenseRequests, setAdminLicenseRequests] = useState([]);
+  const [requestForm, setRequestForm] = useState({ ADMIN: 1, VENDEDOR: 1, CAIXA: 1, FARMACEUTICO: 1, note: "" });
+  const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const [selectedAdminRequestId, setSelectedAdminRequestId] = useState("");
+  const [adminProposalForm, setAdminProposalForm] = useState({
+    ADMIN: 1,
+    VENDEDOR: 1,
+    CAIXA: 1,
+    FARMACEUTICO: 1,
+    monthlyPriceCents: "",
+    annualPriceCents: "",
+    extrasDescription: "",
+    note: "",
+  });
+  const [adminReviewSubmitting, setAdminReviewSubmitting] = useState(false);
   const [importSelections, setImportSelections] = useState({});
   const [importValidation, setImportValidation] = useState([]);
   const [importValidating, setImportValidating] = useState(false);
@@ -167,8 +193,10 @@ export default function Config() {
       Promise.all([
         apiFetch("/api/license/me"),
         canManageLicense ? apiFetch("/api/license/admin/licenses").catch(() => ({ data: { licenses: [] } })) : Promise.resolve({ data: { licenses: [] } }),
+        canManageLicense ? apiFetch("/api/license/me/change-requests").catch(() => ({ data: { requests: [] } })) : Promise.resolve({ data: { requests: [] } }),
+        canManageLicense ? apiFetch("/api/license/admin/change-requests").catch(() => ({ data: { requests: [] } })) : Promise.resolve({ data: { requests: [] } }),
       ])
-        .then(([res, listRes]) => {
+        .then(([res, listRes, myReqRes, adminReqRes]) => {
           const lic = res.data || null;
           const now = new Date();
           const oneYear = new Date(now);
@@ -192,10 +220,18 @@ export default function Config() {
             logoFile: String(lic?.contractor?.logoFile || ""),
           });
           const list = listRes?.data?.licenses || [];
+          const reqs = myReqRes?.data?.requests || [];
+          const adminReqs = adminReqRes?.data?.requests || [];
           setLicensesList(list);
+          setMyLicenseRequests(reqs);
+          setAdminLicenseRequests(adminReqs);
           setSelectedLicenseId((prev) => {
             if (prev && list.some((l) => l.id === prev && !l.isDeveloperTenant)) return prev;
             return "";
+          });
+          setSelectedAdminRequestId((prev) => {
+            if (prev && adminReqs.some((r) => r.id === prev)) return prev;
+            return adminReqs[0]?.id || "";
           });
         })
         .catch((err) => addToast(err.message, "error"))
@@ -398,6 +434,86 @@ export default function Config() {
       addToast(err.message || "Falha na importação", "error");
     } finally {
       setImportExecuting(false);
+    }
+  };
+
+  const submitLicenseRequest = async () => {
+    setRequestSubmitting(true);
+    try {
+      const roleCaps = USER_ROLE_ORDER.reduce((acc, role) => {
+        acc[role] = Math.max(0, Number(requestForm?.[role] || 0));
+        return acc;
+      }, {});
+      await apiFetch("/api/license/me/change-requests", {
+        method: "POST",
+        body: JSON.stringify({
+          roleCaps,
+          note: String(requestForm.note || "").trim() || null,
+        }),
+      });
+      const myReqRes = await apiFetch("/api/license/me/change-requests");
+      setMyLicenseRequests(myReqRes?.data?.requests || []);
+      addToast("Solicitação enviada ao Desenvolvedor", "success");
+    } catch (err) {
+      addToast(err.message || "Falha ao enviar solicitação", "error");
+    } finally {
+      setRequestSubmitting(false);
+    }
+  };
+
+  const approveLicenseRequest = async (requestId) => {
+    if (!requestId) return;
+    setRequestSubmitting(true);
+    try {
+      await apiFetch(`/api/license/me/change-requests/${requestId}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ note: "Aprovado pelo contratante" }),
+      });
+      const [myReqRes, meRes] = await Promise.all([
+        apiFetch("/api/license/me/change-requests"),
+        apiFetch("/api/license/me"),
+      ]);
+      setMyLicenseRequests(myReqRes?.data?.requests || []);
+      setLicenseData(meRes?.data || null);
+      addToast("Nova configuração aplicada com sucesso", "success");
+    } catch (err) {
+      addToast(err.message || "Falha ao aprovar alteração", "error");
+    } finally {
+      setRequestSubmitting(false);
+    }
+  };
+
+  const selectedAdminRequest = adminLicenseRequests.find((r) => r.id === selectedAdminRequestId) || null;
+
+  const sendAdminProposal = async (action = "PROPOSE") => {
+    if (!selectedAdminRequestId) {
+      addToast("Selecione uma solicitação", "warning");
+      return;
+    }
+    setAdminReviewSubmitting(true);
+    try {
+      const roleCaps = USER_ROLE_ORDER.reduce((acc, role) => {
+        acc[role] = Math.max(0, Number(adminProposalForm?.[role] || 0));
+        return acc;
+      }, {});
+      await apiFetch(`/api/license/admin/change-requests/${selectedAdminRequestId}/review`, {
+        method: "PUT",
+        body: JSON.stringify({
+          action,
+          roleCaps,
+          monthlyPriceCents: adminProposalForm.monthlyPriceCents === "" ? null : Number(adminProposalForm.monthlyPriceCents),
+          annualPriceCents: adminProposalForm.annualPriceCents === "" ? null : Number(adminProposalForm.annualPriceCents),
+          extrasDescription: String(adminProposalForm.extrasDescription || "").trim() || null,
+          note: String(adminProposalForm.note || "").trim() || null,
+        }),
+      });
+      const adminReqRes = await apiFetch("/api/license/admin/change-requests");
+      setAdminLicenseRequests(adminReqRes?.data?.requests || []);
+      addToast(action === "REJECT" ? "Solicitação rejeitada" : "Proposta enviada ao contratante", "success");
+    } catch (err) {
+      addToast(err.message || "Falha ao revisar solicitação", "error");
+    } finally {
+      setAdminReviewSubmitting(false);
     }
   };
 
@@ -642,6 +758,22 @@ export default function Config() {
     setImportResult(null);
   }, [selectedLicenseId, novoContratanteMode]);
 
+  useEffect(() => {
+    if (!selectedAdminRequest) return;
+    const caps = selectedAdminRequest.requestedRoleCaps || {};
+    setAdminProposalForm((prev) => ({
+      ...prev,
+      ADMIN: Number(caps.ADMIN || 0),
+      VENDEDOR: Number(caps.VENDEDOR || 0),
+      CAIXA: Number(caps.CAIXA || 0),
+      FARMACEUTICO: Number(caps.FARMACEUTICO || 0),
+      monthlyPriceCents: selectedAdminRequest.proposedMonthlyPriceCents ?? "",
+      annualPriceCents: selectedAdminRequest.proposedAnnualPriceCents ?? "",
+      extrasDescription: selectedAdminRequest.proposedExtrasDescription || "",
+      note: selectedAdminRequest.proposedNote || "",
+    }));
+  }, [selectedAdminRequestId, selectedAdminRequest?.id]);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
@@ -873,6 +1005,68 @@ export default function Config() {
                     </div>
                   ) : null}
 
+                  {isDeveloperAdmin ? (
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                      <p className="text-sm font-semibold text-gray-900">Solicitações pendentes de ajuste de licença</p>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-medium text-gray-600">Solicitação</label>
+                        <select
+                          className={inputClass}
+                          value={selectedAdminRequestId}
+                          onChange={(e) => setSelectedAdminRequestId(e.target.value)}
+                        >
+                          {(adminLicenseRequests || []).map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {`${r.tenant?.contractorTradeName || r.tenant?.name || "Licenciado"} | ${LICENSE_REQUEST_STATUS[r.status] || r.status}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {!adminLicenseRequests?.length ? (
+                        <p className="text-xs text-gray-500">Nenhuma solicitação encontrada.</p>
+                      ) : (
+                        <>
+                          <div className="grid md:grid-cols-4 gap-2">
+                            {USER_ROLE_ORDER.map((role) => (
+                              <div key={role} className="space-y-1">
+                                <label className="block text-xs font-medium text-gray-600">{PERFIL_LABELS[role] || role}</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  className={inputClass}
+                                  value={adminProposalForm[role] ?? 0}
+                                  onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, [role]: Number(e.target.value || 0) }))}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <div className="grid md:grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="block text-xs font-medium text-gray-600">Valor mensal proposto (centavos)</label>
+                              <input className={inputClass} value={adminProposalForm.monthlyPriceCents} onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, monthlyPriceCents: e.target.value }))} />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="block text-xs font-medium text-gray-600">Valor anual proposto (centavos)</label>
+                              <input className={inputClass} value={adminProposalForm.annualPriceCents} onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, annualPriceCents: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-gray-600">Extras / observação</label>
+                            <input className={inputClass} value={adminProposalForm.extrasDescription} onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, extrasDescription: e.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium text-gray-600">Nota da proposta</label>
+                            <input className={inputClass} value={adminProposalForm.note} onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, note: e.target.value }))} />
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" onClick={() => sendAdminProposal("PROPOSE")} loading={adminReviewSubmitting}>Enviar ao contratante</Button>
+                            <Button type="button" variant="secondary" onClick={() => sendAdminProposal("REJECT")} loading={adminReviewSubmitting}>Rejeitar</Button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+
                   {canManageLicense && !isDeveloperAdmin ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <div>
@@ -996,37 +1190,99 @@ export default function Config() {
                         </ul>
                     </div>
 
-                    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
-                      <p className="text-sm font-semibold text-gray-900">Alterar licença</p>
-                      <div className="grid md:grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label className="block text-sm font-medium text-gray-700">Plano</label>
-                          <select className={inputClass} value={licenseForm.planCode} onChange={(e) => setLicenseForm((prev) => ({ ...prev, planCode: e.target.value }))} disabled={!canManageLicense}>
-                            {(licenseData?.catalog || []).map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
-                          </select>
+                    {isDeveloperAdmin ? (
+                      <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                        <p className="text-sm font-semibold text-gray-900">Alterar licença</p>
+                        <div className="grid md:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">Plano</label>
+                            <select className={inputClass} value={licenseForm.planCode} onChange={(e) => setLicenseForm((prev) => ({ ...prev, planCode: e.target.value }))} disabled={!canManageLicense}>
+                              {(licenseData?.catalog || []).map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">Status</label>
+                            <select className={inputClass} value={licenseForm.status} onChange={(e) => setLicenseForm((prev) => ({ ...prev, status: e.target.value }))} disabled={!canManageLicense}>
+                              {["TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED", "CANCELED"].map((s) => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">Data de encerramento</label>
+                            <input type="date" className={inputClass} value={licenseForm.endsAt} onChange={(e) => setLicenseForm((prev) => ({ ...prev, endsAt: e.target.value }))} disabled={!canManageLicense} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">Motivo</label>
+                            <input className={inputClass} value={licenseForm.reason} onChange={(e) => setLicenseForm((prev) => ({ ...prev, reason: e.target.value }))} placeholder="Opcional" disabled={!canManageLicense} />
+                          </div>
+                        </div>
+                        {isDeveloperAdmin && selectedLicense ? (
+                          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                            Implicações: alterar plano/status pode impactar limite de usuários, módulos disponíveis e valores.
+                          </div>
+                        ) : null}
+                        {canManageLicense ? <div className="flex justify-end"><Button onClick={submitLicense} loading={submitting}>Salvar licença</Button></div> : null}
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                        <p className="text-sm font-semibold text-gray-900">Solicitar ajuste de usuários</p>
+                        <p className="text-xs text-gray-500">Contratante não altera licença diretamente. Envie a solicitação para revisão do Desenvolvedor.</p>
+                        <div className="grid md:grid-cols-4 gap-2">
+                          {USER_ROLE_ORDER.map((role) => (
+                            <div key={role} className="space-y-1">
+                              <label className="block text-xs font-medium text-gray-600">{PERFIL_LABELS[role] || role}</label>
+                              <input
+                                type="number"
+                                min={0}
+                                className={inputClass}
+                                value={requestForm[role] ?? 0}
+                                onChange={(e) => setRequestForm((prev) => ({ ...prev, [role]: Number(e.target.value || 0) }))}
+                              />
+                            </div>
+                          ))}
                         </div>
                         <div className="space-y-1">
-                          <label className="block text-sm font-medium text-gray-700">Status</label>
-                          <select className={inputClass} value={licenseForm.status} onChange={(e) => setLicenseForm((prev) => ({ ...prev, status: e.target.value }))} disabled={!canManageLicense}>
-                            {["TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED", "CANCELED"].map((s) => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
-                          </select>
+                          <label className="block text-xs font-medium text-gray-600">Observação</label>
+                          <input className={inputClass} value={requestForm.note} onChange={(e) => setRequestForm((prev) => ({ ...prev, note: e.target.value }))} />
                         </div>
-                        <div className="space-y-1">
-                          <label className="block text-sm font-medium text-gray-700">Data de encerramento</label>
-                          <input type="date" className={inputClass} value={licenseForm.endsAt} onChange={(e) => setLicenseForm((prev) => ({ ...prev, endsAt: e.target.value }))} disabled={!canManageLicense} />
+                        <div className="flex justify-end">
+                          <Button type="button" onClick={submitLicenseRequest} loading={requestSubmitting}>Enviar solicitação</Button>
                         </div>
-                        <div className="space-y-1">
-                          <label className="block text-sm font-medium text-gray-700">Motivo</label>
-                          <input className={inputClass} value={licenseForm.reason} onChange={(e) => setLicenseForm((prev) => ({ ...prev, reason: e.target.value }))} placeholder="Opcional" disabled={!canManageLicense} />
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-gray-700">Solicitações</p>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-gray-200 text-left text-gray-500">
+                                  <th className="px-2 py-1">Status</th>
+                                  <th className="px-2 py-1">Plano proposto</th>
+                                  <th className="px-2 py-1">Mensal</th>
+                                  <th className="px-2 py-1">Diferença</th>
+                                  <th className="px-2 py-1">Ação</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {(myLicenseRequests || []).map((r) => (
+                                  <tr key={r.id}>
+                                    <td className="px-2 py-1">{LICENSE_REQUEST_STATUS[r.status] || r.status}</td>
+                                    <td className="px-2 py-1">{r.proposedPlanCode || "-"}</td>
+                                    <td className="px-2 py-1">{r.proposedMonthlyPriceCents != null ? moneyLabel(r.proposedMonthlyPriceCents) : "-"}</td>
+                                    <td className="px-2 py-1">{r.proposedDifferenceMonthlyCents != null ? moneyLabel(r.proposedDifferenceMonthlyCents) : "-"}</td>
+                                    <td className="px-2 py-1">
+                                      {r.status === "PENDING_CONTRACTOR_APPROVAL" ? (
+                                        <button type="button" className="text-primary-700 hover:text-primary-800" onClick={() => approveLicenseRequest(r.id)}>
+                                          Aprovar e aplicar
+                                        </button>
+                                      ) : "-"}
+                                    </td>
+                                  </tr>
+                                ))}
+                                {!myLicenseRequests?.length ? <tr><td colSpan={5} className="px-2 py-2 text-gray-400">Sem solicitações.</td></tr> : null}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       </div>
-                      {isDeveloperAdmin && selectedLicense ? (
-                        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                          Implicações: alterar plano/status pode impactar limite de usuários, módulos disponíveis e valores.
-                        </div>
-                      ) : null}
-                      {canManageLicense ? <div className="flex justify-end"><Button onClick={submitLicense} loading={submitting}>Salvar licença</Button></div> : null}
-                    </div>
+                    )}
                   </div>
                   )}
                 </>
