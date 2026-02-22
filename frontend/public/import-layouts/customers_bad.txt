@@ -1,0 +1,2 @@
+﻿nome;cpf;data_nasc;celular
+Cliente Invalido;11122233344;1992-02-02;91999990000

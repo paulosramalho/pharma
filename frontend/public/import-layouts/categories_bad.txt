@@ -1,0 +1,2 @@
+﻿categoria;ativo
+Perfumaria;sim

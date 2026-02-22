@@ -81,6 +81,13 @@ const MODULO_LABELS = {
   reportsTransfers: "Relatórios de transferências",
 };
 
+const IMPORT_TABLE_OPTIONS = [
+  { key: "stores", label: "Lojas", columns: "name;type;active;isDefault;cnpj;phone;email;street;number;complement;district;city;state;zipCode" },
+  { key: "categories", label: "Categorias", columns: "name;active" },
+  { key: "products", label: "Produtos", columns: "name;ean;active;requiresPrescription;controlled;defaultMarkup;categoryName;basePrice" },
+  { key: "customers", label: "Clientes", columns: "name;document;birthDate;whatsapp;phone;email" },
+];
+
 export default function Config() {
   const { user, isLicenseActive } = useAuth();
   const { addToast } = useToast();
@@ -128,6 +135,11 @@ export default function Config() {
   const [cleanupTarget, setCleanupTarget] = useState(null);
   const [cleanupConfirm, setCleanupConfirm] = useState("");
   const [cleanupSubmitting, setCleanupSubmitting] = useState(false);
+  const [importSelections, setImportSelections] = useState({});
+  const [importValidation, setImportValidation] = useState([]);
+  const [importValidating, setImportValidating] = useState(false);
+  const [importExecuting, setImportExecuting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   // Load data based on tab
   useEffect(() => {
@@ -260,6 +272,123 @@ export default function Config() {
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+
+  const readFileAsText = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsText(file, "utf-8");
+    });
+
+  const toggleImportTable = (tableKey, checked) => {
+    setImportSelections((prev) => ({
+      ...prev,
+      [tableKey]: {
+        selected: Boolean(checked),
+        file: checked ? (prev[tableKey]?.file || null) : null,
+      },
+    }));
+    setImportValidation([]);
+    setImportResult(null);
+  };
+
+  const pickImportFile = (tableKey, file) => {
+    setImportSelections((prev) => ({
+      ...prev,
+      [tableKey]: {
+        selected: true,
+        file: file || null,
+      },
+    }));
+    setImportValidation([]);
+    setImportResult(null);
+  };
+
+  const buildImportFilesPayload = async () => {
+    const selectedEntries = IMPORT_TABLE_OPTIONS
+      .map((opt) => ({ table: opt.key, meta: importSelections[opt.key] || {} }))
+      .filter((entry) => entry.meta.selected);
+
+    if (!selectedEntries.length) {
+      throw new Error("Selecione ao menos uma tabela para importar");
+    }
+
+    const missing = selectedEntries.filter((entry) => !entry.meta.file).map((entry) => entry.table);
+    if (missing.length) {
+      throw new Error(`Selecione o arquivo para: ${missing.join(", ")}`);
+    }
+
+    const files = [];
+    for (const entry of selectedEntries) {
+      // eslint-disable-next-line no-await-in-loop
+      const content = await readFileAsText(entry.meta.file);
+      files.push({
+        table: entry.table,
+        fileName: entry.meta.file?.name || `${entry.table}.txt`,
+        content,
+      });
+    }
+    return files;
+  };
+
+  const validateSelectedImports = async () => {
+    if (!selectedLicense?.id) {
+      addToast("Selecione um contratante para validar importação", "warning");
+      return false;
+    }
+    setImportValidating(true);
+    try {
+      const files = await buildImportFilesPayload();
+      const res = await apiFetch("/api/license/admin/import/validate", {
+        method: "POST",
+        body: JSON.stringify({ tenantId: selectedLicense.id, files }),
+      });
+      const validation = res?.data?.validation || [];
+      setImportValidation(validation);
+      setImportResult(null);
+      const compatible = validation.every((item) => item.compatible);
+      addToast(compatible ? "Arquivos validados com sucesso" : "Existem arquivos incompatíveis", compatible ? "success" : "warning");
+      return compatible;
+    } catch (err) {
+      addToast(err.message || "Falha na validação dos arquivos", "error");
+      return false;
+    } finally {
+      setImportValidating(false);
+    }
+  };
+
+  const executeSelectedImports = async () => {
+    if (!selectedLicense?.id) {
+      addToast("Selecione um contratante para importar", "warning");
+      return;
+    }
+    setImportExecuting(true);
+    try {
+      const files = await buildImportFilesPayload();
+      const currentValidation = importValidation || [];
+      const needsValidation = currentValidation.length === 0;
+      let compatible = !needsValidation && currentValidation.every((item) => item.compatible);
+      if (needsValidation) compatible = await validateSelectedImports();
+      if (!compatible) {
+        addToast("Importação bloqueada. Corrija os arquivos incompatíveis.", "warning");
+        return;
+      }
+      const res = await apiFetch("/api/license/admin/import/execute", {
+        method: "POST",
+        body: JSON.stringify({ tenantId: selectedLicense.id, files }),
+      });
+      const imported = res?.data?.imported || [];
+      setImportResult(imported);
+      addToast("Importação concluída com sucesso", "success");
+      const listRes = await apiFetch("/api/license/admin/licenses");
+      setLicensesList(listRes?.data?.licenses || []);
+    } catch (err) {
+      addToast(err.message || "Falha na importação", "error");
+    } finally {
+      setImportExecuting(false);
+    }
+  };
 
   // STORE HANDLERS
   const openCreateStore = () => { setStoreForm(emptyStoreForm); setStoreEditId(null); setStoreModal(true); };
@@ -496,6 +625,12 @@ export default function Config() {
     }));
   }, [isDeveloperAdmin, selectedLicenseId, selectedLicense?.license?.planCode, selectedLicense?.license?.status, selectedLicense?.license?.endsAt]);
 
+  useEffect(() => {
+    setImportSelections({});
+    setImportValidation([]);
+    setImportResult(null);
+  }, [selectedLicenseId, novoContratanteMode]);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
@@ -727,6 +862,110 @@ export default function Config() {
                     </div>
                   ) : null}
 
+                  {isDeveloperAdmin ? (
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Importação de tabelas</p>
+                        <p className="text-xs text-gray-500">Selecione uma ou mais tabelas, anexe os arquivos e valide antes de importar.</p>
+                      </div>
+                      {!selectedLicense ? (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                          Selecione um contratante para habilitar a importação.
+                        </p>
+                      ) : (
+                        <>
+                          <div className="grid md:grid-cols-2 gap-2">
+                            {IMPORT_TABLE_OPTIONS.map((opt) => (
+                              <div key={opt.key} className="rounded border border-gray-200 p-2">
+                                <label className="flex items-center gap-2 text-sm text-gray-800">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(importSelections[opt.key]?.selected)}
+                                    onChange={(e) => toggleImportTable(opt.key, e.target.checked)}
+                                  />
+                                  <span className="font-medium">{opt.label}</span>
+                                </label>
+                                <p className="text-[11px] text-gray-500 mt-1">Colunas: {opt.columns}</p>
+                                <input
+                                  type="file"
+                                  accept=".txt,.csv"
+                                  className="mt-2 block w-full text-xs text-gray-600"
+                                  onChange={(e) => pickImportFile(opt.key, e.target.files?.[0] || null)}
+                                  disabled={!importSelections[opt.key]?.selected}
+                                />
+                                {importSelections[opt.key]?.file ? (
+                                  <p className="text-[11px] text-gray-500 mt-1">Arquivo: {importSelections[opt.key].file.name}</p>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" variant="secondary" onClick={validateSelectedImports} loading={importValidating}>
+                              Validar arquivos
+                            </Button>
+                            <Button type="button" onClick={executeSelectedImports} loading={importExecuting}>
+                              Importar selecionadas
+                            </Button>
+                          </div>
+                        </>
+                      )}
+
+                      {importValidation.length > 0 ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-gray-200 text-left text-gray-500">
+                                <th className="px-2 py-1">Tabela</th>
+                                <th className="px-2 py-1">Arquivo</th>
+                                <th className="px-2 py-1">Compatível</th>
+                                <th className="px-2 py-1">Detalhes</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {importValidation.map((item) => (
+                                <tr key={`${item.table}-${item.fileName}`}>
+                                  <td className="px-2 py-1 font-medium text-gray-900">{item.label || item.table}</td>
+                                  <td className="px-2 py-1 text-gray-700">{item.fileName || "-"}</td>
+                                  <td className={`px-2 py-1 font-semibold ${item.compatible ? "text-emerald-700" : "text-red-700"}`}>
+                                    {item.compatible ? "Sim" : "Não"}
+                                  </td>
+                                  <td className="px-2 py-1 text-gray-700">
+                                    {item.errors?.length ? item.errors.join(" | ") : (item.warnings?.join(" | ") || "OK")}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+
+                      {importResult?.length ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-gray-200 text-left text-gray-500">
+                                <th className="px-2 py-1">Tabela</th>
+                                <th className="px-2 py-1">Arquivo</th>
+                                <th className="px-2 py-1">Linhas</th>
+                                <th className="px-2 py-1">Importadas</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {importResult.map((row) => (
+                                <tr key={`${row.table}-${row.fileName}`}>
+                                  <td className="px-2 py-1 font-medium text-gray-900">{row.label || row.table}</td>
+                                  <td className="px-2 py-1 text-gray-700">{row.fileName || "-"}</td>
+                                  <td className="px-2 py-1 text-gray-700">{Number(row.totalRows || 0)}</td>
+                                  <td className="px-2 py-1 text-emerald-700 font-semibold">{Number(row.imported || 0)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {isDeveloperAdmin && !selectedLicense ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-600">
                       Selecione um contratante para visualizar o plano e alterar a licença.
@@ -819,6 +1058,14 @@ export default function Config() {
                       <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_contratante.txt" target="_blank" rel="noreferrer">layout_contratante.txt</a>
                       <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_licenca.txt" target="_blank" rel="noreferrer">layout_licenca.txt</a>
                       <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/usuario_admin.txt" target="_blank" rel="noreferrer">layout_usuario_admin.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/stores_ok.txt" target="_blank" rel="noreferrer">stores_ok.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/stores_bad.txt" target="_blank" rel="noreferrer">stores_bad.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/categories_ok.txt" target="_blank" rel="noreferrer">categories_ok.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/categories_bad.txt" target="_blank" rel="noreferrer">categories_bad.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/products_ok.txt" target="_blank" rel="noreferrer">products_ok.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/products_bad.txt" target="_blank" rel="noreferrer">products_bad.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/customers_ok.txt" target="_blank" rel="noreferrer">customers_ok.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/customers_bad.txt" target="_blank" rel="noreferrer">customers_bad.txt</a>
                     </div>
                   </div>
                 </>

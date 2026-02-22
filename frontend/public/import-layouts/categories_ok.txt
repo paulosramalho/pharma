@@ -1,0 +1,4 @@
+﻿name;active
+Perfumaria;true
+Medicamentos;true
+Higiene;false

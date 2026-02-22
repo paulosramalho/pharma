@@ -535,6 +535,253 @@ function buildApiRoutes({ prisma, log }) {
     return out;
   }
 
+  const IMPORT_TABLES = {
+    stores: {
+      label: "Lojas",
+      required: ["name", "type"],
+      allowed: ["name", "type", "active", "isDefault", "cnpj", "phone", "email", "street", "number", "complement", "district", "city", "state", "zipCode"],
+    },
+    categories: {
+      label: "Categorias",
+      required: ["name"],
+      allowed: ["name", "active"],
+    },
+    products: {
+      label: "Produtos",
+      required: ["name"],
+      allowed: ["name", "ean", "active", "requiresPrescription", "controlled", "defaultMarkup", "categoryName", "basePrice"],
+    },
+    customers: {
+      label: "Clientes",
+      required: ["name"],
+      allowed: ["name", "document", "birthDate", "whatsapp", "phone", "email"],
+    },
+  };
+
+  function normalizeImportHeader(value) {
+    return String(value || "").trim().replace(/^\uFEFF/, "");
+  }
+
+  function parseDelimitedText(contentRaw = "") {
+    const content = String(contentRaw || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    if (!content) return { headers: [], rows: [], delimiter: ";" };
+    const lines = content.split("\n").filter((l) => l.trim().length > 0);
+    const first = lines[0] || "";
+    const delims = [";", ",", "\t"];
+    let delimiter = ";";
+    let best = -1;
+    for (const d of delims) {
+      const score = first.split(d).length;
+      if (score > best) {
+        best = score;
+        delimiter = d;
+      }
+    }
+    const headers = first.split(delimiter).map(normalizeImportHeader);
+    const rows = lines.slice(1).map((line) => {
+      const cells = line.split(delimiter);
+      const row = {};
+      headers.forEach((h, idx) => {
+        row[h] = String(cells[idx] || "").trim();
+      });
+      return row;
+    });
+    return { headers, rows, delimiter };
+  }
+
+  function parseBool(value, fallback = false) {
+    const v = String(value || "").trim().toLowerCase();
+    if (!v) return fallback;
+    if (["1", "true", "sim", "yes", "y"].includes(v)) return true;
+    if (["0", "false", "nao", "não", "no", "n"].includes(v)) return false;
+    return fallback;
+  }
+
+  function parseNum(value, fallback = 0) {
+    const v = String(value || "").trim().replace(",", ".");
+    if (!v) return fallback;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function validateImportFile({ table, fileName, content }) {
+    const schema = IMPORT_TABLES[table];
+    if (!schema) {
+      return {
+        table,
+        fileName: fileName || "-",
+        compatible: false,
+        errors: [`Tabela nao suportada: ${table}`],
+        warnings: [],
+        totalRows: 0,
+        parsedRows: [],
+      };
+    }
+
+    const parsed = parseDelimitedText(content || "");
+    const headers = parsed.headers;
+    const errors = [];
+    const warnings = [];
+
+    if (headers.length === 0) {
+      errors.push("Arquivo vazio ou sem cabecalho.");
+    }
+    const missing = schema.required.filter((c) => !headers.includes(c));
+    if (missing.length > 0) {
+      errors.push(`Colunas obrigatorias ausentes: ${missing.join(", ")}`);
+    }
+    const unknown = headers.filter((h) => !schema.allowed.includes(h));
+    if (unknown.length > 0) {
+      errors.push(`Colunas nao reconhecidas: ${unknown.join(", ")}`);
+    }
+
+    const parsedRows = parsed.rows;
+    if (parsedRows.length === 0) {
+      warnings.push("Sem linhas de dados.");
+    }
+
+    return {
+      table,
+      label: schema.label,
+      fileName: fileName || "-",
+      compatible: errors.length === 0,
+      errors,
+      warnings,
+      totalRows: parsedRows.length,
+      parsedRows,
+    };
+  }
+
+  async function applyImportRows({ tx, tenantId, table, rows }) {
+    if (table === "stores") {
+      let count = 0;
+      for (const r of rows) {
+        const name = String(r.name || "").trim();
+        if (!name) continue;
+        const typeRaw = String(r.type || "LOJA").trim().toUpperCase();
+        const type = typeRaw === "CENTRAL" ? "CENTRAL" : "LOJA";
+        const existing = await tx.store.findFirst({
+          where: { tenantId, name },
+          select: { id: true },
+        });
+        const data = {
+          tenantId,
+          name,
+          type,
+          active: parseBool(r.active, true),
+          isDefault: parseBool(r.isDefault, false),
+          cnpj: String(r.cnpj || "").replace(/\D/g, "") || null,
+          phone: String(r.phone || "").replace(/\D/g, "") || null,
+          email: String(r.email || "").trim().toLowerCase() || null,
+          street: String(r.street || "").trim() || null,
+          number: String(r.number || "").trim() || null,
+          complement: String(r.complement || "").trim() || null,
+          district: String(r.district || "").trim() || null,
+          city: String(r.city || "").trim() || null,
+          state: String(r.state || "").trim().toUpperCase().slice(0, 2) || null,
+          zipCode: String(r.zipCode || "").replace(/\D/g, "") || null,
+        };
+        if (existing?.id) {
+          await tx.store.update({ where: { id: existing.id }, data });
+        } else {
+          await tx.store.create({ data });
+        }
+        count += 1;
+      }
+      return { imported: count };
+    }
+
+    if (table === "categories") {
+      let count = 0;
+      for (const r of rows) {
+        const name = String(r.name || "").trim();
+        if (!name) continue;
+        const existing = await tx.category.findFirst({
+          where: { tenantId, name },
+          select: { id: true },
+        });
+        const data = { tenantId, name, active: parseBool(r.active, true) };
+        if (existing?.id) {
+          await tx.category.update({ where: { id: existing.id }, data });
+        } else {
+          await tx.category.create({ data });
+        }
+        count += 1;
+      }
+      return { imported: count };
+    }
+
+    if (table === "products") {
+      let count = 0;
+      for (const r of rows) {
+        const name = String(r.name || "").trim();
+        if (!name) continue;
+        const ean = String(r.ean || "").replace(/\D/g, "") || null;
+        const categoryName = String(r.categoryName || "").trim();
+        let categoryId = null;
+        if (categoryName) {
+          let cat = await tx.category.findFirst({ where: { tenantId, name: categoryName }, select: { id: true } });
+          if (!cat) cat = await tx.category.create({ data: { tenantId, name: categoryName, active: true }, select: { id: true } });
+          categoryId = cat.id;
+        }
+        const existing = ean
+          ? await tx.product.findFirst({ where: { tenantId, ean }, select: { id: true } })
+          : await tx.product.findFirst({ where: { tenantId, name }, select: { id: true } });
+        const data = {
+          tenantId,
+          categoryId,
+          name,
+          ean,
+          active: parseBool(r.active, true),
+          requiresPrescription: parseBool(r.requiresPrescription, false),
+          controlled: parseBool(r.controlled, false),
+          defaultMarkup: parseNum(r.defaultMarkup, 0),
+          basePrice: parseNum(r.basePrice, 0),
+        };
+        if (existing?.id) {
+          await tx.product.update({ where: { id: existing.id }, data });
+        } else {
+          await tx.product.create({ data });
+        }
+        count += 1;
+      }
+      return { imported: count };
+    }
+
+    if (table === "customers") {
+      let count = 0;
+      for (const r of rows) {
+        const name = String(r.name || "").trim();
+        if (!name) continue;
+        const document = String(r.document || "").replace(/\D/g, "") || null;
+        const email = String(r.email || "").trim().toLowerCase() || null;
+        const where = document
+          ? { tenantId, document }
+          : { tenantId, name, email: email || undefined };
+        const existing = await tx.customer.findFirst({ where, select: { id: true } });
+        const data = {
+          tenantId,
+          name,
+          document,
+          birthDate: safeDate(r.birthDate) || null,
+          whatsapp: String(r.whatsapp || "").replace(/\D/g, "") || null,
+          phone: String(r.phone || "").replace(/\D/g, "") || null,
+          email,
+          active: true,
+        };
+        if (existing?.id) {
+          await tx.customer.update({ where: { id: existing.id }, data });
+        } else {
+          await tx.customer.create({ data });
+        }
+        count += 1;
+      }
+      return { imported: count };
+    }
+
+    return { imported: 0 };
+  }
+
   async function assertFeature(req, featureKey, message) {
     const license = await getLicense(req);
     if (!isFeatureEnabled(featureKey, license)) {
@@ -1325,6 +1572,117 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, {
       deletedCount: nonMaster.length,
       deletedTenants: nonMaster,
+    });
+  }));
+
+  router.post("/license/admin/import/validate", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const tenantId = String(req.body?.tenantId || "").trim();
+    const files = Array.isArray(req.body?.files) ? req.body.files : [];
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (files.length === 0) return res.status(400).json({ error: { code: 400, message: "Informe ao menos um arquivo para validacao" } });
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Nao e permitido importar dados para a licenca Desenvolvedor nesta tela" } });
+    }
+
+    const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
+    const duplicated = tables.find((t, idx) => tables.indexOf(t) !== idx);
+    if (duplicated) {
+      return res.status(400).json({ error: { code: 400, message: `Tabela duplicada no envio: ${duplicated}` } });
+    }
+
+    const validation = files.map((f) => validateImportFile({
+      table: String(f?.table || "").trim(),
+      fileName: String(f?.fileName || "").trim(),
+      content: String(f?.content || ""),
+    }));
+    const compatible = validation.every((item) => item.compatible);
+    return sendOk(res, req, { tenantId, tenantName: tenant.name, compatible, validation });
+  }));
+
+  router.post("/license/admin/import/execute", asyncHandler(async (req, res) => {
+    const sourceTenantId = await assertDeveloperAdmin(req);
+    const tenantId = String(req.body?.tenantId || "").trim();
+    const files = Array.isArray(req.body?.files) ? req.body.files : [];
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (files.length === 0) return res.status(400).json({ error: { code: 400, message: "Informe ao menos um arquivo para importacao" } });
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Nao e permitido importar dados para a licenca Desenvolvedor nesta tela" } });
+    }
+
+    const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
+    const duplicated = tables.find((t, idx) => tables.indexOf(t) !== idx);
+    if (duplicated) {
+      return res.status(400).json({ error: { code: 400, message: `Tabela duplicada no envio: ${duplicated}` } });
+    }
+
+    const validation = files.map((f) => validateImportFile({
+      table: String(f?.table || "").trim(),
+      fileName: String(f?.fileName || "").trim(),
+      content: String(f?.content || ""),
+    }));
+    const incompatible = validation.filter((item) => !item.compatible);
+    if (incompatible.length > 0) {
+      return res.status(400).json({
+        error: { code: 400, message: "Existe arquivo incompativel. Corrija antes de importar." },
+        data: { compatible: false, validation },
+      });
+    }
+
+    const summary = [];
+    await prisma.$transaction(async (tx) => {
+      for (const item of validation) {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await applyImportRows({
+          tx,
+          tenantId: tenant.id,
+          table: item.table,
+          rows: item.parsedRows || [],
+        });
+        summary.push({
+          table: item.table,
+          label: item.label || item.table,
+          fileName: item.fileName || "-",
+          totalRows: Number(item.totalRows || 0),
+          imported: Number(result?.imported || 0),
+        });
+      }
+      await tx.tenantLicenseAudit.create({
+        data: {
+          tenantId: sourceTenantId,
+          actorUserId: req.user.id,
+          actorEmail: req.user.email || null,
+          action: "LICENSE_IMPORT_DATA",
+          fromPlanCode: null,
+          toPlanCode: null,
+          fromStatus: null,
+          toStatus: null,
+          reason: "Importacao de dados para licenciado",
+          payload: {
+            targetTenantId: tenant.id,
+            targetTenantName: tenant.name,
+            importedTables: summary,
+          },
+        },
+      });
+    });
+
+    return sendOk(res, req, {
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      imported: summary,
     });
   }));
 

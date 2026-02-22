@@ -1,0 +1,3 @@
+﻿name;document;birthDate;whatsapp;phone;email
+Maria Silva;12345678901;1990-05-10;91999998888;9133345566;maria@demo.com
+Joao Souza;98765432100;1985-11-21;91977776666;9132223344;joao@demo.com
