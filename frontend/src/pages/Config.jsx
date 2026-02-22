@@ -121,6 +121,11 @@ export default function Config() {
 
   const [submitting, setSubmitting] = useState(false);
   const adminLicenseLocked = user?.role === "ADMIN" && !isLicenseActive;
+  const [licensesList, setLicensesList] = useState([]);
+  const [licensesLoading, setLicensesLoading] = useState(false);
+  const [cleanupTarget, setCleanupTarget] = useState(null);
+  const [cleanupConfirm, setCleanupConfirm] = useState("");
+  const [cleanupSubmitting, setCleanupSubmitting] = useState(false);
 
   // Load data based on tab
   useEffect(() => {
@@ -145,8 +150,11 @@ export default function Config() {
     } else if (tab === "clientes") {
       loadCustomers();
     } else if (tab === "licenciamento") {
-      apiFetch("/api/license/me")
-        .then((res) => {
+      Promise.all([
+        apiFetch("/api/license/me"),
+        canManageLicense ? apiFetch("/api/license/admin/licenses").catch(() => ({ data: { licenses: [] } })) : Promise.resolve({ data: { licenses: [] } }),
+      ])
+        .then(([res, listRes]) => {
           const lic = res.data || null;
           const now = new Date();
           const oneYear = new Date(now);
@@ -168,6 +176,7 @@ export default function Config() {
             email: String(lic?.contractor?.email || ""),
             logoFile: String(lic?.contractor?.logoFile || ""),
           });
+          setLicensesList(listRes?.data?.licenses || []);
         })
         .catch((err) => addToast(err.message, "error"))
         .finally(() => setLoading(false));
@@ -189,6 +198,50 @@ export default function Config() {
     const d = String(v || "").replace(/\D/g, "").slice(0, 8);
     if (d.length <= 5) return d;
     return `${d.slice(0, 5)}-${d.slice(5)}`;
+  };
+
+  const openCleanupLicense = (tenant) => {
+    setCleanupTarget(tenant);
+    setCleanupConfirm("");
+  };
+
+  const openCleanupAllNonMaster = () => {
+    setCleanupTarget({ id: "__ALL__", name: "Todas as licencas (exceto Master)" });
+    setCleanupConfirm("");
+  };
+
+  const runCleanupLicense = async () => {
+    if (!cleanupTarget?.id) return;
+    if (cleanupConfirm.trim().toUpperCase() !== "CONFIRMAR") {
+      addToast("Digite CONFIRMAR para executar a limpeza", "warning");
+      return;
+    }
+    setCleanupSubmitting(true);
+    try {
+      if (cleanupTarget.id === "__ALL__") {
+        await apiFetch("/api/license/admin/cleanup-non-master", {
+          method: "POST",
+          body: JSON.stringify({ confirm: cleanupConfirm.trim().toUpperCase() }),
+        });
+        addToast("Base limpa (exceto Master)", "success");
+      } else {
+        await apiFetch("/api/license/admin/cleanup", {
+          method: "POST",
+          body: JSON.stringify({
+            tenantId: cleanupTarget.id,
+            confirm: cleanupConfirm.trim().toUpperCase(),
+          }),
+        });
+        addToast("Licenca removida com sucesso", "success");
+      }
+      setCleanupTarget(null);
+      const listRes = await apiFetch("/api/license/admin/licenses");
+      setLicensesList(listRes?.data?.licenses || []);
+    } catch (err) {
+      addToast(err.message || "Falha ao limpar licenca", "error");
+    } finally {
+      setCleanupSubmitting(false);
+    }
   };
 
   const readFileAsDataUrl = (file) =>
@@ -586,6 +639,59 @@ export default function Config() {
                 </div>
               ) : null}
 
+              {canManageLicense ? (
+                <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-2">
+                  <p className="text-sm font-semibold text-gray-900">Licenças existentes</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-200 text-left text-gray-500">
+                          <th className="px-2 py-1">Tenant</th>
+                          <th className="px-2 py-1">Documento</th>
+                          <th className="px-2 py-1">Plano</th>
+                          <th className="px-2 py-1">Status</th>
+                          <th className="px-2 py-1">L/U/C</th>
+                          <th className="px-2 py-1 w-24">Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {(licensesList || []).map((l) => (
+                          <tr key={l.id}>
+                            <td className="px-2 py-1">
+                              <span className="font-medium text-gray-900">{l.name}</span>
+                              {l.isDeveloperTenant ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Master</span> : null}
+                            </td>
+                            <td className="px-2 py-1 text-gray-600">{cpfCnpjMask(l.contractorDocument || "") || "-"}</td>
+                            <td className="px-2 py-1 text-gray-700">{l.license?.planCode || "-"}</td>
+                            <td className="px-2 py-1 text-gray-700">{STATUS_LABELS[String(l.license?.status || "").toUpperCase()] || l.license?.status || "-"}</td>
+                            <td className="px-2 py-1 text-gray-700">
+                              {Number(l?._count?.stores || 0)}/{Number(l?._count?.users || 0)}/{Number(l?._count?.customers || 0)}
+                            </td>
+                            <td className="px-2 py-1">
+                              {l.isDeveloperTenant ? (
+                                <span className="text-gray-400">Protegida</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openCleanupLicense(l)}
+                                  className="text-red-600 hover:text-red-700"
+                                >
+                                  Limpar
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {!licensesList?.length ? (
+                          <tr><td colSpan={6} className="px-2 py-2 text-gray-400">Nenhuma licença encontrada.</td></tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[11px] text-gray-500">L/U/C = Lojas / Usuários / Clientes</p>
+                </div>
+              ) : null}
+
               <div className={novoContratanteMode ? "hidden" : "space-y-4"}>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
@@ -794,6 +900,11 @@ export default function Config() {
                   <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_licenca.txt" target="_blank" rel="noreferrer">tenant_licenca.txt</a>
                   <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/usuario_admin.txt" target="_blank" rel="noreferrer">usuario_admin.txt</a>
                 </div>
+                <div className="pt-1">
+                  <Button type="button" variant="secondary" onClick={openCleanupAllNonMaster}>
+                    Zerar base (exceto Master)
+                  </Button>
+                </div>
               </div>
               ) : null}
 
@@ -852,6 +963,30 @@ export default function Config() {
       )}
 
       {/* â•â•â• STORE MODAL â•â•â• */}
+      <Modal open={!!cleanupTarget} onClose={() => setCleanupTarget(null)} title="Limpar licença selecionada">
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">
+            Esta ação apagará todos os dados da licença selecionada.
+          </p>
+          <p className="text-xs text-gray-500">
+            Licença: <span className="font-medium">{cleanupTarget?.name || "-"}</span>
+          </p>
+          <p className="text-xs text-red-600">
+            Digite <span className="font-semibold">CONFIRMAR</span> para continuar.
+          </p>
+          <input
+            className={inputClass}
+            value={cleanupConfirm}
+            onChange={(e) => setCleanupConfirm(e.target.value)}
+            placeholder="CONFIRMAR"
+          />
+          <div className="flex gap-2 pt-1">
+            <Button variant="secondary" className="flex-1" onClick={() => setCleanupTarget(null)}>Cancelar</Button>
+            <Button className="flex-1" loading={cleanupSubmitting} onClick={runCleanupLicense}>Executar limpeza</Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={storeModal} onClose={() => setStoreModal(false)} title={storeEditId ? "Editar Loja" : "Nova Loja"} size="lg">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">

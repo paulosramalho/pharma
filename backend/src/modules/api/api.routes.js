@@ -66,6 +66,21 @@ function buildApiRoutes({ prisma, log }) {
   async function getLicense(req) {
     const tenantId = await resolveTenantId(req);
     if (!tenantId) return getActiveLicense();
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { isDeveloperTenant: true },
+    });
+    if (tenant?.isDeveloperTenant) {
+      // Master/dev license always has full feature set.
+      return resolveTenantLicense({
+        planCode: "ENTERPRISE",
+        status: "ACTIVE",
+        startsAt: new Date(),
+        endsAt: null,
+        graceUntil: null,
+        updatedAt: new Date(),
+      });
+    }
     const row = await prisma.tenantLicense.findUnique({
       where: { tenantId },
       select: {
@@ -281,6 +296,79 @@ function buildApiRoutes({ prisma, log }) {
       adminName,
       adminEmail,
     };
+  }
+
+  async function deleteTenantData(tx, tenantId) {
+    // Child tables with direct tenantId
+    await tx.chatMessage.deleteMany({ where: { tenantId } });
+    await tx.stockReservationItem.deleteMany({ where: { tenantId } });
+    await tx.stockTransferItem.deleteMany({ where: { tenantId } });
+    await tx.posTransaction.deleteMany({ where: { tenantId } });
+    await tx.payment.deleteMany({ where: { tenantId } });
+    await tx.saleItem.deleteMany({ where: { tenantId } });
+    await tx.inventoryMovement.deleteMany({ where: { tenantId } });
+    await tx.inventoryLot.deleteMany({ where: { tenantId } });
+    await tx.discount.deleteMany({ where: { tenantId } });
+    await tx.address.deleteMany({ where: { tenantId } });
+    await tx.delivery.deleteMany({ where: { tenantId } });
+    await tx.cashMovement.deleteMany({
+      where: {
+        session: { tenantId },
+      },
+    });
+    await tx.cashSession.deleteMany({ where: { tenantId } });
+    await tx.saleControlledDispensation.deleteMany({
+      where: {
+        sale: { tenantId },
+      },
+    });
+    await tx.sale.deleteMany({ where: { tenantId } });
+    await tx.stockReservation.deleteMany({ where: { tenantId } });
+    await tx.stockTransfer.deleteMany({ where: { tenantId } });
+    await tx.auditLog.deleteMany({ where: { tenantId } });
+    await tx.customer.deleteMany({ where: { tenantId } });
+    await tx.productPrice.deleteMany({
+      where: {
+        product: { tenantId },
+      },
+    });
+    await tx.product.deleteMany({ where: { tenantId } });
+    await tx.category.deleteMany({ where: { tenantId } });
+    await tx.storeUser.deleteMany({
+      where: {
+        store: { tenantId },
+      },
+    });
+    await tx.roleUser.deleteMany({
+      where: {
+        user: { tenantId },
+      },
+    });
+    await tx.user.deleteMany({ where: { tenantId } });
+    await tx.fiscalEvent.deleteMany({
+      where: {
+        doc: { store: { tenantId } },
+      },
+    });
+    await tx.fiscalDocument.deleteMany({
+      where: {
+        store: { tenantId },
+      },
+    });
+    await tx.fiscalSequence.deleteMany({
+      where: {
+        store: { tenantId },
+      },
+    });
+    await tx.fiscalConfig.deleteMany({
+      where: {
+        store: { tenantId },
+      },
+    });
+    await tx.store.deleteMany({ where: { tenantId } });
+    await tx.tenantLicenseAudit.deleteMany({ where: { tenantId } });
+    await tx.tenantLicense.deleteMany({ where: { tenantId } });
+    await tx.tenant.delete({ where: { id: tenantId } });
   }
 
   async function assertFeature(req, featureKey, message) {
@@ -931,6 +1019,92 @@ function buildApiRoutes({ prisma, log }) {
         temporaryPassword: passwordTemp,
         mustChangePassword: true,
       },
+    });
+  }));
+
+  router.get("/license/admin/licenses", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const rows = await prisma.tenant.findMany({
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        isDeveloperTenant: true,
+        contractorDocument: true,
+        contractorNameOrCompany: true,
+        createdAt: true,
+        _count: {
+          select: {
+            users: true,
+            stores: true,
+            customers: true,
+            chatMessages: true,
+            transfers: true,
+          },
+        },
+        license: {
+          select: {
+            id: true,
+            planCode: true,
+            status: true,
+            startsAt: true,
+            endsAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+      orderBy: [{ isDeveloperTenant: "desc" }, { createdAt: "asc" }],
+    });
+    return sendOk(res, req, { licenses: rows });
+  }));
+
+  router.post("/license/admin/cleanup", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const tenantId = String(req.body?.tenantId || "").trim();
+    const confirm = String(req.body?.confirm || "").trim().toUpperCase();
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "tenantId obrigatorio" } });
+    if (confirm !== "CONFIRMAR") {
+      return res.status(400).json({ error: { code: 400, message: "Confirmacao invalida. Informe CONFIRMAR." } });
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, slug: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenca/tenant nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "A licenca Master nao pode ser apagada" } });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await deleteTenantData(tx, tenant.id);
+    });
+
+    return sendOk(res, req, { deleted: true, tenant });
+  }));
+
+  router.post("/license/admin/cleanup-non-master", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const confirm = String(req.body?.confirm || "").trim().toUpperCase();
+    if (confirm !== "CONFIRMAR") {
+      return res.status(400).json({ error: { code: 400, message: "Confirmacao invalida. Informe CONFIRMAR." } });
+    }
+
+    const nonMaster = await prisma.tenant.findMany({
+      where: { isDeveloperTenant: false },
+      select: { id: true, name: true, slug: true },
+    });
+
+    for (const t of nonMaster) {
+      // eslint-disable-next-line no-await-in-loop
+      await prisma.$transaction(async (tx) => {
+        await deleteTenantData(tx, t.id);
+      });
+    }
+
+    return sendOk(res, req, {
+      deletedCount: nonMaster.length,
+      deletedTenants: nonMaster,
     });
   }));
 
