@@ -123,6 +123,7 @@ export default function Config() {
   const adminLicenseLocked = user?.role === "ADMIN" && !isLicenseActive;
   const [licensesList, setLicensesList] = useState([]);
   const [licensesLoading, setLicensesLoading] = useState(false);
+  const [selectedLicenseId, setSelectedLicenseId] = useState("");
   const [cleanupTarget, setCleanupTarget] = useState(null);
   const [cleanupConfirm, setCleanupConfirm] = useState("");
   const [cleanupSubmitting, setCleanupSubmitting] = useState(false);
@@ -176,7 +177,12 @@ export default function Config() {
             email: String(lic?.contractor?.email || ""),
             logoFile: String(lic?.contractor?.logoFile || ""),
           });
-          setLicensesList(listRes?.data?.licenses || []);
+          const list = listRes?.data?.licenses || [];
+          setLicensesList(list);
+          setSelectedLicenseId((prev) => {
+            if (prev && list.some((l) => l.id === prev)) return prev;
+            return list[0]?.id || "";
+          });
         })
         .catch((err) => addToast(err.message, "error"))
         .finally(() => setLoading(false));
@@ -206,7 +212,7 @@ export default function Config() {
   };
 
   const openCleanupAllNonMaster = () => {
-    setCleanupTarget({ id: "__ALL__", name: "Todas as licencas (exceto Master)" });
+    setCleanupTarget({ id: "__ALL__", name: "Todos os licenciados (exceto Desenvolvedor)" });
     setCleanupConfirm("");
   };
 
@@ -223,7 +229,7 @@ export default function Config() {
           method: "POST",
           body: JSON.stringify({ confirm: cleanupConfirm.trim().toUpperCase() }),
         });
-        addToast("Base limpa (exceto Master)", "success");
+        addToast("Base limpa (exceto Desenvolvedor)", "success");
       } else {
         await apiFetch("/api/license/admin/cleanup", {
           method: "POST",
@@ -352,12 +358,21 @@ export default function Config() {
 
   const roleName = (u) => u.role?.name || u.role || "—";
   const canManageLicense = user?.role === "ADMIN";
+  const isDeveloperAdmin = canManageLicense && Boolean(licenseData?.contractor?.isDeveloperTenant);
+  const selectedLicense = (licensesList || []).find((l) => l.id === selectedLicenseId) || null;
+  const selectedPlanCode = String((isDeveloperAdmin ? selectedLicense?.license?.planCode : licenseData?.planCode) || licenseForm.planCode || "MINIMO").toUpperCase();
+  const selectedPlanMeta = (licenseData?.catalog || []).find((p) => String(p.code || "").toUpperCase() === selectedPlanCode) || null;
+  const moneyLabel = (cents, currency = "BRL") =>
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(Number(cents || 0) / 100);
 
   const submitLicense = async () => {
     if (!canManageLicense) return;
     setSubmitting(true);
     try {
-      const res = await apiFetch("/api/license/me", {
+      const endpoint = isDeveloperAdmin && selectedLicense?.id
+        ? `/api/license/admin/licenses/${selectedLicense.id}`
+        : "/api/license/me";
+      const res = await apiFetch(endpoint, {
         method: "PUT",
         body: JSON.stringify({
           planCode: String(licenseForm.planCode || "").toUpperCase(),
@@ -366,14 +381,21 @@ export default function Config() {
           reason: String(licenseForm.reason || "").trim() || null,
         }),
       });
-      setLicenseData(res.data || null);
-      addToast("Licença atualizada com sucesso!", "success");
+      if (isDeveloperAdmin && selectedLicense?.id) {
+        const listRes = await apiFetch("/api/license/admin/licenses");
+        const list = listRes?.data?.licenses || [];
+        setLicensesList(list);
+      } else {
+        setLicenseData(res.data || null);
+      }
+      addToast("Licenca atualizada com sucesso!", "success");
     } catch (err) {
-      addToast(err.message || "Erro ao atualizar licença", "error");
+      addToast(err.message || "Erro ao atualizar licenca", "error");
     } finally {
       setSubmitting(false);
     }
   };
+
 
   const submitContractor = async () => {
     if (!canManageLicense) return;
@@ -453,6 +475,20 @@ export default function Config() {
     Object.entries(limits?.maxRoleActive || {})
       .filter(([, qty]) => Number(qty) > 0)
       .map(([role, qty]) => `${PERFIL_LABELS[role] || role}: ${qty}`);
+
+  useEffect(() => {
+    if (!isDeveloperAdmin || !selectedLicense) return;
+    const now = new Date();
+    const oneYear = new Date(now);
+    oneYear.setFullYear(oneYear.getFullYear() + 1);
+    const endsAtDefault = oneYear.toISOString().slice(0, 10);
+    setLicenseForm((prev) => ({
+      ...prev,
+      planCode: String(selectedLicense?.license?.planCode || prev.planCode || "MINIMO").toUpperCase(),
+      status: String(selectedLicense?.license?.status || prev.status || "ACTIVE").toUpperCase(),
+      endsAt: selectedLicense?.license?.endsAt ? String(selectedLicense.license.endsAt).slice(0, 10) : (prev.endsAt || endsAtDefault),
+    }));
+  }, [isDeveloperAdmin, selectedLicenseId, selectedLicense?.license?.planCode, selectedLicense?.license?.status, selectedLicense?.license?.endsAt]);
 
   return (
     <div className="space-y-6">
@@ -609,325 +645,151 @@ export default function Config() {
       )}
 
       {/* ═══ LICENCIAMENTO TAB ═══ */}
+      {/* LICENCIAMENTO TAB */}
       {tab === "licenciamento" && (
         <Card>
           <CardHeader className="flex items-center gap-2">
             <Settings size={18} className="text-gray-400" />
-            <h3 className="font-semibold text-gray-900">Licenciamento da Empresa</h3>
+            <h3 className="font-semibold text-gray-900">Licenciamento</h3>
           </CardHeader>
           {loading ? <PageSpinner /> : (
             <CardBody className="space-y-4">
-              {canManageLicense ? (
+              {isDeveloperAdmin ? (
                 <div className="flex items-center justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant={novoContratanteMode ? "secondary" : "primary"}
-                    onClick={() => setNovoContratanteMode(false)}
-                  >
-                    Contratante atual
+                  <Button type="button" variant={novoContratanteMode ? "secondary" : "primary"} onClick={() => setNovoContratanteMode(false)}>
+                    Contratantes
                   </Button>
-                  <Button
-                    type="button"
-                    variant={novoContratanteMode ? "primary" : "secondary"}
-                    onClick={() => {
-                      setNovoContratanteMode(true);
-                      setTab("licenciamento");
-                    }}
-                  >
+                  <Button type="button" variant={novoContratanteMode ? "primary" : "secondary"} onClick={() => setNovoContratanteMode(true)}>
                     Novo contratante
                   </Button>
                 </div>
               ) : null}
 
-              {canManageLicense ? (
-                <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-2">
-                  <p className="text-sm font-semibold text-gray-900">Licenças existentes</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-gray-200 text-left text-gray-500">
-                          <th className="px-2 py-1">Tenant</th>
-                          <th className="px-2 py-1">Documento</th>
-                          <th className="px-2 py-1">Plano</th>
-                          <th className="px-2 py-1">Status</th>
-                          <th className="px-2 py-1">L/U/C</th>
-                          <th className="px-2 py-1 w-24">Ação</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {(licensesList || []).map((l) => (
-                          <tr key={l.id}>
-                            <td className="px-2 py-1">
-                              <span className="font-medium text-gray-900">{l.name}</span>
-                              {l.isDeveloperTenant ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Master</span> : null}
-                            </td>
-                            <td className="px-2 py-1 text-gray-600">{cpfCnpjMask(l.contractorDocument || "") || "-"}</td>
-                            <td className="px-2 py-1 text-gray-700">{l.license?.planCode || "-"}</td>
-                            <td className="px-2 py-1 text-gray-700">{STATUS_LABELS[String(l.license?.status || "").toUpperCase()] || l.license?.status || "-"}</td>
-                            <td className="px-2 py-1 text-gray-700">
-                              {Number(l?._count?.stores || 0)}/{Number(l?._count?.users || 0)}/{Number(l?._count?.customers || 0)}
-                            </td>
-                            <td className="px-2 py-1">
-                              {l.isDeveloperTenant ? (
-                                <span className="text-gray-400">Protegida</span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => openCleanupLicense(l)}
-                                  className="text-red-600 hover:text-red-700"
-                                >
-                                  Limpar
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                        {!licensesList?.length ? (
-                          <tr><td colSpan={6} className="px-2 py-2 text-gray-400">Nenhuma licença encontrada.</td></tr>
-                        ) : null}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-[11px] text-gray-500">L/U/C = Lojas / Usuários / Clientes</p>
-                </div>
-              ) : null}
-
-              <div className={novoContratanteMode ? "hidden" : "space-y-4"}>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <p className="text-xs text-gray-500">Plano atual</p>
-                  <p className="font-semibold text-gray-900">{licenseData?.planName || licenseData?.planCode || "—"}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <p className="text-xs text-gray-500">Status</p>
-                  <p className="font-semibold text-gray-900">{STATUS_LABELS[String(licenseData?.status || "").toUpperCase()] || licenseData?.status || "—"}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <p className="text-xs text-gray-500">Início</p>
-                  <p className="font-semibold text-gray-900">{dateLabel(licenseData?.startsAt)}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <p className="text-xs text-gray-500">Validade</p>
-                  <p className="font-semibold text-gray-900">{dateLabel(licenseData?.endsAt)}</p>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-4 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">Plano</label>
-                  <select
-                    className={inputClass}
-                    value={licenseForm.planCode}
-                    onChange={(e) => setLicenseForm((prev) => ({ ...prev, planCode: e.target.value }))}
-                    disabled={!canManageLicense}
-                  >
-                    {(licenseData?.catalog || []).map((p) => (
-                      <option key={p.code} value={p.code}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">Status</label>
-                  <select
-                    className={inputClass}
-                    value={licenseForm.status}
-                    onChange={(e) => setLicenseForm((prev) => ({ ...prev, status: e.target.value }))}
-                    disabled={!canManageLicense}
-                  >
-                    {["TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED", "CANCELED"].map((s) => (
-                      <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">Data de encerramento</label>
-                  <input
-                    type="date"
-                    className={inputClass}
-                    value={licenseForm.endsAt}
-                    onChange={(e) => setLicenseForm((prev) => ({ ...prev, endsAt: e.target.value }))}
-                    disabled={!canManageLicense}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">Motivo</label>
-                  <input
-                    className={inputClass}
-                    value={licenseForm.reason}
-                    onChange={(e) => setLicenseForm((prev) => ({ ...prev, reason: e.target.value }))}
-                    placeholder="Opcional"
-                    disabled={!canManageLicense}
-                  />
-                </div>
-              </div>
-
-              {canManageLicense ? (
-                <div className="flex justify-end">
-                  <Button onClick={submitLicense} loading={submitting}>Salvar licença</Button>
-                </div>
-              ) : (
-                <p className="text-xs text-gray-500">Somente administrador pode alterar licença.</p>
-              )}
-
-              <div className="grid md:grid-cols-2 gap-3">
-              <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
-                <p className="text-sm font-semibold text-gray-900 mb-1">Dados do contratante</p>
-                <div className="grid md:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">CPF/CNPJ</label>
-                    <input
-                      className={inputClass}
-                      value={cpfCnpjMask(contractorForm.document)}
-                      onChange={(e) => setContractorForm((prev) => ({ ...prev, document: String(e.target.value || "").replace(/\D/g, "").slice(0, 14) }))}
-                      placeholder="Somente numeros"
-                      disabled={!canManageLicense}
-                    />
-                    {contractorForm.document && !validateCPFOrCNPJ(contractorForm.document) ? (
-                      <p className="text-xs text-red-600">CPF/CNPJ invalido</p>
-                    ) : null}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">Nome/Razao social</label>
-                    <input
-                      className={inputClass}
-                      value={contractorForm.nameOrCompany}
-                      onChange={(e) => setContractorForm((prev) => ({ ...prev, nameOrCompany: e.target.value }))}
-                      disabled={!canManageLicense}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">Endereco completo</label>
-                    <input
-                      className={inputClass}
-                      value={contractorForm.addressFull}
-                      onChange={(e) => setContractorForm((prev) => ({ ...prev, addressFull: e.target.value }))}
-                      disabled={!canManageLicense}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">CEP</label>
-                    <input
-                      className={inputClass}
-                      value={cepMask(contractorForm.zipCode)}
-                      onChange={(e) => setContractorForm((prev) => ({ ...prev, zipCode: String(e.target.value || "").replace(/\D/g, "").slice(0, 8) }))}
-                      disabled={!canManageLicense}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">Telefone/WhatsApp</label>
-                    <input
-                      className={inputClass}
-                      value={phoneMask(contractorForm.phoneWhatsapp)}
-                      onChange={(e) => setContractorForm((prev) => ({ ...prev, phoneWhatsapp: String(e.target.value || "").replace(/\D/g, "").slice(0, 11) }))}
-                      disabled={!canManageLicense}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">E-mail</label>
-                    <input
-                      type="email"
-                      className={inputClass}
-                      value={contractorForm.email}
-                      onChange={(e) => setContractorForm((prev) => ({ ...prev, email: e.target.value }))}
-                      disabled={!canManageLicense}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">Arquivo da logo (URL/base64)</label>
-                  <input
-                    className={inputClass}
-                    value={contractorForm.logoFile}
-                    onChange={(e) => setContractorForm((prev) => ({ ...prev, logoFile: e.target.value }))}
-                    disabled={!canManageLicense}
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <input
-                    ref={contractorLogoInputRef}
-                    type="file"
-                    accept=".jpg,.jpeg,.png,.webp,.svg,image/*"
-                    onChange={onContractorLogoFilePicked}
-                    className="hidden"
-                  />
-                  <Button type="button" variant="secondary" onClick={() => contractorLogoInputRef.current?.click()} disabled={!canManageLicense}>
-                    Inserir arquivo
-                  </Button>
-                </div>
-                {canManageLicense ? (
-                  <div className="flex justify-end">
-                    <Button onClick={submitContractor} loading={submitting}>Salvar contratante</Button>
-                  </div>
-                ) : null}
-              </div>
-                <div className="p-3 rounded-lg border border-gray-200 bg-white">
-                  <p className="text-sm font-semibold text-gray-900 mb-2">Pacote contratado (visão do licenciado)</p>
-                  <ul className="text-sm text-gray-700 space-y-1">
-                    <li>Validade: {dateLabel(licenseData?.endsAt)}</li>
-                    <li>Usuários contratados: {Number(licenseData?.limits?.maxActiveUsers || 0)}</li>
-                    <li>Tipos de usuários: {(perfisContratados(licenseData?.limits).join(", ") || "Sem limite por perfil")}</li>
-                    <li>Módulos: {(moduloHabilitado(licenseData?.features).join(", ") || "Nenhum módulo habilitado")}</li>
-                  </ul>
-                </div>
-
-                <div className="p-3 rounded-lg border border-gray-200 bg-white">
-                  <p className="text-sm font-semibold text-gray-900 mb-2">Configuração dos pacotes (admin do desenvolvedor)</p>
-                  <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
-                    {(licenseData?.catalog || []).map((p) => (
-                      <div key={p.code} className="text-xs text-gray-700 border border-gray-100 rounded p-2">
-                        <p className="font-semibold text-sm text-gray-900">{p.name}</p>
-                        <p>Usuários: {Number(p?.limits?.maxActiveUsers || 0)}</p>
-                        <p>Tipos de usuários: {(perfisContratados(p?.limits).join(", ") || "Sem limite por perfil")}</p>
-                        <p>Módulos: {(moduloHabilitado(p?.features).join(", ") || "Nenhum módulo habilitado")}</p>
+              {!novoContratanteMode ? (
+                <>
+                  {isDeveloperAdmin ? (
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                      <p className="text-sm font-semibold text-gray-900">Contratantes</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-gray-200 text-left text-gray-500">
+                              <th className="px-2 py-1">Licenciado</th>
+                              <th className="px-2 py-1">Documento</th>
+                              <th className="px-2 py-1">Plano</th>
+                              <th className="px-2 py-1">Status</th>
+                              <th className="px-2 py-1">L/U/C</th>
+                              <th className="px-2 py-1">Acao</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {(licensesList || []).map((l) => (
+                              <tr
+                                key={l.id}
+                                onClick={() => setSelectedLicenseId(l.id)}
+                                className={`cursor-pointer ${selectedLicenseId === l.id ? "bg-primary-50" : "hover:bg-gray-50"}`}
+                              >
+                                <td className="px-2 py-1 font-medium text-gray-900">
+                                  {l.name}
+                                  {l.isDeveloperTenant ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Desenvolvedor</span> : null}
+                                </td>
+                                <td className="px-2 py-1 text-gray-600">{cpfCnpjMask(l.contractorDocument || "") || "-"}</td>
+                                <td className="px-2 py-1 text-gray-700">{l.license?.planCode || "-"}</td>
+                                <td className="px-2 py-1 text-gray-700">{STATUS_LABELS[String(l.license?.status || "").toUpperCase()] || l.license?.status || "-"}</td>
+                                <td className="px-2 py-1 text-gray-700">{Number(l?._count?.stores || 0)}/{Number(l?._count?.users || 0)}/{Number(l?._count?.customers || 0)}</td>
+                                <td className="px-2 py-1">
+                                  {l.isDeveloperTenant ? (
+                                    <span className="text-gray-400">Protegido</span>
+                                  ) : (
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); openCleanupLicense(l); }} className="text-red-600 hover:text-red-700">
+                                      Limpar base
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                            {!licensesList?.length ? <tr><td colSpan={6} className="px-2 py-2 text-gray-400">Nenhum contratante encontrado.</td></tr> : null}
+                          </tbody>
+                        </table>
                       </div>
-                    ))}
+                      <p className="text-[11px] text-gray-500">L/U/C = Lojas / Usuarios / Clientes</p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button type="button" variant="secondary" onClick={openCleanupAllNonMaster}>Zerar base (exceto Desenvolvedor)</Button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white">
+                      <p className="text-sm font-semibold text-gray-900 mb-2">Plano contratado</p>
+                      <ul className="text-sm text-gray-700 space-y-1">
+                        <li>Licenciado: {isDeveloperAdmin ? (selectedLicense?.name || "-") : (licenseData?.contractor?.tenantName || "-")}</li>
+                        <li>Status: {STATUS_LABELS[String((isDeveloperAdmin ? selectedLicense?.license?.status : licenseData?.status) || "").toUpperCase()] || (isDeveloperAdmin ? selectedLicense?.license?.status : licenseData?.status) || "-"}</li>
+                        <li>Validade: {dateLabel(isDeveloperAdmin ? selectedLicense?.license?.endsAt : licenseData?.endsAt)}</li>
+                        <li>Valor mensal: {selectedPlanMeta ? moneyLabel(selectedPlanMeta.monthlyPriceCents, selectedPlanMeta.currency) : "-"}</li>
+                        <li>Valor anual: {selectedPlanMeta ? moneyLabel(selectedPlanMeta.annualPriceCents, selectedPlanMeta.currency) : "-"}</li>
+                        <li>Usuarios contratados: {Number(selectedPlanMeta?.limits?.maxActiveUsers || 0)}</li>
+                        <li>Tipos de usuarios: {(perfisContratados(selectedPlanMeta?.limits).join(", ") || "Sem limite por perfil")}</li>
+                        <li>Modulos: {(moduloHabilitado(selectedPlanMeta?.features).join(", ") || "Nenhum modulo habilitado")}</li>
+                      </ul>
+                    </div>
+
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                      <p className="text-sm font-semibold text-gray-900">Alterar licenca</p>
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-700">Plano</label>
+                          <select className={inputClass} value={licenseForm.planCode} onChange={(e) => setLicenseForm((prev) => ({ ...prev, planCode: e.target.value }))} disabled={!canManageLicense || (isDeveloperAdmin && selectedLicense?.isDeveloperTenant)}>
+                            {(licenseData?.catalog || []).map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-700">Status</label>
+                          <select className={inputClass} value={licenseForm.status} onChange={(e) => setLicenseForm((prev) => ({ ...prev, status: e.target.value }))} disabled={!canManageLicense || (isDeveloperAdmin && selectedLicense?.isDeveloperTenant)}>
+                            {["TRIAL", "ACTIVE", "GRACE", "SUSPENDED", "EXPIRED", "CANCELED"].map((s) => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-700">Data de encerramento</label>
+                          <input type="date" className={inputClass} value={licenseForm.endsAt} onChange={(e) => setLicenseForm((prev) => ({ ...prev, endsAt: e.target.value }))} disabled={!canManageLicense || (isDeveloperAdmin && selectedLicense?.isDeveloperTenant)} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-700">Motivo</label>
+                          <input className={inputClass} value={licenseForm.reason} onChange={(e) => setLicenseForm((prev) => ({ ...prev, reason: e.target.value }))} placeholder="Opcional" disabled={!canManageLicense || (isDeveloperAdmin && selectedLicense?.isDeveloperTenant)} />
+                        </div>
+                      </div>
+                      {isDeveloperAdmin && selectedLicense && !selectedLicense.isDeveloperTenant ? (
+                        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                          Implicacoes: alterar plano/status pode impactar limite de usuarios, modulos disponiveis e valores.
+                        </div>
+                      ) : null}
+                      {canManageLicense ? <div className="flex justify-end"><Button onClick={submitLicense} loading={submitting} disabled={isDeveloperAdmin && selectedLicense?.isDeveloperTenant}>Salvar licenca</Button></div> : null}
+                    </div>
                   </div>
-                </div>
-              </div>
-              </div>
-
-              {novoContratanteMode ? (
-              <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-2">
-                <p className="text-sm font-semibold text-gray-900">Layouts TXT para importacao</p>
-                <p className="text-xs text-gray-500">
-                  Use estes arquivos como modelo para preparar dados do novo licenciado.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_contratante.txt" target="_blank" rel="noreferrer">tenant_contratante.txt</a>
-                  <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_licenca.txt" target="_blank" rel="noreferrer">tenant_licenca.txt</a>
-                  <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/usuario_admin.txt" target="_blank" rel="noreferrer">usuario_admin.txt</a>
-                </div>
-                <div className="pt-1">
-                  <Button type="button" variant="secondary" onClick={openCleanupAllNonMaster}>
-                    Zerar base (exceto Master)
-                  </Button>
-                </div>
-              </div>
-              ) : null}
-
-              {novoContratanteMode ? (
-              <OnboardingLicencaWizard
-                canManage={canManageLicense}
-                catalog={licenseData?.catalog || []}
-                defaultPlanCode={licenseForm.planCode}
-                addToast={addToast}
-                onSuccess={(payload) => {
-                  if (!payload) return;
-                  setLicenseData((prev) => ({
-                    ...(prev || {}),
-                    planCode: payload.planCode || prev?.planCode,
-                    status: payload.status || prev?.status,
-                    startsAt: payload.startsAt || prev?.startsAt,
-                    endsAt: payload.endsAt || prev?.endsAt,
-                    contractor: payload.contractor || prev?.contractor,
-                  }));
-                  setNovoContratanteMode(false);
-                }}
-              />
-              ) : null}
+                </>
+              ) : (
+                <>
+                  <OnboardingLicencaWizard
+                    canManage={isDeveloperAdmin}
+                    catalog={licenseData?.catalog || []}
+                    defaultPlanCode={licenseForm.planCode}
+                    addToast={addToast}
+                    onSuccess={() => {
+                      setNovoContratanteMode(false);
+                      setTab("licenciamento");
+                    }}
+                  />
+                  <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-2">
+                    <p className="text-sm font-semibold text-gray-900">Layouts para importacoes</p>
+                    <p className="text-xs text-gray-500">Use os arquivos como modelo para importacao de dados do novo licenciado.</p>
+                    <div className="flex flex-wrap gap-2">
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_contratante.txt" target="_blank" rel="noreferrer">tenant_contratante.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_licenca.txt" target="_blank" rel="noreferrer">tenant_licenca.txt</a>
+                      <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/usuario_admin.txt" target="_blank" rel="noreferrer">usuario_admin.txt</a>
+                    </div>
+                  </div>
+                </>
+              )}
             </CardBody>
           )}
         </Card>
@@ -1086,6 +948,7 @@ export default function Config() {
     </div>
   );
 }
+
 
 
 

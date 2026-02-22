@@ -95,6 +95,36 @@ function buildApiRoutes({ prisma, log }) {
     return resolveTenantLicense(row);
   }
 
+  async function resolveLicenseByTenantId(tenantId) {
+    if (!tenantId) return getActiveLicense();
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { isDeveloperTenant: true },
+    });
+    if (tenant?.isDeveloperTenant) {
+      return resolveTenantLicense({
+        planCode: "ENTERPRISE",
+        status: "ACTIVE",
+        startsAt: new Date(),
+        endsAt: null,
+        graceUntil: null,
+        updatedAt: new Date(),
+      });
+    }
+    const row = await prisma.tenantLicense.findUnique({
+      where: { tenantId },
+      select: {
+        planCode: true,
+        status: true,
+        startsAt: true,
+        endsAt: true,
+        graceUntil: true,
+        updatedAt: true,
+      },
+    });
+    return resolveTenantLicense(row);
+  }
+
   async function getTenantLicenseProfile(req) {
     const tenantId = await resolveTenantId(req);
     if (!tenantId) {
@@ -229,6 +259,60 @@ function buildApiRoutes({ prisma, log }) {
       throw Object.assign(new Error("Apenas admin da licenca do desenvolvedor pode criar novos licenciados"), { statusCode: 403 });
     }
     return tenantId;
+  }
+
+  async function upsertTenantLicenseWithAudit({ tenantId, actor, body }) {
+    const nextPlan = String(body?.planCode || "").trim().toUpperCase();
+    const nextStatus = normalizeStatus(body?.status || "ACTIVE");
+    const reason = body?.reason ? String(body.reason) : null;
+    if (!nextPlan) throw Object.assign(new Error("planCode obrigatorio"), { statusCode: 400 });
+
+    const previous = await prisma.tenantLicense.findUnique({ where: { tenantId } });
+    const now = new Date();
+    const defaultEndsAt = new Date(now);
+    defaultEndsAt.setFullYear(defaultEndsAt.getFullYear() + 1);
+    const endsAtInput = body?.endsAt ? safeDate(body.endsAt) : defaultEndsAt;
+
+    const updated = await prisma.tenantLicense.upsert({
+      where: { tenantId },
+      update: {
+        planCode: nextPlan,
+        status: nextStatus,
+        endsAt: endsAtInput,
+        graceUntil: body?.graceUntil ? safeDate(body.graceUntil) : null,
+        updatedById: actor?.id || null,
+        updatedByName: actor?.name || actor?.email || "Admin",
+      },
+      create: {
+        tenantId,
+        planCode: nextPlan,
+        status: nextStatus,
+        startsAt: now,
+        endsAt: endsAtInput,
+        graceUntil: body?.graceUntil ? safeDate(body.graceUntil) : null,
+        updatedById: actor?.id || null,
+        updatedByName: actor?.name || actor?.email || "Admin",
+      },
+    });
+
+    await prisma.tenantLicenseAudit.create({
+      data: {
+        tenantId,
+        previousPlan: previous?.planCode || null,
+        newPlan: updated.planCode,
+        previousStatus: previous?.status || null,
+        newStatus: updated.status,
+        changedById: actor?.id || null,
+        changedByName: actor?.name || actor?.email || "Admin",
+        reason,
+        payload: {
+          endsAt: updated.endsAt,
+          graceUntil: updated.graceUntil,
+        },
+      },
+    });
+
+    return updated;
   }
 
   function isValidPhone(phone) {
@@ -762,54 +846,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
 
-    const nextPlan = String(req.body?.planCode || "").trim().toUpperCase();
-    const nextStatus = normalizeStatus(req.body?.status || "ACTIVE");
-    const reason = req.body?.reason ? String(req.body.reason) : null;
-    if (!nextPlan) return res.status(400).json({ error: { code: 400, message: "planCode obrigatorio" } });
-
-    const previous = await prisma.tenantLicense.findUnique({ where: { tenantId } });
-    const now = new Date();
-    const defaultEndsAt = new Date(now);
-    defaultEndsAt.setFullYear(defaultEndsAt.getFullYear() + 1);
-    const endsAtInput = req.body?.endsAt ? safeDate(req.body.endsAt) : defaultEndsAt;
-    const updated = await prisma.tenantLicense.upsert({
-      where: { tenantId },
-      update: {
-        planCode: nextPlan,
-        status: nextStatus,
-        endsAt: endsAtInput,
-        graceUntil: req.body?.graceUntil ? safeDate(req.body.graceUntil) : null,
-        updatedById: req.user?.id || null,
-        updatedByName: req.user?.name || req.user?.email || "Admin",
-      },
-      create: {
-        tenantId,
-        planCode: nextPlan,
-        status: nextStatus,
-        startsAt: now,
-        endsAt: endsAtInput,
-        graceUntil: req.body?.graceUntil ? safeDate(req.body.graceUntil) : null,
-        updatedById: req.user?.id || null,
-        updatedByName: req.user?.name || req.user?.email || "Admin",
-      },
-    });
-
-    await prisma.tenantLicenseAudit.create({
-      data: {
-        tenantId,
-        previousPlan: previous?.planCode || null,
-        newPlan: updated.planCode,
-        previousStatus: previous?.status || null,
-        newStatus: updated.status,
-        changedById: req.user?.id || null,
-        changedByName: req.user?.name || req.user?.email || "Admin",
-        reason,
-        payload: {
-          endsAt: updated.endsAt,
-          graceUntil: updated.graceUntil,
-        },
-      },
-    });
+    await upsertTenantLicenseWithAudit({ tenantId, actor: req.user, body: req.body });
 
     const license = await getLicense(req);
     const profile = await getTenantLicenseProfile(req);
@@ -1056,6 +1093,91 @@ function buildApiRoutes({ prisma, log }) {
       orderBy: [{ isDeveloperTenant: "desc" }, { createdAt: "asc" }],
     });
     return sendOk(res, req, { licenses: rows });
+  }));
+
+  router.get("/license/admin/licenses/:tenantId", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const tenantId = String(req.params.tenantId || "").trim();
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        isDeveloperTenant: true,
+        contractorDocument: true,
+        contractorNameOrCompany: true,
+        contractorAddressFull: true,
+        contractorStreet: true,
+        contractorNumber: true,
+        contractorComplement: true,
+        contractorDistrict: true,
+        contractorCity: true,
+        contractorState: true,
+        contractorZipCode: true,
+        contractorPhoneWhatsapp: true,
+        contractorEmail: true,
+        contractorLogoFile: true,
+        _count: { select: { users: true, stores: true, customers: true } },
+        license: {
+          select: {
+            planCode: true,
+            status: true,
+            startsAt: true,
+            endsAt: true,
+            graceUntil: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    const license = await resolveLicenseByTenantId(tenant.id);
+    return sendOk(res, req, {
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        isDeveloperTenant: tenant.isDeveloperTenant,
+        contractor: {
+          document: tenant.contractorDocument || null,
+          nameOrCompany: tenant.contractorNameOrCompany || null,
+          addressFull: tenant.contractorAddressFull || null,
+          street: tenant.contractorStreet || null,
+          number: tenant.contractorNumber || null,
+          complement: tenant.contractorComplement || null,
+          district: tenant.contractorDistrict || null,
+          city: tenant.contractorCity || null,
+          state: tenant.contractorState || null,
+          zipCode: tenant.contractorZipCode || null,
+          phoneWhatsapp: tenant.contractorPhoneWhatsapp || null,
+          email: tenant.contractorEmail || null,
+          logoFile: tenant.contractorLogoFile || null,
+        },
+        counts: tenant._count || { users: 0, stores: 0, customers: 0 },
+      },
+      license,
+    });
+  }));
+
+  router.put("/license/admin/licenses/:tenantId", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const tenantId = String(req.params.tenantId || "").trim();
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Licenca do Desenvolvedor nao pode ser alterada por esta tela" } });
+    }
+
+    await upsertTenantLicenseWithAudit({ tenantId: tenant.id, actor: req.user, body: req.body });
+    const license = await resolveLicenseByTenantId(tenant.id);
+    return sendOk(res, req, { tenantId: tenant.id, tenantName: tenant.name, license });
   }));
 
   router.post("/license/admin/cleanup", asyncHandler(async (req, res) => {
