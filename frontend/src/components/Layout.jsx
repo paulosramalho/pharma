@@ -2,9 +2,11 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { apiFetch } from "../lib/api";
+import { useOfflineSync } from "../hooks/useOfflineSync";
 import {
   LayoutDashboard, ShoppingCart, Wallet, Package, Pill,
   Settings, LogOut, Menu, X, ChevronDown, Store, UserCircle, BarChart3, MessageCircle,
+  WifiOff, RefreshCw, AlertTriangle,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -31,6 +33,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const { isOnline, pendingCount, failedCount, syncStatus, syncNow, clearFailed } = useOfflineSync();
 
   const roleRestrict = ROLE_NAV_RESTRICT[user?.role];
   const adminLicenseLocked = user?.role === "ADMIN" && !isLicenseActive;
@@ -189,6 +192,56 @@ export default function Layout() {
             </div>
           </div>
         </header>
+
+        {/* Offline / sync status banner */}
+        {(!isOnline || pendingCount > 0 || failedCount > 0) && (
+          <div className={`px-4 py-2 text-sm flex items-center gap-3 border-b ${
+            failedCount > 0
+              ? "bg-red-50 border-red-200 text-red-800"
+              : syncStatus === "syncing"
+              ? "bg-blue-50 border-blue-200 text-blue-800"
+              : "bg-amber-50 border-amber-200 text-amber-800"
+          }`}>
+            {syncStatus === "syncing" ? (
+              <RefreshCw size={15} className="animate-spin shrink-0" />
+            ) : failedCount > 0 ? (
+              <AlertTriangle size={15} className="shrink-0" />
+            ) : (
+              <WifiOff size={15} className="shrink-0" />
+            )}
+
+            <span className="flex-1">
+              {syncStatus === "syncing"
+                ? "Sincronizando operações pendentes..."
+                : failedCount > 0
+                ? `${failedCount} operação(ões) rejeitada(s) pelo servidor`
+                : !isOnline && pendingCount > 0
+                ? `Sem conexão — ${pendingCount} operação(ões) aguardando sincronização`
+                : !isOnline
+                ? "Sem conexão — modo offline"
+                : `${pendingCount} operação(ões) pendente(s) de sincronização`}
+            </span>
+
+            {failedCount > 0 && (
+              <button
+                onClick={clearFailed}
+                className="text-xs underline hover:no-underline shrink-0"
+              >
+                Limpar falhas
+              </button>
+            )}
+
+            {isOnline && pendingCount > 0 && syncStatus !== "syncing" && (
+              <button
+                onClick={syncNow}
+                className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded bg-white border border-current hover:bg-amber-100 shrink-0"
+              >
+                <RefreshCw size={12} />
+                Sincronizar agora
+              </button>
+            )}
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet key={storeId || "no-store"} />

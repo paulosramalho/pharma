@@ -1,6 +1,7 @@
 ﻿const express = require("express");
 const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
+const idempotencyGuard = require("../../common/idempotencyGuard");
 const { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer, makeReportCustomPdfBuffer } = require("../reports/reportPdfTemplate");
 const {
   PLAN_CATALOG,
@@ -3093,6 +3094,57 @@ function buildApiRoutes({ prisma, log }) {
     await touchChatPresence(req.user?.id);
     return sendOk(res, req, { ok: true, at: new Date() });
   }));
+  // ─── Offline sync: server changes since last sync ─────────────────────────
+  // Returns server-side ops that happened while the client was offline.
+  // The client interleaves these with its local pending ops (by createdAt/updatedAt)
+  // and applies them in global chronological order (server→local, local→server).
+  router.get("/sync/changes", asyncHandler(async (req, res) => {
+    const tenantId = await resolveTenantId(req);
+    const storeId = await resolveStoreId(req);
+    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId required" } });
+
+    const since = req.query.since ? new Date(req.query.since) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [inventoryMovements, currentSession, salesUpdated] = await Promise.all([
+      // All inventory movements for this store since last sync
+      prisma.inventoryMovement.findMany({
+        where: { tenantId, storeId, createdAt: { gt: since } },
+        select: { id: true, type: true, quantity: true, productId: true, lotId: true, saleId: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      // Current cash session + its movements since last sync
+      prisma.cashSession.findFirst({
+        where: { tenantId, storeId, closedAt: null },
+        select: {
+          id: true,
+          movements: {
+            where: { createdAt: { gt: since } },
+            select: { id: true, type: true, amount: true, reason: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      }),
+      // Sales whose status changed since last sync (e.g., confirmed by another terminal)
+      prisma.sale.findMany({
+        where: { tenantId, storeId, updatedAt: { gt: since } },
+        select: { id: true, status: true, total: true, discount: true, updatedAt: true },
+        orderBy: { updatedAt: "asc" },
+      }),
+    ]);
+
+    const cashMovements = (currentSession?.movements || []).map((m) => ({
+      ...m,
+      sessionId: currentSession?.id,
+    }));
+
+    return sendOk(res, req, {
+      inventoryMovements,
+      cashMovements,
+      salesUpdated,
+      serverTime: new Date().toISOString(),
+    });
+  }));
+
   // Multi-store overview: all products with per-store qty + recent entries/exits
   router.get("/inventory/overview", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
@@ -4301,7 +4353,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, full);
   }));
 
-  router.post("/sales", asyncHandler(async (req, res) => {
+  router.post("/sales", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
@@ -4350,7 +4402,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, sale, 201);
   }));
 
-  router.post("/sales/:id/items", asyncHandler(async (req, res) => {
+  router.post("/sales/:id/items", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { productId, quantity } = req.body;
     if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatÃ³rios" } });
@@ -4415,7 +4467,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   // Update item quantity
-  router.put("/sales/:saleId/items/:itemId", asyncHandler(async (req, res) => {
+  router.put("/sales/:saleId/items/:itemId", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { quantity } = req.body;
     if (!quantity || quantity < 1) return res.status(400).json({ error: { code: 400, message: "quantity deve ser >= 1" } });
@@ -4471,7 +4523,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, fullSale);
   }));
 
-  router.post("/sales/:id/confirm", asyncHandler(async (req, res) => {
+  router.post("/sales/:id/confirm", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true } });
     if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
@@ -4950,7 +5002,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, session);
   }));
 
-  router.post("/cash/sessions/open", asyncHandler(async (req, res) => {
+  router.post("/cash/sessions/open", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
@@ -4998,7 +5050,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { ...updated, expected: Number(expected.toFixed(2)), divergence });
   }));
 
-  router.post("/cash/movements", asyncHandler(async (req, res) => {
+  router.post("/cash/movements", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     const session = await prisma.cashSession.findFirst({ where: { tenantId, storeId, closedAt: null } });

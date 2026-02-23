@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { apiFetch } from "../lib/api";
+import { apiFetch, OfflineQueuedError } from "../lib/api";
+import { offlineCreateDraft } from "../lib/localDb";
 import { money, cpfMask, formatDate, whatsappMask, parseDateNoon } from "../lib/format";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -8,7 +9,7 @@ import Card, { CardBody, CardHeader } from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Badge from "../components/ui/Badge";
 import Modal from "../components/ui/Modal";
-import { Search, Trash2, ShoppingCart, X, UserPlus, User, Plus, Tag, Pencil, Check } from "lucide-react";
+import { Search, Trash2, ShoppingCart, X, UserPlus, User, Plus, Tag, Pencil, Check, WifiOff } from "lucide-react";
 
 export default function VendaNova() {
   const { addToast } = useToast();
@@ -80,6 +81,22 @@ export default function VendaNova() {
       setCreating(false);
       return res.data;
     } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        // Create a local draft so the POS keeps working offline
+        const localSale = await offlineCreateDraft(storeId);
+        setSale(localSale);
+        setCpfInput("");
+        setCustomerFound(null);
+        setShowNewCustomer(false);
+        setNewCustomer({ name: "", birthDate: "", whatsapp: "" });
+        setProductSearch("");
+        setProducts([]);
+        setSelectedProduct(null);
+        setAddQty(1);
+        setCreating(false);
+        addToast("Modo offline — venda será sincronizada ao reconectar.", "info");
+        return localSale;
+      }
       addToast(err.message, "error");
       navigate("/vendas");
       setCreating(false);
@@ -319,7 +336,14 @@ export default function VendaNova() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Nova Venda</h1>
-          <p className="text-sm text-gray-500">{sale ? `Venda #${sale.number} — ${sale.status}` : "Nova venda"}</p>
+          <p className="text-sm text-gray-500 flex items-center gap-2">
+            {sale ? `Venda #${sale.number} — ${sale.status}` : "Nova venda"}
+            {sale?._isLocal && (
+              <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                <WifiOff size={11} /> Offline
+              </span>
+            )}
+          </p>
         </div>
         <Button variant="ghost" onClick={() => navigate("/vendas")}><X size={16} /> Fechar</Button>
       </div>

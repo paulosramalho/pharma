@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { apiFetch, setAuth, clearAuth, getUser, getToken, getStoreId, setStoreId } from "../lib/api";
+import { loginSync, refreshCounts } from "../lib/sync";
 
 const AuthContext = createContext(null);
 
@@ -32,7 +33,12 @@ export function AuthProvider({ children }) {
     setStores(d.stores || []);
     setLicense(licenseData);
     const defaultStore = d.stores?.find((s) => s.isDefault) || d.stores?.[0];
-    if (defaultStore) setCurrentStore(defaultStore.id);
+    if (defaultStore) {
+      setCurrentStore(defaultStore.id);
+      // Check local vs remote on login:
+      // replay any pending local ops → remote, then clear stale cache so next GETs are fresh
+      loginSync(defaultStore.id).catch(console.warn);
+    }
     return d;
   }, []);
 
@@ -58,6 +64,17 @@ export function AuthProvider({ children }) {
     setPermissions(d.permissions || []);
     setStores(d.stores || []);
     setLicense(licRes?.data || null);
+
+    // On session restore: refresh pending/failed counts and replay if online
+    const sid = getStoreId();
+    if (sid) {
+      if (navigator.onLine) {
+        loginSync(sid).catch(console.warn);
+      } else {
+        refreshCounts(sid).catch(console.warn);
+      }
+    }
+
     return d;
   }, []);
 
