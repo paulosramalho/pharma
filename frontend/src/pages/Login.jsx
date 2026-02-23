@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
@@ -12,6 +12,19 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const reason = localStorage.getItem("pharma_logout_notice");
+    if (!reason) return;
+    localStorage.removeItem("pharma_logout_notice");
+    if (reason === "inactivity") {
+      addToast("Sessão encerrada por inatividade. Faça login novamente.", "warning");
+      return;
+    }
+    if (reason === "forced") {
+      addToast("Sessão encerrada. Faça login novamente.", "warning");
+    }
+  }, [addToast]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

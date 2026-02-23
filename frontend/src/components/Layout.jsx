@@ -34,7 +34,7 @@ const ROLE_LABELS = {
 };
 
 export default function Layout() {
-  const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive, license } = useAuth();
+  const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive, license, inactivityWarningSeconds, continueSession, forceLogoutNow } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
@@ -72,6 +72,12 @@ export default function Layout() {
   const dateLabel = (value) => (value
     ? new Date(value).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
     : "—");
+  const inactivityLabel = (() => {
+    const total = Math.max(0, Number(inactivityWarningSeconds || 0));
+    const mm = String(Math.floor(total / 60)).padStart(2, "0");
+    const ss = String(total % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  })();
 
   const handleLogout = () => {
     logout();
@@ -337,6 +343,35 @@ export default function Layout() {
                 className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
               >
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {Number(inactivityWarningSeconds || 0) > 0 ? (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/45" />
+          <div className="relative w-full max-w-md rounded-xl bg-white shadow-2xl border border-gray-200 p-5">
+            <h3 className="text-lg font-semibold text-gray-900">Sessão prestes a expirar</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Sua sessão será encerrada por inatividade em:
+            </p>
+            <p className="mt-3 text-center text-3xl font-bold text-amber-600 tracking-widest">{inactivityLabel}</p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={forceLogoutNow}
+                className="px-4 py-2 rounded-lg border border-red-200 text-red-700 bg-red-50 text-sm font-medium hover:bg-red-100"
+              >
+                Sair agora
+              </button>
+              <button
+                type="button"
+                onClick={continueSession}
+                className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
+              >
+                Continuar sessão
               </button>
             </div>
           </div>
