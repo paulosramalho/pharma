@@ -4,9 +4,9 @@ import Button from "../ui/Button";
 import { cpfCnpjMask, phoneMask } from "../../lib/format";
 
 const STEPS = [
-  { key: 1, label: "Identificacao" },
-  { key: 2, label: "Endereco" },
-  { key: 3, label: "Comunicacao e logo" },
+  { key: 1, label: "Identificação" },
+  { key: 2, label: "Endereço" },
+  { key: 3, label: "Comunicação e logo" },
   { key: 4, label: "Pacote e admin" },
 ];
 
@@ -110,7 +110,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
 
   const buscarCep = async () => {
     const cep = String(form.contractor.zipCode || "").replace(/\D/g, "");
-    if (cep.length !== 8) return addToast?.("CEP invalido", "warning");
+    if (cep.length !== 8) return addToast?.("CEP inválido", "warning");
     setLoadingCep(true);
     const applyCepData = (d) => {
       setForm((prev) => ({
@@ -130,14 +130,14 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
       const res = await apiFetch(`/api/license/cep/${cep}`);
       const d = res.data || {};
       applyCepData(d);
-      addToast?.("Endereco preenchido pelo CEP", "success");
+      addToast?.("Endereço preenchido pelo CEP", "success");
     } catch (err) {
       try {
-        // Fallback: consulta direta no navegador quando o backend nao consegue acessar o ViaCEP.
+        // Fallback: consulta direta no navegador quando o backend não consegue acessar o ViaCEP.
         const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
         if (!response.ok) throw new Error("Falha ao consultar CEP");
         const viaCep = await response.json();
-        if (viaCep?.erro) throw new Error("CEP nao encontrado");
+        if (viaCep?.erro) throw new Error("CEP não encontrado");
         applyCepData({
           zipCode: cep,
           street: String(viaCep.logradouro || "").trim() || "",
@@ -146,7 +146,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
           city: String(viaCep.localidade || "").trim() || "",
           state: String(viaCep.uf || "").trim().toUpperCase() || "",
         });
-        addToast?.("Endereco preenchido pelo CEP", "success");
+        addToast?.("Endereço preenchido pelo CEP", "success");
       } catch {
         addToast?.(err.message || "Falha ao buscar CEP", "error");
       }
@@ -169,7 +169,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
       setContractor("logoFile", dataUrl);
       addToast?.("Arquivo de logo carregado", "success");
     } catch {
-      addToast?.("Nao foi possivel ler o arquivo", "error");
+      addToast?.("Não foi possível ler o arquivo", "error");
     } finally {
       event.target.value = "";
     }
@@ -178,7 +178,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
   const finalizar = async () => {
     if (!canManage) return;
     const c = form.contractor;
-    if (!isValidCpfCnpj(c.document)) return addToast?.("CPF/CNPJ invalido", "error");
+    if (!isValidCpfCnpj(c.document)) return addToast?.("CPF/CNPJ inválido", "error");
     if (!canNext) return;
 
     setSaving(true);
@@ -244,11 +244,11 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
               onChange={(e) => setContractor("document", String(e.target.value || "").replace(/\D/g, "").slice(0, 14))}
             />
             {form.contractor.document && !isValidCpfCnpj(form.contractor.document) ? (
-              <p className="text-xs text-red-600">Documento invalido</p>
+              <p className="text-xs text-red-600">Documento inválido</p>
             ) : null}
           </div>
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">Nome/Razao social *</label>
+            <label className="block text-sm font-medium text-gray-700">Nome/Razão social *</label>
             <input className={inputClass} value={form.contractor.nameOrCompany} onChange={(e) => setContractor("nameOrCompany", e.target.value)} />
           </div>
           <div className="space-y-1">
@@ -276,7 +276,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
             <input className={inputClass} value={form.contractor.street} onChange={(e) => setContractor("street", e.target.value)} />
           </div>
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">Numero</label>
+            <label className="block text-sm font-medium text-gray-700">Número</label>
             <input className={inputClass} value={form.contractor.number} onChange={(e) => setContractor("number", e.target.value)} />
           </div>
           <div className="space-y-1">
@@ -312,7 +312,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
             <label className="block text-sm font-medium text-gray-700">E-mail</label>
             <input type="email" className={inputClass} value={form.contractor.email} onChange={(e) => setContractor("email", e.target.value)} />
             {form.contractor.email && !isValidEmail(form.contractor.email) ? (
-              <p className="text-xs text-red-600">E-mail invalido</p>
+              <p className="text-xs text-red-600">E-mail inválido</p>
             ) : null}
           </div>
           <div className="md:col-span-2 space-y-1">
@@ -352,9 +352,9 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
       {createdAdmin?.temporaryPassword ? (
         <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 text-sm text-amber-900">
           <p className="font-semibold">Admin provisório criado</p>
-          <p>Usuario: {createdAdmin.email}</p>
-          <p>Senha provisoria: <span className="font-mono">{createdAdmin.temporaryPassword}</span></p>
-          <p className="text-xs mt-1">Esse usuario sera obrigado a trocar senha no primeiro login.</p>
+          <p>Usuário: {createdAdmin.email}</p>
+          <p>Senha provisória: <span className="font-mono">{createdAdmin.temporaryPassword}</span></p>
+          <p className="text-xs mt-1">Esse usuário será obrigado a trocar a senha no primeiro login.</p>
         </div>
       ) : null}
 
@@ -364,7 +364,7 @@ export default function OnboardingLicencaWizard({ canManage, catalog = [], defau
         </Button>
         {step < 4 ? (
           <Button type="button" onClick={() => canNext && setStep((s) => Math.min(4, s + 1))} disabled={!canNext}>
-            Avancar
+            Avançar
           </Button>
         ) : (
           <Button type="button" onClick={finalizar} loading={saving} disabled={!canNext || !canManage}>

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -106,6 +106,11 @@ const LICENSE_REQUEST_STATUS = {
   APPLIED: "Aplicada",
   REJECTED: "Rejeitada",
   CANCELED: "Cancelada",
+};
+
+const DASHBOARD_MODE_LABELS = {
+  SIMPLIFIED: "Simplificado",
+  FULL: "Completo",
 };
 
 const USER_ROLE_ORDER = ["ADMIN", "VENDEDOR", "CAIXA", "FARMACEUTICO"];
@@ -335,13 +340,13 @@ export default function Config() {
             confirm: cleanupConfirm.trim().toUpperCase(),
           }),
         });
-        addToast("Licenca removida com sucesso", "success");
+        addToast("Licença removida com sucesso", "success");
       }
       setCleanupTarget(null);
       const listRes = await apiFetch("/api/license/admin/licenses");
       setLicensesList(listRes?.data?.licenses || []);
     } catch (err) {
-      addToast(err.message || "Falha ao limpar licenca", "error");
+      addToast(err.message || "Falha ao limpar licença", "error");
     } finally {
       setCleanupSubmitting(false);
     }
@@ -861,9 +866,9 @@ export default function Config() {
       } else {
         setLicenseData(res.data || null);
       }
-      addToast("Licenca atualizada com sucesso!", "success");
+      addToast("Licença atualizada com sucesso!", "success");
     } catch (err) {
-      addToast(err.message || "Erro ao atualizar licenca", "error");
+      addToast(err.message || "Erro ao atualizar licença", "error");
     } finally {
       setSubmitting(false);
     }
@@ -878,17 +883,17 @@ export default function Config() {
     }
     const contractorDocDigits = String(contractorForm.document || "").replace(/\D/g, "");
     if (contractorDocDigits && !validateCPFOrCNPJ(contractorDocDigits)) {
-      addToast("CPF/CNPJ invalido", "error");
+      addToast("CPF/CNPJ inválido", "error");
       return;
     }
     const contractorZipDigits = String(contractorForm.zipCode || "").replace(/\D/g, "");
     if (contractorZipDigits && contractorZipDigits.length !== 8) {
-      addToast("CEP invalido", "error");
+      addToast("CEP inválido", "error");
       return;
     }
     const phoneDigits = String(contractorForm.phoneWhatsapp || "").replace(/\D/g, "");
     if (phoneDigits && phoneDigits.length !== 10 && phoneDigits.length !== 11) {
-      addToast("Telefone/WhatsApp invalido", "error");
+      addToast("Telefone/WhatsApp inválido", "error");
       return;
     }
     setSubmitting(true);
@@ -934,7 +939,7 @@ export default function Config() {
       setContractorForm((prev) => ({ ...prev, logoFile: dataUrl }));
       addToast("Arquivo de logo carregado", "success");
     } catch {
-      addToast("Nao foi possivel ler o arquivo", "error");
+      addToast("Não foi possível ler o arquivo", "error");
     } finally {
       event.target.value = "";
     }
@@ -1265,7 +1270,7 @@ export default function Config() {
                                   <td className="px-2 py-1 text-gray-700">{plan.name}</td>
                                   <td className="px-2 py-1 text-gray-700">{moneyLabel(plan.monthlyPriceCents, plan.currency || "BRL")}</td>
                                   <td className="px-2 py-1 text-gray-700">{moneyLabel(plan.annualPriceCents, plan.currency || "BRL")}</td>
-                                  <td className="px-2 py-1 text-gray-700">{plan.dashboardMode}</td>
+                                  <td className="px-2 py-1 text-gray-700">{DASHBOARD_MODE_LABELS[String(plan.dashboardMode || "").toUpperCase()] || plan.dashboardMode}</td>
                                   <td className="px-2 py-1 text-gray-700">
                                     U:{Number(limits.maxActiveUsers || 0)} / L:{Number(limits.maxActiveStores || 0)} / Perfis:{Object.values(roleCaps || {}).some((n) => Number(n || 0) > 0) ? `${Number(roleCaps.ADMIN || 0)}/${Number(roleCaps.VENDEDOR || 0)}/${Number(roleCaps.CAIXA || 0)}/${Number(roleCaps.FARMACEUTICO || 0)}` : "ilimitado"}
                                   </td>
@@ -1320,8 +1325,8 @@ export default function Config() {
                         <div className="space-y-1">
                           <label className="block text-xs font-medium text-gray-600">Dashboard</label>
                           <select className={inputClass} value={planForm.dashboardMode} onChange={(e) => setPlanForm((prev) => ({ ...prev, dashboardMode: e.target.value }))}>
-                            <option value="SIMPLIFIED">SIMPLIFIED</option>
-                            <option value="FULL">FULL</option>
+                            <option value="SIMPLIFIED">Simplificado</option>
+                            <option value="FULL">Completo</option>
                           </select>
                         </div>
                         <div className="space-y-1">

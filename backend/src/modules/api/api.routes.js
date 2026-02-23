@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const { asyncHandler } = require("../../common/http/asyncHandler");
 const { sendOk } = require("../../common/http/response");
 const idempotencyGuard = require("../../common/idempotencyGuard");
@@ -66,7 +66,7 @@ function buildApiRoutes({ prisma, log }) {
 
   function assertPharmacistOrAdmin(req) {
     if (!isPharmacistOrAdmin(req)) {
-      throw Object.assign(new Error("Operacao permitida apenas para Farmaceutico ou Admin"), { statusCode: 403 });
+      throw Object.assign(new Error("Operação permitida apenas para Farmacêutico ou Admin"), { statusCode: 403 });
     }
   }
 
@@ -300,7 +300,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const isDev = await isDeveloperTenantById(tenantId);
     if (!isDev) {
-      throw Object.assign(new Error("Apenas admin da licenca do desenvolvedor pode criar novos licenciados"), { statusCode: 403 });
+      throw Object.assign(new Error("Apenas admin da licença do desenvolvedor pode criar novos licenciados"), { statusCode: 403 });
     }
     return tenantId;
   }
@@ -553,7 +553,7 @@ function buildApiRoutes({ prisma, log }) {
               newStatus: nextStatus,
               changedById: actorUserId || null,
               changedByName: "Sistema",
-              reason: "Atualizacao automatica de status por controle de pagamentos de licenca",
+              reason: "Atualização automatica de status por controle de pagamentos de licença",
             },
           });
         }
@@ -573,7 +573,7 @@ function buildApiRoutes({ prisma, log }) {
   }
 
   async function getTenantLicenseBillingView({ tenantId, limitAlerts = 80, forceProcess = true, actorUserId = null }) {
-    if (!tenantId) throw Object.assign(new Error("tenantId obrigatorio"), { statusCode: 400 });
+    if (!tenantId) throw Object.assign(new Error("tenantId obrigatório"), { statusCode: 400 });
     if (forceProcess) {
       await processTenantLicenseBillingIfNeeded({ tenantId, actorUserId, force: true });
     }
@@ -654,9 +654,9 @@ function buildApiRoutes({ prisma, log }) {
     const nextPlan = String(body?.planCode || "").trim().toUpperCase();
     const nextStatus = normalizeStatus(body?.status || "ACTIVE");
     const reason = body?.reason ? String(body.reason) : null;
-    if (!nextPlan) throw Object.assign(new Error("planCode obrigatorio"), { statusCode: 400 });
+    if (!nextPlan) throw Object.assign(new Error("planCode obrigatório"), { statusCode: 400 });
     const plan = await getPlanByCode(nextPlan);
-    if (!plan) throw Object.assign(new Error("Plano invalido"), { statusCode: 400 });
+    if (!plan) throw Object.assign(new Error("Plano inválido"), { statusCode: 400 });
 
     const previous = await prisma.tenantLicense.findUnique({ where: { tenantId } });
     const now = new Date();
@@ -753,18 +753,18 @@ function buildApiRoutes({ prisma, log }) {
     const adminName = String(payload?.admin?.name || "").trim();
     const adminEmail = String(payload?.admin?.email || "").trim().toLowerCase();
 
-    if (!contractor.nameOrCompany) throw Object.assign(new Error("Nome/Razao social do contratante e obrigatorio"), { statusCode: 400 });
-    if (!contractor.tradeName) throw Object.assign(new Error("Nome fantasia do contratante e obrigatorio"), { statusCode: 400 });
-    if (contractor.document && !isValidCpfCnpj(contractor.document)) throw Object.assign(new Error("CPF/CNPJ do contratante invalido"), { statusCode: 400 });
-    if (!contractor.zipCode || contractor.zipCode.length !== 8) throw Object.assign(new Error("CEP do contratante invalido"), { statusCode: 400 });
+    if (!contractor.nameOrCompany) throw Object.assign(new Error("Nome/Razão social do contratante e obrigatório"), { statusCode: 400 });
+    if (!contractor.tradeName) throw Object.assign(new Error("Nome fantasia do contratante e obrigatório"), { statusCode: 400 });
+    if (contractor.document && !isValidCpfCnpj(contractor.document)) throw Object.assign(new Error("CPF/CNPJ do contratante inválido"), { statusCode: 400 });
+    if (!contractor.zipCode || contractor.zipCode.length !== 8) throw Object.assign(new Error("CEP do contratante inválido"), { statusCode: 400 });
     if (!contractor.street || !contractor.district || !contractor.city || !contractor.state) {
-      throw Object.assign(new Error("Endereco do contratante incompleto"), { statusCode: 400 });
+      throw Object.assign(new Error("Endereço do contratante incompleto"), { statusCode: 400 });
     }
-    if (!isValidPhone(contractor.phoneWhatsapp)) throw Object.assign(new Error("Telefone/WhatsApp do contratante invalido"), { statusCode: 400 });
-    if (contractor.email && !isValidEmail(contractor.email)) throw Object.assign(new Error("Email do contratante invalido"), { statusCode: 400 });
-    if (!planCode) throw Object.assign(new Error("Pacote/planCode obrigatorio"), { statusCode: 400 });
-    if (!adminName || !adminEmail) throw Object.assign(new Error("Nome e email do usuario admin sao obrigatorios"), { statusCode: 400 });
-    if (!isValidEmail(adminEmail)) throw Object.assign(new Error("Email do usuario admin invalido"), { statusCode: 400 });
+    if (!isValidPhone(contractor.phoneWhatsapp)) throw Object.assign(new Error("Telefone/WhatsApp do contratante inválido"), { statusCode: 400 });
+    if (contractor.email && !isValidEmail(contractor.email)) throw Object.assign(new Error("Email do contratante inválido"), { statusCode: 400 });
+    if (!planCode) throw Object.assign(new Error("Pacote/planCode obrigatório"), { statusCode: 400 });
+    if (!adminName || !adminEmail) throw Object.assign(new Error("Nome e email do usuário admin sao obrigatórios"), { statusCode: 400 });
+    if (!isValidEmail(adminEmail)) throw Object.assign(new Error("Email do usuário admin inválido"), { statusCode: 400 });
 
     return {
       contractor,
@@ -963,7 +963,7 @@ function buildApiRoutes({ prisma, log }) {
     const v = String(value || "").trim().toLowerCase();
     if (!v) return fallback;
     if (["1", "true", "sim", "yes", "y"].includes(v)) return true;
-    if (["0", "false", "nao", "não", "no", "n"].includes(v)) return false;
+    if (["0", "false", "não", "não", "no", "n"].includes(v)) return false;
     return fallback;
   }
 
@@ -981,7 +981,7 @@ function buildApiRoutes({ prisma, log }) {
         table,
         fileName: fileName || "-",
         compatible: false,
-        errors: [`Tabela nao suportada: ${table}`],
+        errors: [`Tabela não suportada: ${table}`],
         warnings: [],
         totalRows: 0,
         parsedRows: [],
@@ -1002,7 +1002,7 @@ function buildApiRoutes({ prisma, log }) {
     }
     const unknown = headers.filter((h) => !schema.allowed.includes(h));
     if (unknown.length > 0) {
-      errors.push(`Colunas nao reconhecidas: ${unknown.join(", ")}`);
+      errors.push(`Colunas não reconhecidas: ${unknown.join(", ")}`);
     }
 
     const parsedRows = parsed.rows;
@@ -1161,7 +1161,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const license = await getLicense(req);
     if (!isLicenseActive(license)) {
-      throw Object.assign(new Error("Licenca inativa. Regularize o plano para continuar."), { statusCode: 403 });
+      throw Object.assign(new Error("Licença inativa. Regularize o plano para continuar."), { statusCode: 403 });
     }
     const maxUsers = Number(license?.limits?.maxActiveUsers || 0);
     if (maxUsers > 0) {
@@ -1171,7 +1171,7 @@ function buildApiRoutes({ prisma, log }) {
           : { tenantId, active: true },
       });
       if (activeUsers >= maxUsers) {
-        throw Object.assign(new Error("Limite do plano MINIMO atingido para usuarios."), { statusCode: 403 });
+        throw Object.assign(new Error("Limite do plano MINIMO atingido para usuários."), { statusCode: 403 });
       }
     }
     const capByRole = license?.limits?.maxRoleActive || {};
@@ -1196,7 +1196,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const license = await getLicense(req);
     if (!isLicenseActive(license)) {
-      throw Object.assign(new Error("Licenca inativa. Regularize o plano para continuar."), { statusCode: 403 });
+      throw Object.assign(new Error("Licença inativa. Regularize o plano para continuar."), { statusCode: 403 });
     }
     const maxStores = Number(license?.limits?.maxActiveStores || 0);
     if (maxStores > 0) {
@@ -1285,7 +1285,7 @@ function buildApiRoutes({ prisma, log }) {
         select: { storeId: true },
       });
       if (!allowed) {
-        throw Object.assign(new Error("Usuario sem acesso a loja informada"), { statusCode: 403 });
+        throw Object.assign(new Error("Usuário sem acesso a loja informada"), { statusCode: 403 });
       }
       return fromHeader;
     }
@@ -1346,7 +1346,7 @@ function buildApiRoutes({ prisma, log }) {
     return res.status(403).json({
       error: {
         code: 403,
-        message: "Licenca inativa. Regularize em Configuracoes > Licenciamento.",
+        message: "Licença inativa. Regularize em Configurações > Licenciamento.",
       },
     });
   }));
@@ -1389,13 +1389,13 @@ function buildApiRoutes({ prisma, log }) {
       notes: payload?.notes ? String(payload.notes).trim() : null,
     };
 
-    if (!data.patientName) throw Object.assign(new Error("Paciente obrigatorio"), { statusCode: 400 });
-    if (!data.buyerName) throw Object.assign(new Error("Comprador obrigatorio"), { statusCode: 400 });
-    if (data.buyerDocument.length !== 11) throw Object.assign(new Error("CPF do comprador invalido"), { statusCode: 400 });
-    if (!data.prescriberName) throw Object.assign(new Error("Prescritor obrigatorio"), { statusCode: 400 });
-    if (!data.prescriberCrm) throw Object.assign(new Error("CRM obrigatorio"), { statusCode: 400 });
+    if (!data.patientName) throw Object.assign(new Error("Paciente obrigatório"), { statusCode: 400 });
+    if (!data.buyerName) throw Object.assign(new Error("Comprador obrigatório"), { statusCode: 400 });
+    if (data.buyerDocument.length !== 11) throw Object.assign(new Error("CPF do comprador inválido"), { statusCode: 400 });
+    if (!data.prescriberName) throw Object.assign(new Error("Prescritor obrigatório"), { statusCode: 400 });
+    if (!data.prescriberCrm) throw Object.assign(new Error("CRM obrigatório"), { statusCode: 400 });
     if (data.prescriberUf.length !== 2) throw Object.assign(new Error("UF do CRM obrigatoria"), { statusCode: 400 });
-    if (!data.prescriptionNumber) throw Object.assign(new Error("Numero da receita obrigatorio"), { statusCode: 400 });
+    if (!data.prescriptionNumber) throw Object.assign(new Error("Numero da receita obrigatório"), { statusCode: 400 });
     if (!data.prescriptionDate || Number.isNaN(data.prescriptionDate.getTime())) {
       throw Object.assign(new Error("Data da receita obrigatoria"), { statusCode: 400 });
     }
@@ -1415,7 +1415,7 @@ function buildApiRoutes({ prisma, log }) {
         controlledDispensation: true,
       },
     });
-    if (!sale) throw Object.assign(new Error("Venda nao encontrada"), { statusCode: 404 });
+    if (!sale) throw Object.assign(new Error("Venda não encontrada"), { statusCode: 404 });
 
     const hasControlled = (sale.items || []).some((it) => Boolean(it.product?.controlled));
     if (!hasControlled) return;
@@ -1471,7 +1471,7 @@ function buildApiRoutes({ prisma, log }) {
     const recipientIds = Array.from(new Set([...admins, ...pharmacists].map((u) => u.id).filter(Boolean)));
     if (recipientIds.length === 0) return;
 
-    const requesterName = sender?.name || "Usuario";
+    const requesterName = sender?.name || "Usuário";
     const message = `Nova solicitacao de transferencia para ${transfer.destinationStore?.name || "Loja solicitante"} (${transfer.items?.length || 0} item(ns)). Solicitante: ${requesterName}.`;
 
     await prisma.chatMessage.createMany({
@@ -1516,7 +1516,7 @@ function buildApiRoutes({ prisma, log }) {
 
     const sentItemsCount = new Set(movements.map((m) => m.productId)).size;
     const sentUnits = movements.reduce((sum, m) => sum + Number(m.quantity || 0), 0);
-    const senderName = sender?.name || "Usuario";
+    const senderName = sender?.name || "Usuário";
 
     const message = `Transferencia enviada para ${transfer.destinationStore?.name || "loja solicitante"}. Enviado por ${senderName}: ${sentItemsCount} item(ns), ${sentUnits} unidade(s).`;
 
@@ -1550,7 +1550,7 @@ function buildApiRoutes({ prisma, log }) {
       return res.status(403).json({ error: { code: 403, message: "Somente admin pode consultar pagamentos da licença" } });
     }
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant não identificado" } });
     const view = await getTenantLicenseBillingView({ tenantId, actorUserId: req.user?.id || null, forceProcess: true });
     return sendOk(res, req, view);
   }));
@@ -1558,23 +1558,23 @@ function buildApiRoutes({ prisma, log }) {
   router.get("/license/me/billing-notices", asyncHandler(async (req, res) => {
     const role = String(req.user?.role || "").toUpperCase();
     if (!["ADMIN", "FARMACEUTICO"].includes(role)) {
-      return res.status(403).json({ error: { code: 403, message: "Acesso permitido apenas para Admin ou Farmaceutico" } });
+      return res.status(403).json({ error: { code: 403, message: "Acesso permitido apenas para Admin ou Farmacêutico" } });
     }
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant não identificado" } });
     const data = await getTenantBillingNotices({ tenantId, actorUserId: req.user?.id || null });
     return sendOk(res, req, data);
   }));
 
   router.put("/license/me", asyncHandler(async (req, res) => {
     if (!isAdmin(req)) {
-      return res.status(403).json({ error: { code: 403, message: "Somente admin pode alterar licenca" } });
+      return res.status(403).json({ error: { code: 403, message: "Somente admin pode alterar licença" } });
     }
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant não identificado" } });
     const isDevTenant = await isDeveloperTenantById(tenantId);
     if (!isDevTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Contratante nao pode alterar licenca diretamente" } });
+      return res.status(403).json({ error: { code: 403, message: "Contratante não pode alterar licença diretamente" } });
     }
 
     await upsertTenantLicenseWithAudit({ tenantId, actor: req.user, body: req.body });
@@ -1589,23 +1589,23 @@ function buildApiRoutes({ prisma, log }) {
       return res.status(403).json({ error: { code: 403, message: "Somente admin pode alterar dados do contratante" } });
     }
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant não identificado" } });
 
     const contractor = normalizeContractorPayload(req.body || {});
     if (!contractor.nameOrCompany) {
-      return res.status(400).json({ error: { code: 400, message: "Nome/Razao social do contratante e obrigatorio" } });
+      return res.status(400).json({ error: { code: 400, message: "Nome/Razão social do contratante e obrigatório" } });
     }
     if (contractor.document && !isValidCpfCnpj(contractor.document)) {
-      return res.status(400).json({ error: { code: 400, message: "CPF/CNPJ do contratante invalido" } });
+      return res.status(400).json({ error: { code: 400, message: "CPF/CNPJ do contratante inválido" } });
     }
     if (contractor.zipCode && contractor.zipCode.length !== 8) {
-      return res.status(400).json({ error: { code: 400, message: "CEP do contratante invalido" } });
+      return res.status(400).json({ error: { code: 400, message: "CEP do contratante inválido" } });
     }
     if (!isValidPhone(contractor.phoneWhatsapp)) {
-      return res.status(400).json({ error: { code: 400, message: "Telefone/WhatsApp do contratante invalido" } });
+      return res.status(400).json({ error: { code: 400, message: "Telefone/WhatsApp do contratante inválido" } });
     }
     if (contractor.email && !isValidEmail(contractor.email)) {
-      return res.status(400).json({ error: { code: 400, message: "Email do contratante invalido" } });
+      return res.status(400).json({ error: { code: 400, message: "Email do contratante inválido" } });
     }
 
     await prisma.tenant.update({
@@ -1637,7 +1637,7 @@ function buildApiRoutes({ prisma, log }) {
         newStatus: "ACTIVE",
         changedById: req.user?.id || null,
         changedByName: req.user?.name || req.user?.email || "Admin",
-        reason: "Atualizacao de dados do contratante",
+        reason: "Atualização de dados do contratante",
         payload: { contractor },
       },
     });
@@ -1650,7 +1650,7 @@ function buildApiRoutes({ prisma, log }) {
   router.get("/license/cep/:cep", asyncHandler(async (req, res) => {
     const cep = String(req.params.cep || "").replace(/\D/g, "");
     if (cep.length !== 8) {
-      return res.status(400).json({ error: { code: 400, message: "CEP invalido" } });
+      return res.status(400).json({ error: { code: 400, message: "CEP inválido" } });
     }
     const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
     if (!response.ok) {
@@ -1658,7 +1658,7 @@ function buildApiRoutes({ prisma, log }) {
     }
     const data = await response.json();
     if (data?.erro) {
-      return res.status(404).json({ error: { code: 404, message: "CEP nao encontrado" } });
+      return res.status(404).json({ error: { code: 404, message: "CEP não encontrado" } });
     }
     return sendOk(res, req, {
       zipCode: cep,
@@ -1672,9 +1672,9 @@ function buildApiRoutes({ prisma, log }) {
 
   function parseRequestedRoleCaps(raw) {
     const caps = normalizeRoleCaps(raw || {});
-    if (!Number(caps.ADMIN || 0)) throw Object.assign(new Error("Informe ao menos 1 usuario ADMIN"), { statusCode: 400 });
+    if (!Number(caps.ADMIN || 0)) throw Object.assign(new Error("Informe ao menos 1 usuário ADMIN"), { statusCode: 400 });
     const total = totalRoleCaps(caps);
-    if (total <= 0) throw Object.assign(new Error("Quantidade de usuarios invalida"), { statusCode: 400 });
+    if (total <= 0) throw Object.assign(new Error("Quantidade de usuários inválida"), { statusCode: 400 });
     return { caps, total };
   }
 
@@ -1752,7 +1752,7 @@ function buildApiRoutes({ prisma, log }) {
       proposedTotalUsers: requestedTotal,
       proposedMonthlyPriceCents: finalMonthly,
       proposedAnnualPriceCents: finalAnnual,
-      proposedExtrasDescription: String(extrasDescription || "").trim() || "Ajuste de usuarios fora dos pacotes padrao",
+      proposedExtrasDescription: String(extrasDescription || "").trim() || "Ajuste de usuários fora dos pacotes padrão",
       proposedDifferenceMonthlyCents: finalMonthly - currentMonthly,
       proposedDifferenceAnnualCents: finalAnnual - currentAnnual,
       proposedNote: note || null,
@@ -1775,10 +1775,10 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/license/me/change-requests", asyncHandler(async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: { code: 403, message: "Somente admin pode solicitar ajuste" } });
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado não identificado" } });
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, isDeveloperTenant: true } });
     if (!tenant || tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Solicitacao indisponivel para licenca Desenvolvedor" } });
+      return res.status(403).json({ error: { code: 403, message: "Solicitacao indisponivel para licença Desenvolvedor" } });
     }
 
     const open = await prisma.tenantLicenseChangeRequest.findFirst({
@@ -1815,14 +1815,14 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const id = String(req.params.id || "").trim();
     const request = await prisma.tenantLicenseChangeRequest.findFirst({ where: { id, tenantId } });
-    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitacao nao encontrada" } });
+    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitacao não encontrada" } });
     if (request.status !== "PENDING_CONTRACTOR_APPROVAL") {
-      return res.status(400).json({ error: { code: 400, message: "Solicitacao ainda nao esta pronta para aprovacao do contratante" } });
+      return res.status(400).json({ error: { code: 400, message: "Solicitacao ainda não esta pronta para aprovacao do contratante" } });
     }
 
     await prisma.$transaction(async (tx) => {
       const license = await tx.tenantLicense.findUnique({ where: { tenantId }, select: { id: true, endsAt: true, status: true } });
-      if (!license?.id) throw Object.assign(new Error("Licenca nao encontrada"), { statusCode: 404 });
+      if (!license?.id) throw Object.assign(new Error("Licença não encontrada"), { statusCode: 404 });
       const catalog = await getPlanCatalogMap();
       const firstPlan = Object.values(catalog)[0] || null;
       const appliedPlan = catalog[String(request.proposedPlanCode || request.currentPlanCode || "MINIMO").toUpperCase()] || catalog.MINIMO || firstPlan;
@@ -1875,7 +1875,7 @@ function buildApiRoutes({ prisma, log }) {
           newStatus: "ACTIVE",
           changedById: req.user?.id || null,
           changedByName: req.user?.name || req.user?.email || "Admin",
-          reason: "Aprovacao de ajuste de licenca pelo contratante",
+          reason: "Aprovacao de ajuste de licença pelo contratante",
           payload: {
             requestId: request.id,
             requestedRoleCaps: request.requestedRoleCaps,
@@ -1929,9 +1929,9 @@ function buildApiRoutes({ prisma, log }) {
     const id = String(req.params.id || "").trim();
     const action = String(req.body?.action || "PROPOSE").trim().toUpperCase();
     const request = await prisma.tenantLicenseChangeRequest.findUnique({ where: { id } });
-    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitacao nao encontrada" } });
+    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitacao não encontrada" } });
     if (request.status !== "PENDING_MASTER_REVIEW") {
-      return res.status(400).json({ error: { code: 400, message: "Solicitacao nao esta pendente para revisao do Desenvolvedor" } });
+      return res.status(400).json({ error: { code: 400, message: "Solicitacao não esta pendente para revisao do Desenvolvedor" } });
     }
 
     if (action === "REJECT") {
@@ -1989,7 +1989,7 @@ function buildApiRoutes({ prisma, log }) {
       return res.status(403).json({ error: { code: 403, message: "Somente admin pode validar importacao" } });
     }
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado não identificado" } });
     const files = Array.isArray(req.body?.files) ? req.body.files : [];
     if (files.length === 0) return res.status(400).json({ error: { code: 400, message: "Informe ao menos um arquivo para validacao" } });
 
@@ -1997,9 +1997,9 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: tenantId },
       select: { id: true, name: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Importacao indisponivel para licenca Desenvolvedor" } });
+      return res.status(403).json({ error: { code: 403, message: "Importacao indisponivel para licença Desenvolvedor" } });
     }
 
     const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
@@ -2022,7 +2022,7 @@ function buildApiRoutes({ prisma, log }) {
       return res.status(403).json({ error: { code: 403, message: "Somente admin pode importar dados" } });
     }
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado não identificado" } });
     const files = Array.isArray(req.body?.files) ? req.body.files : [];
     if (files.length === 0) return res.status(400).json({ error: { code: 400, message: "Informe ao menos um arquivo para importacao" } });
 
@@ -2030,9 +2030,9 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: tenantId },
       select: { id: true, name: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Importacao indisponivel para licenca Desenvolvedor" } });
+      return res.status(403).json({ error: { code: 403, message: "Importacao indisponivel para licença Desenvolvedor" } });
     }
 
     const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
@@ -2097,12 +2097,12 @@ function buildApiRoutes({ prisma, log }) {
 
   router.post("/license/onboarding/finalize", asyncHandler(async (req, res) => {
     const sourceTenantId = await assertDeveloperAdmin(req);
-    if (!sourceTenantId) return res.status(400).json({ error: { code: 400, message: "Tenant do desenvolvedor nao identificado" } });
+    if (!sourceTenantId) return res.status(400).json({ error: { code: 400, message: "Tenant do desenvolvedor não identificado" } });
 
     const validated = validateOnboardingPayload(req.body || {});
     const onboardingPlan = await getPlanByCode(validated.planCode);
     if (!onboardingPlan) {
-      return res.status(400).json({ error: { code: 400, message: "Plano informado nao existe" } });
+      return res.status(400).json({ error: { code: 400, message: "Plano informado não existe" } });
     }
     const passwordTemp = generateProvisionalPassword();
     const bcrypt = require("bcryptjs");
@@ -2162,7 +2162,7 @@ function buildApiRoutes({ prisma, log }) {
       });
 
       const role = await tx.role.findUnique({ where: { name: "ADMIN" }, select: { id: true } });
-      if (!role?.id) throw Object.assign(new Error("Role ADMIN nao encontrada"), { statusCode: 500 });
+      if (!role?.id) throw Object.assign(new Error("Role ADMIN não encontrada"), { statusCode: 500 });
       const adminUser = await tx.user.create({
         data: {
           tenantId: newTenant.id,
@@ -2254,12 +2254,12 @@ function buildApiRoutes({ prisma, log }) {
       acc[key] = Boolean(featuresRaw[key]);
       return acc;
     }, {});
-    if (isCreate && !code) throw Object.assign(new Error("Codigo do plano obrigatorio"), { statusCode: 400 });
-    if (!name) throw Object.assign(new Error("Nome do plano obrigatorio"), { statusCode: 400 });
-    if (!Number.isFinite(monthlyPriceCents) || monthlyPriceCents < 0) throw Object.assign(new Error("Valor mensal invalido"), { statusCode: 400 });
-    if (!Number.isFinite(annualPriceCents) || annualPriceCents < 0) throw Object.assign(new Error("Valor anual invalido"), { statusCode: 400 });
-    if (!Number.isFinite(limits.maxActiveUsers) || limits.maxActiveUsers < 0) throw Object.assign(new Error("Limite maxActiveUsers invalido"), { statusCode: 400 });
-    if (!Number.isFinite(limits.maxActiveStores) || limits.maxActiveStores < 0) throw Object.assign(new Error("Limite maxActiveStores invalido"), { statusCode: 400 });
+    if (isCreate && !code) throw Object.assign(new Error("Codigo do plano obrigatório"), { statusCode: 400 });
+    if (!name) throw Object.assign(new Error("Nome do plano obrigatório"), { statusCode: 400 });
+    if (!Number.isFinite(monthlyPriceCents) || monthlyPriceCents < 0) throw Object.assign(new Error("Valor mensal inválido"), { statusCode: 400 });
+    if (!Number.isFinite(annualPriceCents) || annualPriceCents < 0) throw Object.assign(new Error("Valor anual inválido"), { statusCode: 400 });
+    if (!Number.isFinite(limits.maxActiveUsers) || limits.maxActiveUsers < 0) throw Object.assign(new Error("Limite maxActiveUsers inválido"), { statusCode: 400 });
+    if (!Number.isFinite(limits.maxActiveStores) || limits.maxActiveStores < 0) throw Object.assign(new Error("Limite maxActiveStores inválido"), { statusCode: 400 });
     return {
       code,
       name,
@@ -2303,7 +2303,7 @@ function buildApiRoutes({ prisma, log }) {
   router.put("/license/admin/plans/:code", asyncHandler(async (req, res) => {
     await assertDeveloperAdmin(req);
     const code = String(req.params.code || "").trim().toUpperCase();
-    if (!code) return res.status(400).json({ error: { code: 400, message: "Codigo do plano obrigatorio" } });
+    if (!code) return res.status(400).json({ error: { code: 400, message: "Codigo do plano obrigatório" } });
     const payload = normalizePlanPayload({ ...req.body, code }, { isCreate: false });
     const updated = await prisma.licensePlan.update({
       where: { code },
@@ -2324,10 +2324,10 @@ function buildApiRoutes({ prisma, log }) {
   router.delete("/license/admin/plans/:code", asyncHandler(async (req, res) => {
     await assertDeveloperAdmin(req);
     const code = String(req.params.code || "").trim().toUpperCase();
-    if (!code) return res.status(400).json({ error: { code: 400, message: "Codigo do plano obrigatorio" } });
+    if (!code) return res.status(400).json({ error: { code: 400, message: "Codigo do plano obrigatório" } });
     const inUse = await prisma.tenantLicense.count({ where: { planCode: code } });
     if (inUse > 0) {
-      return res.status(409).json({ error: { code: 409, message: "Nao e possivel excluir plano com contratantes vinculados" } });
+      return res.status(409).json({ error: { code: 409, message: "Não e possível excluir plano com contratantes vinculados" } });
     }
     await prisma.licensePlan.delete({ where: { code } });
     return sendOk(res, req, { deleted: true, code });
@@ -2378,7 +2378,7 @@ function buildApiRoutes({ prisma, log }) {
   router.get("/license/admin/licenses/:tenantId", asyncHandler(async (req, res) => {
     await assertDeveloperAdmin(req);
     const tenantId = String(req.params.tenantId || "").trim();
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatório" } });
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -2414,7 +2414,7 @@ function buildApiRoutes({ prisma, log }) {
         },
       },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     const license = await resolveLicenseByTenantId(tenant.id);
     const provisionalByTenant = await buildProvisionalAdminByTenantMap([tenant.id]);
     return sendOk(res, req, {
@@ -2449,14 +2449,14 @@ function buildApiRoutes({ prisma, log }) {
   router.get("/license/admin/licenses/:tenantId/payments", asyncHandler(async (req, res) => {
     await assertDeveloperAdmin(req);
     const tenantId = String(req.params.tenantId || "").trim();
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatório" } });
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Controle de pagamentos nao se aplica a licenca Desenvolvedor" } });
+      return res.status(403).json({ error: { code: 403, message: "Controle de pagamentos não se aplica a licença Desenvolvedor" } });
     }
     const view = await getTenantLicenseBillingView({ tenantId, actorUserId: req.user?.id || null, forceProcess: true });
     return sendOk(res, req, view);
@@ -2467,22 +2467,22 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = String(req.params.tenantId || "").trim();
     const paymentId = String(req.params.paymentId || "").trim();
     if (!tenantId || !paymentId) {
-      return res.status(400).json({ error: { code: 400, message: "licenciadoId e paymentId sao obrigatorios" } });
+      return res.status(400).json({ error: { code: 400, message: "licenciadoId e paymentId sao obrigatórios" } });
     }
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Licenca Desenvolvedor nao possui cobranca de pagamentos" } });
+      return res.status(403).json({ error: { code: 403, message: "Licença Desenvolvedor não possui cobrança de pagamentos" } });
     }
 
     const payment = await prisma.tenantLicensePayment.findFirst({
       where: { id: paymentId, tenantId },
       select: { id: true, tenantId: true, status: true, amountCents: true, paidAt: true },
     });
-    if (!payment) return res.status(404).json({ error: { code: 404, message: "Parcela nao encontrada para o licenciado informado" } });
+    if (!payment) return res.status(404).json({ error: { code: 404, message: "Parcela não encontrada para o licenciado informado" } });
 
     const paidAt = req.body?.paidAt ? safeDate(req.body.paidAt) : new Date();
     const paidAmountCentsRaw = req.body?.paidAmountCents;
@@ -2515,14 +2515,14 @@ function buildApiRoutes({ prisma, log }) {
   router.put("/license/admin/licenses/:tenantId", asyncHandler(async (req, res) => {
     await assertDeveloperAdmin(req);
     const tenantId = String(req.params.tenantId || "").trim();
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatório" } });
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, name: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Licenca do Desenvolvedor nao pode ser alterada por esta tela" } });
+      return res.status(403).json({ error: { code: 403, message: "Licença do Desenvolvedor não pode ser alterada por esta tela" } });
     }
 
     await upsertTenantLicenseWithAudit({ tenantId: tenant.id, actor: req.user, body: req.body });
@@ -2534,18 +2534,18 @@ function buildApiRoutes({ prisma, log }) {
     await assertDeveloperAdmin(req);
     const tenantId = String(req.body?.tenantId || "").trim();
     const confirm = String(req.body?.confirm || "").trim().toUpperCase();
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "tenantId obrigatorio" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "tenantId obrigatório" } });
     if (confirm !== "CONFIRMAR") {
-      return res.status(400).json({ error: { code: 400, message: "Confirmacao invalida. Informe CONFIRMAR." } });
+      return res.status(400).json({ error: { code: 400, message: "Confirmacao inválida. Informe CONFIRMAR." } });
     }
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, name: true, slug: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenca/tenant nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licença/tenant não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "A licenca Master nao pode ser apagada" } });
+      return res.status(403).json({ error: { code: 403, message: "A licença Master não pode ser apagada" } });
     }
 
     await prisma.$transaction(async (tx) => {
@@ -2559,7 +2559,7 @@ function buildApiRoutes({ prisma, log }) {
     await assertDeveloperAdmin(req);
     const confirm = String(req.body?.confirm || "").trim().toUpperCase();
     if (confirm !== "CONFIRMAR") {
-      return res.status(400).json({ error: { code: 400, message: "Confirmacao invalida. Informe CONFIRMAR." } });
+      return res.status(400).json({ error: { code: 400, message: "Confirmacao inválida. Informe CONFIRMAR." } });
     }
 
     const nonMaster = await prisma.tenant.findMany({
@@ -2584,16 +2584,16 @@ function buildApiRoutes({ prisma, log }) {
     await assertDeveloperAdmin(req);
     const tenantId = String(req.body?.tenantId || "").trim();
     const files = Array.isArray(req.body?.files) ? req.body.files : [];
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatório" } });
     if (files.length === 0) return res.status(400).json({ error: { code: 400, message: "Informe ao menos um arquivo para validacao" } });
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, name: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Nao e permitido importar dados para a licenca Desenvolvedor nesta tela" } });
+      return res.status(403).json({ error: { code: 403, message: "Não e permitido importar dados para a licença Desenvolvedor nesta tela" } });
     }
 
     const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
@@ -2615,16 +2615,16 @@ function buildApiRoutes({ prisma, log }) {
     const sourceTenantId = await assertDeveloperAdmin(req);
     const tenantId = String(req.body?.tenantId || "").trim();
     const files = Array.isArray(req.body?.files) ? req.body.files : [];
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatório" } });
     if (files.length === 0) return res.status(400).json({ error: { code: 400, message: "Informe ao menos um arquivo para importacao" } });
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, name: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Nao e permitido importar dados para a licenca Desenvolvedor nesta tela" } });
+      return res.status(403).json({ error: { code: 403, message: "Não e permitido importar dados para a licença Desenvolvedor nesta tela" } });
     }
 
     const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
@@ -2933,7 +2933,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/stores", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { name, type, cnpj, phone, email, street, number, complement, district, city, state, zipCode } = req.body;
-    if (!name || !type) return res.status(400).json({ error: { code: 400, message: "name e type obrigatÃ³rios" } });
+    if (!name || !type) return res.status(400).json({ error: { code: 400, message: "name e type obrigatórios" } });
     await assertStoreActivationAllowed(req, true);
 
     const store = await prisma.store.create({
@@ -2946,7 +2946,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const { name, type, cnpj, phone, email, street, number, complement, district, city, state, zipCode, active, isDefault } = req.body;
     const currentStore = await prisma.store.findFirst({ where: { id: req.params.id, tenantId }, select: { active: true } });
-    if (!currentStore) return res.status(404).json({ error: { code: 404, message: "Loja nao encontrada" } });
+    if (!currentStore) return res.status(404).json({ error: { code: 404, message: "Loja não encontrada" } });
     const data = {};
     if (name !== undefined) data.name = name;
     if (type !== undefined) data.type = type;
@@ -3107,7 +3107,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/products", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { name, ean, brand, categoryId, controlled, price } = req.body;
-    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatÃ³rio" } });
+    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatório" } });
 
     const product = await prisma.product.create({
       data: { tenantId, name, ean: ean || null, brand: brand || null, categoryId: categoryId || null, controlled: !!controlled, active: true },
@@ -3124,7 +3124,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const { name, ean, brand, categoryId, controlled, price } = req.body;
     const currentProduct = await prisma.product.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true } });
-    if (!currentProduct) return res.status(404).json({ error: { code: 404, message: "Produto nao encontrado" } });
+    if (!currentProduct) return res.status(404).json({ error: { code: 404, message: "Produto não encontrado" } });
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data: { name, ean: ean || null, brand: brand || null, categoryId: categoryId || null, controlled: !!controlled },
@@ -3160,13 +3160,13 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const { productId, type, value, startDate, endDate } = req.body;
     if (!productId || !type || value === undefined) {
-      return res.status(400).json({ error: { code: 400, message: "productId, type e value obrigatÃ³rios" } });
+      return res.status(400).json({ error: { code: 400, message: "productId, type e value obrigatórios" } });
     }
     if (!["PERCENT", "FIXED"].includes(type)) {
       return res.status(400).json({ error: { code: 400, message: "type deve ser PERCENT ou FIXED" } });
     }
     const product = await prisma.product.findFirst({ where: { id: productId, tenantId }, select: { id: true } });
-    if (!product) return res.status(404).json({ error: { code: 404, message: "Produto nao encontrado no tenant" } });
+    if (!product) return res.status(404).json({ error: { code: 404, message: "Produto não encontrado no tenant" } });
 
     // Deactivate existing active discounts for this product
     await prisma.discount.updateMany({
@@ -3203,7 +3203,7 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id, product: { tenantId } },
       select: { id: true },
     });
-    if (!existing) return res.status(404).json({ error: { code: 404, message: "Desconto nao encontrado" } });
+    if (!existing) return res.status(404).json({ error: { code: 404, message: "Desconto não encontrado" } });
 
     const discount = await prisma.discount.update({
       where: { id: req.params.id },
@@ -3219,7 +3219,7 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id, product: { tenantId } },
       select: { id: true },
     });
-    if (!existing) return res.status(404).json({ error: { code: 404, message: "Desconto nao encontrado" } });
+    if (!existing) return res.status(404).json({ error: { code: 404, message: "Desconto não encontrado" } });
     await prisma.discount.update({
       where: { id: req.params.id },
       data: { active: false },
@@ -3253,11 +3253,11 @@ function buildApiRoutes({ prisma, log }) {
     const bcrypt = require("bcryptjs");
     const { name, email, password, roleName, storeIds } = req.body;
     if (!name || !email || !password || !roleName) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: name, email, password, roleName" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: name, email, password, roleName" } });
     }
     await assertUserCreationAllowed(req, roleName);
     const role = await prisma.role.findUnique({ where: { name: roleName } });
-    if (!role) return res.status(400).json({ error: { code: 400, message: `Role ${roleName} nÃ£o encontrada` } });
+    if (!role) return res.status(400).json({ error: { code: 400, message: `Role ${roleName} não encontrada` } });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
@@ -3287,7 +3287,7 @@ function buildApiRoutes({ prisma, log }) {
       include: { role: { select: { name: true } } },
     });
     if (!currentUser) {
-      return res.status(404).json({ error: { code: 404, message: "Usuario nao encontrado" } });
+      return res.status(404).json({ error: { code: 404, message: "Usuário não encontrado" } });
     }
 
     const data = {};
@@ -3338,32 +3338,32 @@ function buildApiRoutes({ prisma, log }) {
 
     // Users can only update their own profile
     if (req.user?.id !== userId) {
-      return res.status(403).json({ error: { code: 403, message: "Sem permissÃ£o" } });
+      return res.status(403).json({ error: { code: 403, message: "Sem permissão" } });
     }
 
     const data = {};
 
     if (name !== undefined) {
       const nextName = String(name || "").trim();
-      if (!nextName) return res.status(400).json({ error: { code: 400, message: "Nome obrigatorio" } });
+      if (!nextName) return res.status(400).json({ error: { code: 400, message: "Nome obrigatório" } });
       data.name = nextName;
     }
 
     if (email) {
       const existing = await prisma.user.findFirst({ where: { tenantId, email, NOT: { id: userId } } });
-      if (existing) return res.status(400).json({ error: { code: 400, message: "Email jÃ¡ em uso" } });
+      if (existing) return res.status(400).json({ error: { code: 400, message: "Email já em uso" } });
       data.email = email;
     }
 
     const user = await prisma.user.findFirst({ where: { id: userId, tenantId } });
-    if (!user) return res.status(404).json({ error: { code: 404, message: "UsuÃ¡rio nÃ£o encontrado" } });
+    if (!user) return res.status(404).json({ error: { code: 404, message: "Usuário não encontrado" } });
 
     if (newPassword !== undefined || currentPassword !== undefined) {
       if (!currentPassword || !newPassword) {
-        return res.status(400).json({ error: { code: 400, message: "Senha atual e nova senha sÃ£o obrigatÃ³rias" } });
+        return res.status(400).json({ error: { code: 400, message: "Senha atual e nova senha são obrigatórias" } });
       }
       if (String(newPassword).length < 4) {
-        return res.status(400).json({ error: { code: 400, message: "Nova senha deve ter no mÃ­nimo 4 caracteres" } });
+        return res.status(400).json({ error: { code: 400, message: "Nova senha deve ter no mínimo 4 caracteres" } });
       }
       if (String(currentPassword) === String(newPassword)) {
         return res.status(400).json({ error: { code: 400, message: "Nova senha deve ser diferente da senha atual" } });
@@ -3503,13 +3503,13 @@ function buildApiRoutes({ prisma, log }) {
     const currentUserId = req.user?.id;
     const otherUserId = req.params.userId;
     if (!currentUserId) return sendOk(res, req, { messages: [] });
-    if (!otherUserId) return res.status(400).json({ error: { code: 400, message: "userId obrigatorio" } });
+    if (!otherUserId) return res.status(400).json({ error: { code: 400, message: "userId obrigatório" } });
 
     const otherUser = await prisma.user.findFirst({
       where: { id: otherUserId, tenantId, active: true },
       select: { id: true, name: true, email: true, lastSeenAt: true, role: { select: { name: true } } },
     });
-    if (!otherUser) return res.status(404).json({ error: { code: 404, message: "Usuario nao encontrado" } });
+    if (!otherUser) return res.status(404).json({ error: { code: 404, message: "Usuário não encontrado" } });
 
     const limit = Math.min(Math.max(Number(req.query.limit || 80), 1), 300);
     const before = req.query.before ? new Date(String(req.query.before)) : null;
@@ -3576,16 +3576,16 @@ function buildApiRoutes({ prisma, log }) {
     const metaType = req.body?.metaType ? String(req.body.metaType) : null;
     const metaJson = req.body?.metaJson ?? null;
 
-    if (!senderId) return res.status(401).json({ error: { code: 401, message: "Nao autenticado" } });
-    if (!recipientId) return res.status(400).json({ error: { code: 400, message: "recipientId obrigatorio" } });
-    if (recipientId === senderId) return res.status(400).json({ error: { code: 400, message: "Nao e permitido enviar para si mesmo" } });
+    if (!senderId) return res.status(401).json({ error: { code: 401, message: "Não autenticado" } });
+    if (!recipientId) return res.status(400).json({ error: { code: 400, message: "recipientId obrigatório" } });
+    if (recipientId === senderId) return res.status(400).json({ error: { code: 400, message: "Não e permitido enviar para si mesmo" } });
     if (!content) return res.status(400).json({ error: { code: 400, message: "Mensagem obrigatoria" } });
 
     const recipient = await prisma.user.findFirst({
       where: { id: recipientId, tenantId, active: true },
       select: { id: true },
     });
-    if (!recipient) return res.status(404).json({ error: { code: 404, message: "Destinatario nao encontrado" } });
+    if (!recipient) return res.status(404).json({ error: { code: 404, message: "Destinatario não encontrado" } });
 
     let replyToId = null;
     if (replyToMessageId) {
@@ -3593,12 +3593,12 @@ function buildApiRoutes({ prisma, log }) {
         where: { id: replyToMessageId, tenantId },
         select: { id: true, senderId: true, recipientId: true },
       });
-      if (!replied) return res.status(400).json({ error: { code: 400, message: "Mensagem respondida nao encontrada" } });
+      if (!replied) return res.status(400).json({ error: { code: 400, message: "Mensagem respondida não encontrada" } });
       const belongsToConversation =
         (replied.senderId === senderId && replied.recipientId === recipientId)
         || (replied.senderId === recipientId && replied.recipientId === senderId);
       if (!belongsToConversation) {
-        return res.status(400).json({ error: { code: 400, message: "Mensagem respondida invalida para esta conversa" } });
+        return res.status(400).json({ error: { code: 400, message: "Mensagem respondida inválida para esta conversa" } });
       }
       replyToId = replied.id;
     }
@@ -3980,7 +3980,7 @@ function buildApiRoutes({ prisma, log }) {
     const storeId = await resolveStoreId(req);
     const { productId, lotNumber, expiration, costUnit, quantity, reason } = req.body;
     if (!productId || !lotNumber || !expiration || !costUnit || !quantity) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: productId, lotNumber, expiration, costUnit, quantity" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: productId, lotNumber, expiration, costUnit, quantity" } });
     }
 
     const lot = await prisma.inventoryLot.upsert({
@@ -4020,24 +4020,24 @@ function buildApiRoutes({ prisma, log }) {
     const storeId = await resolveStoreId(req);
     let { productId, lotId, type, quantity, reason } = req.body;
     if (!type || !quantity || !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Campos obrigatÃ³rios: type, quantity, reason" } });
+      return res.status(400).json({ error: { code: 400, message: "Campos obrigatórios: type, quantity, reason" } });
     }
 
     // Resolve productId from lotId if not provided
     if (lotId && !productId) {
       const lot = await prisma.inventoryLot.findFirst({ where: { id: lotId, storeId, store: { tenantId } } });
-      if (!lot) return res.status(400).json({ error: { code: 400, message: "Lote nÃ£o encontrado" } });
+      if (!lot) return res.status(400).json({ error: { code: 400, message: "Lote não encontrado" } });
       productId = lot.productId;
     }
 
     if (!productId) {
-      return res.status(400).json({ error: { code: 400, message: "productId ou lotId obrigatÃ³rio" } });
+      return res.status(400).json({ error: { code: 400, message: "productId ou lotId obrigatório" } });
     }
 
     const isPositive = type === "ADJUST_POS";
     if (lotId) {
       const lot = await prisma.inventoryLot.findFirst({ where: { id: lotId, storeId, store: { tenantId } }, select: { id: true } });
-      if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote nao encontrado para esta loja" } });
+      if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote não encontrado para esta loja" } });
       await prisma.inventoryLot.update({
         where: { id: lot.id },
         data: { quantity: isPositive ? { increment: Number(quantity) } : { decrement: Number(quantity) } },
@@ -4088,9 +4088,9 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const destinationStoreId = await resolveStoreId(req);
     const { originStoreId, note, items = [] } = req.body || {};
-    if (!destinationStoreId) return res.status(400).json({ error: { code: 400, message: "Loja atual nao definida" } });
+    if (!destinationStoreId) return res.status(400).json({ error: { code: 400, message: "Loja atual não definida" } });
     if (!originStoreId || originStoreId === destinationStoreId) {
-      return res.status(400).json({ error: { code: 400, message: "originStoreId invalido" } });
+      return res.status(400).json({ error: { code: 400, message: "originStoreId inválido" } });
     }
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: { code: 400, message: "Informe os itens da solicitacao" } });
@@ -4145,8 +4145,8 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id, tenantId },
       include: { items: true },
     });
-    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia nao encontrada" } });
-    if (transfer.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Transferencia nao pode ser enviada neste status" } });
+    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia não encontrada" } });
+    if (transfer.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Transferencia não pode ser enviada neste status" } });
     if (transfer.originStoreId !== currentStoreId) return res.status(403).json({ error: { code: 403, message: "Somente a loja de origem pode enviar" } });
 
     const requestedByProduct = {};
@@ -4272,8 +4272,8 @@ function buildApiRoutes({ prisma, log }) {
         },
       },
     });
-    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia nao encontrada" } });
-    if (transfer.status !== "SENT") return res.status(400).json({ error: { code: 400, message: "Transferencia nao pode ser recebida neste status" } });
+    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia não encontrada" } });
+    if (transfer.status !== "SENT") return res.status(400).json({ error: { code: 400, message: "Transferencia não pode ser recebida neste status" } });
     if (transfer.destinationStoreId !== currentStoreId) return res.status(403).json({ error: { code: 403, message: "Somente a loja destino pode receber" } });
     if ((transfer.movements || []).length === 0) {
       return res.status(400).json({ error: { code: 400, message: "Transferencia sem movimentacoes de envio" } });
@@ -4357,8 +4357,8 @@ function buildApiRoutes({ prisma, log }) {
     await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
     const tenantId = await resolveTenantId(req);
     const transfer = await prisma.stockTransfer.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia nao encontrada" } });
-    if (transfer.status === "RECEIVED") return res.status(400).json({ error: { code: 400, message: "Transferencia recebida nao pode ser cancelada" } });
+    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia não encontrada" } });
+    if (transfer.status === "RECEIVED") return res.status(400).json({ error: { code: 400, message: "Transferencia recebida não pode ser cancelada" } });
     if (transfer.status === "SENT") return res.status(400).json({ error: { code: 400, message: "Transferencia enviada deve ser recebida ou tratada por ajuste" } });
 
     await prisma.stockTransfer.update({
@@ -4402,9 +4402,9 @@ function buildApiRoutes({ prisma, log }) {
     assertPharmacistOrAdmin(req);
     const requestStoreId = await resolveStoreId(req);
     const { sourceStoreId, customerId, note, items = [] } = req.body || {};
-    if (!requestStoreId) return res.status(400).json({ error: { code: 400, message: "Loja solicitante nao definida" } });
+    if (!requestStoreId) return res.status(400).json({ error: { code: 400, message: "Loja solicitante não definida" } });
     if (!sourceStoreId || sourceStoreId === requestStoreId) {
-      return res.status(400).json({ error: { code: 400, message: "sourceStoreId invalido" } });
+      return res.status(400).json({ error: { code: 400, message: "sourceStoreId inválido" } });
     }
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: { code: 400, message: "Informe os itens da reserva" } });
@@ -4445,8 +4445,8 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id, tenantId },
       include: { items: true },
     });
-    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
-    if (reservation.status !== "REQUESTED") return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser aprovada neste status" } });
+    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva não encontrada" } });
+    if (reservation.status !== "REQUESTED") return res.status(400).json({ error: { code: 400, message: "Reserva não pode ser aprovada neste status" } });
     if (reservation.sourceStoreId !== storeId) return res.status(403).json({ error: { code: 403, message: "Somente a loja origem pode aprovar" } });
 
     await prisma.$transaction(async (tx) => {
@@ -4497,11 +4497,11 @@ function buildApiRoutes({ prisma, log }) {
     assertPharmacistOrAdmin(req);
     const storeId = await resolveStoreId(req);
     const { reason } = req.body || {};
-    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatorio" } });
+    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório" } });
     const reservation = await prisma.stockReservation.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
+    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva não encontrada" } });
     if (reservation.sourceStoreId !== storeId) return res.status(403).json({ error: { code: 403, message: "Somente a loja origem pode rejeitar" } });
-    if (reservation.status !== "REQUESTED") return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser rejeitada neste status" } });
+    if (reservation.status !== "REQUESTED") return res.status(400).json({ error: { code: 400, message: "Reserva não pode ser rejeitada neste status" } });
 
     await prisma.stockReservation.update({
       where: { id: reservation.id },
@@ -4520,12 +4520,12 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     const reservation = await prisma.stockReservation.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
+    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva não encontrada" } });
     if (![reservation.requestStoreId, reservation.sourceStoreId].includes(storeId)) {
       return res.status(403).json({ error: { code: 403, message: "Sem permissao para cancelar reserva" } });
     }
     if (!["REQUESTED", "APPROVED"].includes(reservation.status)) {
-      return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser cancelada neste status" } });
+      return res.status(400).json({ error: { code: 400, message: "Reserva não pode ser cancelada neste status" } });
     }
 
     await prisma.stockReservation.update({
@@ -4541,9 +4541,9 @@ function buildApiRoutes({ prisma, log }) {
     assertPharmacistOrAdmin(req);
     const storeId = await resolveStoreId(req);
     const reservation = await prisma.stockReservation.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva nao encontrada" } });
+    if (!reservation) return res.status(404).json({ error: { code: 404, message: "Reserva não encontrada" } });
     if (reservation.requestStoreId !== storeId) return res.status(403).json({ error: { code: 403, message: "Somente loja solicitante pode finalizar" } });
-    if (reservation.status !== "APPROVED") return res.status(400).json({ error: { code: 400, message: "Reserva nao pode ser finalizada neste status" } });
+    if (reservation.status !== "APPROVED") return res.status(400).json({ error: { code: 400, message: "Reserva não pode ser finalizada neste status" } });
 
     await prisma.stockReservation.update({
       where: { id: reservation.id },
@@ -4559,10 +4559,10 @@ function buildApiRoutes({ prisma, log }) {
     if (quantity === undefined && costUnit === undefined) {
       return res.status(400).json({ error: { code: 400, message: "Informe quantity ou costUnit" } });
     }
-    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio" } });
+    if (!reason) return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório" } });
 
     const lot = await prisma.inventoryLot.findFirst({ where: { id: req.params.id, store: { tenantId } } });
-    if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote nÃ£o encontrado" } });
+    if (!lot) return res.status(404).json({ error: { code: 404, message: "Lote não encontrado" } });
 
     const data = {};
     if (quantity !== undefined) data.quantity = Number(quantity);
@@ -4594,7 +4594,7 @@ function buildApiRoutes({ prisma, log }) {
     const storeId = req.query.storeId || null;
     const allowedStoreIds = await getUserStoreIds(req);
     if (!isAdmin(req) && allowedStoreIds.length === 0) {
-      return res.status(403).json({ error: { code: 403, message: "Usuario sem loja vinculada" } });
+      return res.status(403).json({ error: { code: 403, message: "Usuário sem loja vinculada" } });
     }
     if (!isAdmin(req) && storeId && !allowedStoreIds.includes(storeId)) {
       return res.status(403).json({ error: { code: 403, message: "Sem acesso a loja informada" } });
@@ -4740,12 +4740,12 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/customers", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { name, document, birthDate, whatsapp, phone, email } = req.body;
-    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatÃ³rio" } });
+    if (!name) return res.status(400).json({ error: { code: 400, message: "Nome obrigatório" } });
 
     const cleanDoc = document ? document.replace(/\D/g, "") : null;
     if (cleanDoc) {
       const existing = await prisma.customer.findFirst({ where: { tenantId, document: cleanDoc } });
-      if (existing) return res.status(400).json({ error: { code: 400, message: "CPF jÃ¡ cadastrado" } });
+      if (existing) return res.status(400).json({ error: { code: 400, message: "CPF já cadastrado" } });
     }
 
     const customer = await prisma.customer.create({
@@ -4768,7 +4768,7 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id, tenantId },
       include: { sales: { where: { tenantId, status: "PAID" }, orderBy: { createdAt: "desc" }, take: 10, include: { items: { include: { product: true } } } } },
     });
-    if (!customer) return res.status(404).json({ error: { code: 404, message: "Cliente nÃ£o encontrado" } });
+    if (!customer) return res.status(404).json({ error: { code: 404, message: "Cliente não encontrado" } });
     return sendOk(res, req, customer);
   }));
 
@@ -4869,7 +4869,7 @@ function buildApiRoutes({ prisma, log }) {
 
   router.get("/sales/:id", asyncHandler(async (req, res) => {
     const sale = await loadFullSale(req.params.id, await resolveTenantId(req));
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     return sendOk(res, req, sale);
   }));
 
@@ -4877,7 +4877,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const { customerId, discount } = req.body;
     const currentSale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true } });
-    if (!currentSale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (!currentSale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     const data = {};
     if (customerId !== undefined) data.customerId = customerId || null;
     if (discount !== undefined) data.discount = Number(discount);
@@ -4893,9 +4893,9 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id, tenantId },
       include: { items: { include: { product: { select: { controlled: true } } } } },
     });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     if (sale.status !== "DRAFT" && sale.status !== "CONFIRMED") {
-      return res.status(400).json({ error: { code: 400, message: "Nao e possivel editar dados neste status" } });
+      return res.status(400).json({ error: { code: 400, message: "Não e possível editar dados neste status" } });
     }
 
     const hasControlled = (sale.items || []).some((it) => Boolean(it.product?.controlled));
@@ -4924,7 +4924,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
+    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId não definido" } });
 
     // Robust sale number generation with retry for race conditions (e.g., React StrictMode double-mount)
     const maxRetries = 5;
@@ -4973,12 +4973,12 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales/:id/items", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { productId, quantity } = req.body;
-    if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatÃ³rios" } });
+    if (!productId || !quantity) return res.status(400).json({ error: { code: 400, message: "productId e quantity obrigatórios" } });
 
     const saleCtx = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true, storeId: true, status: true } });
-    if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     if (saleCtx.status !== "DRAFT" && saleCtx.status !== "CONFIRMED") {
-      return res.status(400).json({ error: { code: 400, message: "Nao e possivel incluir itens neste status" } });
+      return res.status(400).json({ error: { code: 400, message: "Não e possível incluir itens neste status" } });
     }
     const qtyRequested = Number(quantity || 0);
     const availableQty = await getAvailableQtyInStore(saleCtx.storeId, productId);
@@ -4992,7 +4992,7 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const price = await prisma.productPrice.findFirst({ where: { productId, active: true }, orderBy: { createdAt: "desc" } });
-    if (!price) return res.status(400).json({ error: { code: 400, message: "Produto sem preÃ§o" } });
+    if (!price) return res.status(400).json({ error: { code: 400, message: "Produto sem preço" } });
 
     const basePrice = Number(price.price);
     let priceUnit = basePrice;
@@ -5041,11 +5041,11 @@ function buildApiRoutes({ prisma, log }) {
     if (!quantity || quantity < 1) return res.status(400).json({ error: { code: 400, message: "quantity deve ser >= 1" } });
 
     const saleCtx = await prisma.sale.findFirst({ where: { id: req.params.saleId, tenantId }, select: { id: true, storeId: true, status: true } });
-    if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (!saleCtx) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     const item = await prisma.saleItem.findFirst({ where: { id: req.params.itemId, saleId: saleCtx.id } });
-    if (!item) return res.status(404).json({ error: { code: 404, message: "Item nÃ£o encontrado" } });
+    if (!item) return res.status(404).json({ error: { code: 404, message: "Item não encontrado" } });
     if (saleCtx.status !== "DRAFT" && saleCtx.status !== "CONFIRMED") {
-      return res.status(400).json({ error: { code: 400, message: "Nao e possivel alterar itens neste status" } });
+      return res.status(400).json({ error: { code: 400, message: "Não e possível alterar itens neste status" } });
     }
     const qtyRequested = Number(quantity || 0);
     const currentQty = Number(item.quantity || 0);
@@ -5077,9 +5077,9 @@ function buildApiRoutes({ prisma, log }) {
   router.delete("/sales/:saleId/items/:itemId", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.saleId, tenantId }, select: { id: true } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     const item = await prisma.saleItem.findFirst({ where: { id: req.params.itemId, saleId: sale.id }, select: { id: true } });
-    if (!item) return res.status(404).json({ error: { code: 404, message: "Item nao encontrado" } });
+    if (!item) return res.status(404).json({ error: { code: 404, message: "Item não encontrado" } });
 
     await prisma.saleItem.delete({ where: { id: item.id } });
     const items = await prisma.saleItem.findMany({ where: { saleId: sale.id } });
@@ -5094,7 +5094,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales/:id/confirm", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId }, select: { id: true } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     await assertControlledDispensationIfRequired(sale.id, tenantId);
     await prisma.sale.update({
       where: { id: sale.id },
@@ -5107,7 +5107,7 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales/:id/pay", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { method, pos } = req.body || {};
-    if (!method) return res.status(400).json({ error: { code: 400, message: "method obrigatÃ³rio (DINHEIRO, PIX, CARTAO_CREDITO, CARTAO_DEBITO)" } });
+    if (!method) return res.status(400).json({ error: { code: 400, message: "method obrigatório (DINHEIRO, PIX, CARTAO_CREDITO, CARTAO_DEBITO)" } });
 
     const sale = await prisma.sale.findFirst({
       where: { id: req.params.id, tenantId },
@@ -5115,12 +5115,12 @@ function buildApiRoutes({ prisma, log }) {
     });
 
     if (!sale || (sale.status !== "CONFIRMED" && sale.status !== "DRAFT")) {
-      return res.status(400).json({ error: { code: 400, message: "Venda nÃ£o pode ser paga neste status" } });
+      return res.status(400).json({ error: { code: 400, message: "Venda não pode ser paga neste status" } });
     }
 
     // Check open cash session
     const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o de caixa aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
 
     // FEFO + COGS for each item
     for (const item of sale.items) {
@@ -5217,7 +5217,7 @@ function buildApiRoutes({ prisma, log }) {
   router.delete("/sales/:id", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     if (sale.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Somente rascunhos podem ser apagados" } });
 
     await prisma.saleItem.deleteMany({ where: { saleId: sale.id } });
@@ -5229,12 +5229,12 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const { reason } = req.body || {};
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
-    if (sale.status === "PAID") return res.status(400).json({ error: { code: 400, message: "Venda paga nÃ£o pode ser cancelada (use estorno)" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
+    if (sale.status === "PAID") return res.status(400).json({ error: { code: 400, message: "Venda paga não pode ser cancelada (use estorno)" } });
 
     // CONFIRMED sales require a reason
     if (sale.status === "CONFIRMED" && !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio para cancelar venda confirmada" } });
+      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório para cancelar venda confirmada" } });
     }
 
     await prisma.sale.update({
@@ -5260,7 +5260,7 @@ function buildApiRoutes({ prisma, log }) {
       include: { items: { include: { product: true } } },
     });
 
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     if (sale.status !== "PAID") return res.status(400).json({ error: { code: 400, message: "Somente vendas pagas podem ser trocadas" } });
 
     let totalReturn = 0;
@@ -5286,7 +5286,7 @@ function buildApiRoutes({ prisma, log }) {
           data: {
             tenantId,
             storeId: sale.storeId, productId: saleItem.productId, lotId: lot.id,
-            type: "IN", quantity: returnQty, reason: reason || "Troca - DevoluÃ§Ã£o",
+            type: "IN", quantity: returnQty, reason: reason || "Troca - Devolução",
             refType: "EXCHANGE", refId: sale.id, createdById: req.user?.id,
           },
         });
@@ -5391,13 +5391,13 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/sales/:id/settle-exchange", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nÃ£o encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
     if (sale.exchangeBalance === null || Number(sale.exchangeBalance) === 0) {
       return res.status(400).json({ error: { code: 400, message: "Nenhuma troca pendente para esta venda" } });
     }
 
     const session = await prisma.cashSession.findFirst({ where: { storeId: sale.storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o de caixa aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão de caixa aberta" } });
 
     const amount = Number(sale.exchangeBalance);
 
@@ -5437,11 +5437,11 @@ function buildApiRoutes({ prisma, log }) {
     } = req.body || {};
 
     if (!saleId || !method || !amount || !provider) {
-      return res.status(400).json({ error: { code: 400, message: "saleId, method, amount e provider obrigatorios" } });
+      return res.status(400).json({ error: { code: 400, message: "saleId, method, amount e provider obrigatórios" } });
     }
 
     const sale = await prisma.sale.findFirst({ where: { id: String(saleId), tenantId }, select: { id: true, storeId: true } });
-    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda nao encontrada" } });
+    if (!sale) return res.status(404).json({ error: { code: 404, message: "Venda não encontrada" } });
 
     const currentStoreId = await resolveStoreId(req);
     if (!isAdmin(req) && currentStoreId && sale.storeId !== currentStoreId) {
@@ -5484,14 +5484,14 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id },
       include: { sale: { select: { tenantId: true, storeId: true } } },
     });
-    if (!existing) return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+    if (!existing) return res.status(404).json({ error: { code: 404, message: "Transacao POS não encontrada" } });
     if (existing.sale?.tenantId !== tenantId) {
-      return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+      return res.status(404).json({ error: { code: 404, message: "Transacao POS não encontrada" } });
     }
 
     const currentStoreId = await resolveStoreId(req);
     if (!isAdmin(req) && currentStoreId && existing.sale?.storeId !== currentStoreId) {
-      return res.status(403).json({ error: { code: 403, message: "Sem acesso a transacao POS" } });
+      return res.status(403).json({ error: { code: 403, message: "Sem acesso a transação POS" } });
     }
 
     const data = {};
@@ -5520,14 +5520,14 @@ function buildApiRoutes({ prisma, log }) {
         payment: { select: { id: true, method: true, amount: true, createdAt: true } },
       },
     });
-    if (!trx) return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+    if (!trx) return res.status(404).json({ error: { code: 404, message: "Transacao POS não encontrada" } });
     if (trx.sale?.tenantId !== tenantId) {
-      return res.status(404).json({ error: { code: 404, message: "Transacao POS nao encontrada" } });
+      return res.status(404).json({ error: { code: 404, message: "Transacao POS não encontrada" } });
     }
 
     const currentStoreId = await resolveStoreId(req);
     if (!isAdmin(req) && currentStoreId && trx.sale?.storeId !== currentStoreId) {
-      return res.status(403).json({ error: { code: 403, message: "Sem acesso a transacao POS" } });
+      return res.status(403).json({ error: { code: 403, message: "Sem acesso a transação POS" } });
     }
 
     return sendOk(res, req, trx);
@@ -5537,7 +5537,7 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
     const { matricula, password } = req.body;
-    if (!matricula || !password) return res.status(400).json({ error: { code: 400, message: "MatrÃ­cula e senha obrigatÃ³rios" } });
+    if (!matricula || !password) return res.status(400).json({ error: { code: 400, message: "Matrícula e senha obrigatórios" } });
 
     // Hard-coded master operator: 00000 / 00000
     if (matricula === "00000" && password === "00000") {
@@ -5547,7 +5547,7 @@ function buildApiRoutes({ prisma, log }) {
     // Matricula is sequential (0001, 0002, ...) based on user creation order
     const users = await prisma.user.findMany({ where: { tenantId, active: true }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, email: true, passwordHash: true } });
     const idx = parseInt(matricula, 10) - 1;
-    if (idx < 0 || idx >= users.length) return res.status(401).json({ error: { code: 401, message: "MatrÃ­cula invÃ¡lida" } });
+    if (idx < 0 || idx >= users.length) return res.status(401).json({ error: { code: 401, message: "Matrícula inválida" } });
 
     const user = users[idx];
     const valid = password === "0000" || await bcrypt.compare(password, user.passwordHash);
@@ -5573,10 +5573,10 @@ function buildApiRoutes({ prisma, log }) {
   router.post("/cash/sessions/open", idempotencyGuard, asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
-    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId nÃ£o definido" } });
+    if (!storeId) return res.status(400).json({ error: { code: 400, message: "storeId não definido" } });
 
     const existing = await prisma.cashSession.findFirst({ where: { tenantId, storeId, closedAt: null } });
-    if (existing) return res.status(400).json({ error: { code: 400, message: "JÃ¡ existe sessÃ£o aberta para esta loja" } });
+    if (existing) return res.status(400).json({ error: { code: 400, message: "Já existe sessão aberta para esta loja" } });
 
     const { initialCash } = req.body;
     const session = await prisma.cashSession.create({
@@ -5594,8 +5594,8 @@ function buildApiRoutes({ prisma, log }) {
       include: { movements: true },
     });
 
-    if (!session) return res.status(404).json({ error: { code: 404, message: "SessÃ£o nÃ£o encontrada" } });
-    if (session.closedAt) return res.status(400).json({ error: { code: 400, message: "SessÃ£o jÃ¡ fechada" } });
+    if (!session) return res.status(404).json({ error: { code: 404, message: "Sessão não encontrada" } });
+    if (session.closedAt) return res.status(400).json({ error: { code: 400, message: "Sessão já fechada" } });
 
     // Calculate expected cash
     let expected = Number(session.initialCash);
@@ -5622,12 +5622,12 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     const session = await prisma.cashSession.findFirst({ where: { tenantId, storeId, closedAt: null } });
-    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessÃ£o aberta" } });
+    if (!session) return res.status(400).json({ error: { code: 400, message: "Nenhuma sessão aberta" } });
 
     const { type, amount, reason, method } = req.body;
-    if (!type || !amount) return res.status(400).json({ error: { code: 400, message: "type e amount obrigatÃ³rios" } });
+    if (!type || !amount) return res.status(400).json({ error: { code: 400, message: "type e amount obrigatórios" } });
     if ((type === "SANGRIA" || type === "AJUSTE") && !reason) {
-      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatÃ³rio para sangria/ajuste" } });
+      return res.status(400).json({ error: { code: 400, message: "Motivo obrigatório para sangria/ajuste" } });
     }
 
     const movement = await prisma.cashMovement.create({
@@ -5644,7 +5644,7 @@ function buildApiRoutes({ prisma, log }) {
   router.get("/reports/cash-closings", asyncHandler(async (req, res) => {
     await assertFeature(req, "reportsCashClosings", "Relatorio de fechamento de caixa indisponivel no plano atual");
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado não identificado" } });
     const storeId = await resolveStoreId(req);
     const { from, to, page = 1, limit = 20 } = req.query;
     const take = Number(limit);
@@ -5712,7 +5712,7 @@ function buildApiRoutes({ prisma, log }) {
   router.get("/reports/sales", asyncHandler(async (req, res) => {
     await assertFeature(req, "reportsSales", "Relatorio de vendas indisponivel no plano atual");
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado não identificado" } });
     const storeId = await resolveStoreId(req);
     const { from, to, status, sellerId, customerId, page = 1, limit = 30 } = req.query;
     const take = Number(limit);
@@ -5780,7 +5780,7 @@ function buildApiRoutes({ prisma, log }) {
 
   router.get("/reports/sample-pdf", asyncHandler(async (req, res) => {
     const reportName = String(req.query.reportName || "Relatorio de Amostra");
-    const emittedBy = req.user?.name || "Usuario";
+    const emittedBy = req.user?.name || "Usuário";
     const branding = await getTenantBranding(req);
     const pdfBuf = await makeReportSamplePdfBuffer({
       reportName,
@@ -5803,12 +5803,12 @@ function buildApiRoutes({ prisma, log }) {
     if (type === "caixa") await assertFeature(req, "reportsCashClosings", "Relatorio de fechamento de caixa indisponivel no plano atual");
     if (type === "transferencias") await assertFeature(req, "reportsTransfers", "Relatorio de transferencias indisponivel no plano atual");
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado não identificado" } });
     const from = req.query.from ? safeDate(req.query.from) : null;
     const to = req.query.to ? safeDate(req.query.to) : null;
     if (to) to.setHours(23, 59, 59, 999);
 
-    const emittedBy = req.user?.name || "Usuario";
+    const emittedBy = req.user?.name || "Usuário";
     const branding = await getTenantBranding(req);
     const money = (v) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
     const dateTime = (v) => {

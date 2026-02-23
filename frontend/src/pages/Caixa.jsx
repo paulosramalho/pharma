@@ -568,7 +568,7 @@ export default function Caixa() {
           <Card>
             <CardHeader><h3 className="font-semibold text-gray-900">Movimentacoes</h3></CardHeader>
             {movements.length === 0 ? (
-              <CardBody><p className="text-sm text-gray-400 text-center py-4">Nenhuma movimentacao</p></CardBody>
+              <CardBody><p className="text-sm text-gray-400 text-center py-4">Nenhuma movimentação</p></CardBody>
             ) : (
               <div className="divide-y divide-gray-100">
                 {movements.map((m) => {
@@ -701,7 +701,7 @@ export default function Caixa() {
             </div>
           )}
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">Observacao</label>
+            <label className="block text-sm font-medium text-gray-700">Observação</label>
             <textarea value={closeNote} onChange={(e) => setCloseNote(e.target.value)} rows={2} className={inputClass} />
           </div>
           <div className="flex gap-2">

@@ -18,6 +18,17 @@ function getPresenceText(user) {
   return "último acesso indisponível";
 }
 
+function roleLabel(roleName) {
+  const r = String(roleName || "").toUpperCase();
+  const map = {
+    ADMIN: "Administrador",
+    VENDEDOR: "Vendedor",
+    CAIXA: "Caixa",
+    FARMACEUTICO: "Farmacêutico",
+  };
+  return map[r] || roleName || "-";
+}
+
 function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear()
     && a.getMonth() === b.getMonth()
@@ -214,7 +225,7 @@ export default function Chat() {
                       </p>
                       {!!unread && <span className="text-[11px] bg-red-100 text-red-700 rounded-full px-2 py-0.5">{unread}</span>}
                     </div>
-                    <p className="text-xs text-gray-500 truncate">{u.role?.name || "-"} • {getPresenceText(u)}</p>
+                    <p className="text-xs text-gray-500 truncate">{roleLabel(u.role?.name)} • {getPresenceText(u)}</p>
                   </button>
                 );
               })}
@@ -229,7 +240,7 @@ export default function Chat() {
             <span className={`inline-block w-2.5 h-2.5 rounded-full ${activeUser?.isOnline ? "bg-emerald-500" : "bg-gray-300"}`} />
             {activeUser?.name || "Selecione um usuário"}
           </p>
-          <p className="text-xs text-gray-500">{activeUser?.role?.name || ""} {activeUser ? `• ${getPresenceText(activeUser)}` : ""}</p>
+          <p className="text-xs text-gray-500">{roleLabel(activeUser?.role?.name)} {activeUser ? `• ${getPresenceText(activeUser)}` : ""}</p>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 bg-gray-50">
@@ -247,7 +258,7 @@ export default function Chat() {
                       <div className={`max-w-[85%] rounded-xl px-3 py-2 ${mine ? "bg-primary-600 text-white" : "bg-white border border-gray-200 text-gray-900"}`}>
                         {m.replyTo && (
                           <div className={`mb-1.5 px-2 py-1 rounded border-l-2 ${mine ? "bg-primary-500/40 border-primary-100 text-primary-100" : "bg-gray-50 border-gray-300 text-gray-500"}`}>
-                            <p className="text-[10px] font-semibold">{m.replyTo.senderId === m.senderId ? "Voce respondeu" : "Respondendo"}</p>
+                            <p className="text-[10px] font-semibold">{m.replyTo.senderId === m.senderId ? "Você respondeu" : "Respondendo"}</p>
                             <p className="text-[11px] whitespace-pre-wrap break-words">{String(m.replyTo.content || "").slice(0, 140)}</p>
                           </div>
                         )}

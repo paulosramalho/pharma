@@ -28,6 +28,13 @@ const ROLE_NAV_RESTRICT = {
   VENDEDOR: ["/vendas", "/chat", "/perfil"],
 };
 
+const ROLE_LABELS = {
+  ADMIN: "Administrador",
+  VENDEDOR: "Vendedor",
+  CAIXA: "Caixa",
+  FARMACEUTICO: "Farmacêutico",
+};
+
 export default function Layout() {
   const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive, license } = useAuth();
   const { addToast } = useToast();
@@ -203,7 +210,7 @@ export default function Layout() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900 truncate">{user?.name}</p>
-              <p className="text-xs text-gray-500">{user?.role}</p>
+              <p className="text-xs text-gray-500">{ROLE_LABELS[String(user?.role || "").toUpperCase()] || user?.role}</p>
             </div>
             <button onClick={handleLogout} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50" title="Sair">
               <LogOut size={16} />

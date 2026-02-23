@@ -244,7 +244,7 @@ export default function VendaNova() {
       for (const c of candidates) c.stores = stocksById[c.id] || [];
       const exact = candidates.find((p) => String(p.ean || "") === code);
       if (!exact) {
-        addToast("Codigo de barras nao encontrado", "warning");
+        addToast("Código de barras não encontrado", "warning");
         return;
       }
       const stock = getStoreStock(exact);

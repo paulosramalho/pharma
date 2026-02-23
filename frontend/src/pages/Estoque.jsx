@@ -221,7 +221,7 @@ export default function Estoque() {
       const list = res.data?.products || [];
       const exact = list.find((p) => String(p.ean || "") === code);
       if (!exact) {
-        addToast("Codigo de barras nao encontrado", "warning");
+        addToast("Código de barras não encontrado", "warning");
         return;
       }
       setReceiveForm((prev) => ({ ...prev, productId: exact.id }));
@@ -710,7 +710,7 @@ export default function Estoque() {
                                   <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
                                 </div>
                               ) : movements.length === 0 ? (
-                                <p className="text-sm text-gray-400 text-center py-2">Nenhuma movimentacao registrada</p>
+                                <p className="text-sm text-gray-400 text-center py-2">Nenhuma movimentação registrada</p>
                               ) : (
                                 <div className="max-h-60 overflow-y-auto">
                                   <table className="w-full text-xs">
@@ -784,7 +784,7 @@ export default function Estoque() {
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">Loja destino</label>
               <select value={receiveForm.storeId} onChange={(e) => setReceiveForm({ ...receiveForm, storeId: e.target.value })} className={inputClass}>
-                <option value="">Loja padrao</option>
+                <option value="">Loja padrão</option>
                 {allStores.map((s) => (
                   <option key={s.id} value={s.id}>{s.name} ({TYPE_LABEL[s.type] || s.type})</option>
                 ))}
@@ -1068,7 +1068,7 @@ export default function Estoque() {
                 )}
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">Observacao</label>
+                <label className="block text-sm font-medium text-gray-700">Observação</label>
                 <input value={transferForm.note} onChange={(e) => setTransferForm({ ...transferForm, note: e.target.value })} className={inputClass} />
               </div>
               <Button loading={submitting} onClick={createTransfer} disabled={!transferForm.originStoreId || transferItems.length === 0}>
