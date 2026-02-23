@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
-import { cnpjMask, phoneMask, cpfMask, cpfCnpjMask, validateCPFOrCNPJ, whatsappMask, formatDate } from "../lib/format";
+import { cnpjMask, phoneMask, cpfMask, cpfCnpjMask, validateCPFOrCNPJ, whatsappMask, formatDate, moneyMask, parseMoney } from "../lib/format";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
@@ -465,8 +465,8 @@ export default function Config() {
       code: "NOVO_PLANO",
       name: "",
       currency: "BRL",
-      monthlyPriceCents: "",
-      annualPriceCents: "",
+      monthlyPriceCents: "0,00",
+      annualPriceCents: "0,00",
       dashboardMode: "FULL",
       maxActiveUsers: "",
       maxActiveStores: "",
@@ -489,8 +489,8 @@ export default function Config() {
       code: String(plan.code || "").toUpperCase(),
       name: String(plan.name || ""),
       currency: String(plan.currency || "BRL").toUpperCase(),
-      monthlyPriceCents: String(plan.monthlyPriceCents ?? ""),
-      annualPriceCents: String(plan.annualPriceCents ?? ""),
+      monthlyPriceCents: centsToInput(plan.monthlyPriceCents),
+      annualPriceCents: centsToInput(plan.annualPriceCents),
       dashboardMode: String(plan.dashboardMode || "FULL").toUpperCase(),
       maxActiveUsers: String(limits.maxActiveUsers ?? ""),
       maxActiveStores: String(limits.maxActiveStores ?? ""),
@@ -517,8 +517,8 @@ export default function Config() {
       code: `${String(source.code || "NOVO").toUpperCase()}_NOVO`,
       name: `${String(source.name || "Plano")} (cópia)`,
       currency: String(source.currency || "BRL").toUpperCase(),
-      monthlyPriceCents: String(source.monthlyPriceCents ?? ""),
-      annualPriceCents: String(source.annualPriceCents ?? ""),
+      monthlyPriceCents: centsToInput(source.monthlyPriceCents),
+      annualPriceCents: centsToInput(source.annualPriceCents),
       dashboardMode: String(source.dashboardMode || "FULL").toUpperCase(),
       maxActiveUsers: String(limits.maxActiveUsers ?? ""),
       maxActiveStores: String(limits.maxActiveStores ?? ""),
@@ -550,8 +550,8 @@ export default function Config() {
         code: planEditingCode || code,
         name,
         currency: String(planForm.currency || "BRL").trim().toUpperCase() || "BRL",
-        monthlyPriceCents: Number(planForm.monthlyPriceCents || 0),
-        annualPriceCents: Number(planForm.annualPriceCents || 0),
+        monthlyPriceCents: inputToCents(planForm.monthlyPriceCents),
+        annualPriceCents: inputToCents(planForm.annualPriceCents),
         dashboardMode: String(planForm.dashboardMode || "FULL").trim().toUpperCase(),
         active: Boolean(planForm.active),
         limits: {
@@ -719,8 +719,8 @@ export default function Config() {
         body: JSON.stringify({
           action,
           roleCaps,
-          monthlyPriceCents: adminProposalForm.monthlyPriceCents === "" ? null : Number(adminProposalForm.monthlyPriceCents),
-          annualPriceCents: adminProposalForm.annualPriceCents === "" ? null : Number(adminProposalForm.annualPriceCents),
+          monthlyPriceCents: adminProposalForm.monthlyPriceCents === "" ? null : inputToCents(adminProposalForm.monthlyPriceCents),
+          annualPriceCents: adminProposalForm.annualPriceCents === "" ? null : inputToCents(adminProposalForm.annualPriceCents),
           extrasDescription: String(adminProposalForm.extrasDescription || "").trim() || null,
           note: String(adminProposalForm.note || "").trim() || null,
         }),
@@ -840,8 +840,10 @@ export default function Config() {
   const selectedLicense = contractorLicenses.find((l) => l.id === selectedLicenseId) || null;
   const selectedPlanCode = String((isDeveloperAdmin ? selectedLicense?.license?.planCode : licenseData?.planCode) || licenseForm.planCode || "MINIMO").toUpperCase();
   const selectedPlanMeta = (licenseData?.catalog || []).find((p) => String(p.code || "").toUpperCase() === selectedPlanCode) || null;
-  const moneyLabel = (cents, currency = "BRL") =>
-    new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(Number(cents || 0) / 100);
+  const moneyLabel = (cents) =>
+    new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(cents || 0) / 100);
+  const centsToInput = (cents) => moneyMask(String(Math.max(0, Number(cents || 0))));
+  const inputToCents = (value) => Math.round(parseMoney(value || "0") * 100);
 
   const submitLicense = async () => {
     if (!canManageLicense) return;
@@ -1054,8 +1056,8 @@ export default function Config() {
       VENDEDOR: Number(caps.VENDEDOR || 0),
       CAIXA: Number(caps.CAIXA || 0),
       FARMACEUTICO: Number(caps.FARMACEUTICO || 0),
-      monthlyPriceCents: selectedAdminRequest.proposedMonthlyPriceCents ?? "",
-      annualPriceCents: selectedAdminRequest.proposedAnnualPriceCents ?? "",
+      monthlyPriceCents: selectedAdminRequest.proposedMonthlyPriceCents != null ? centsToInput(selectedAdminRequest.proposedMonthlyPriceCents) : "",
+      annualPriceCents: selectedAdminRequest.proposedAnnualPriceCents != null ? centsToInput(selectedAdminRequest.proposedAnnualPriceCents) : "",
       extrasDescription: selectedAdminRequest.proposedExtrasDescription || "",
       note: selectedAdminRequest.proposedNote || "",
     }));
@@ -1330,12 +1332,12 @@ export default function Config() {
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-600">Valor mensal (centavos)</label>
-                          <input type="number" min={0} className={inputClass} value={planForm.monthlyPriceCents} onChange={(e) => setPlanForm((prev) => ({ ...prev, monthlyPriceCents: e.target.value }))} />
+                          <label className="block text-xs font-medium text-gray-600">Valor mensal (R$)</label>
+                          <input type="text" inputMode="numeric" className={inputClass} value={planForm.monthlyPriceCents} onChange={(e) => setPlanForm((prev) => ({ ...prev, monthlyPriceCents: moneyMask(e.target.value) }))} />
                         </div>
                         <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-600">Valor anual (centavos)</label>
-                          <input type="number" min={0} className={inputClass} value={planForm.annualPriceCents} onChange={(e) => setPlanForm((prev) => ({ ...prev, annualPriceCents: e.target.value }))} />
+                          <label className="block text-xs font-medium text-gray-600">Valor anual (R$)</label>
+                          <input type="text" inputMode="numeric" className={inputClass} value={planForm.annualPriceCents} onChange={(e) => setPlanForm((prev) => ({ ...prev, annualPriceCents: moneyMask(e.target.value) }))} />
                         </div>
                         <div className="space-y-1">
                           <label className="block text-xs font-medium text-gray-600">Max usuários</label>
@@ -1483,12 +1485,12 @@ export default function Config() {
                           </div>
                           <div className="grid md:grid-cols-2 gap-2">
                             <div className="space-y-1">
-                              <label className="block text-xs font-medium text-gray-600">Valor mensal proposto (centavos)</label>
-                              <input className={inputClass} value={adminProposalForm.monthlyPriceCents} onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, monthlyPriceCents: e.target.value }))} />
+                              <label className="block text-xs font-medium text-gray-600">Valor mensal proposto (R$)</label>
+                              <input className={inputClass} inputMode="numeric" value={adminProposalForm.monthlyPriceCents} onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, monthlyPriceCents: moneyMask(e.target.value) }))} />
                             </div>
                             <div className="space-y-1">
-                              <label className="block text-xs font-medium text-gray-600">Valor anual proposto (centavos)</label>
-                              <input className={inputClass} value={adminProposalForm.annualPriceCents} onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, annualPriceCents: e.target.value }))} />
+                              <label className="block text-xs font-medium text-gray-600">Valor anual proposto (R$)</label>
+                              <input className={inputClass} inputMode="numeric" value={adminProposalForm.annualPriceCents} onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, annualPriceCents: moneyMask(e.target.value) }))} />
                             </div>
                           </div>
                           <div className="space-y-1">

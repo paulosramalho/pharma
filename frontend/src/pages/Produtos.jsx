@@ -82,7 +82,7 @@ export default function Produtos() {
       brand: product.brand || "",
       categoryId: product.categoryId || "",
       controlled: product.controlled || false,
-      price: product.prices?.[0]?.price?.toString() || "",
+      price: product.prices?.[0]?.price != null ? moneyMask(String(Math.round(Number(product.prices[0].price) * 100))) : "",
     });
     setEditId(product.id);
     setModal(true);
@@ -97,7 +97,7 @@ export default function Produtos() {
         brand: form.brand || undefined,
         categoryId: form.categoryId || undefined,
         controlled: form.controlled,
-        price: form.price ? parseFloat(form.price) : undefined,
+        price: form.price ? parseMoney(form.price) : undefined,
       };
       if (editId) {
         await apiFetch(`/api/products/${editId}`, { method: "PUT", body: JSON.stringify(body) });
@@ -135,7 +135,7 @@ export default function Produtos() {
         body: JSON.stringify({
           productId: discountModal.id,
           type: discountForm.type,
-          value: parseFloat(discountForm.value),
+          value: discountForm.type === "PERCENT" ? parseFloat(discountForm.value || 0) : parseMoney(discountForm.value),
           startDate: discountForm.startDate || undefined,
           endDate: discountForm.endDate || undefined,
         }),
@@ -264,7 +264,14 @@ export default function Produtos() {
             </div>
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">Preço (R$)</label>
-              <input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className={inputClass} />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: moneyMask(e.target.value) })}
+                className={inputClass}
+                placeholder="0,00"
+              />
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -300,13 +307,26 @@ export default function Produtos() {
                   <label className="block text-xs font-medium text-gray-600">
                     {discountForm.type === "PERCENT" ? "Percentual (%)" : "Valor (R$)"}
                   </label>
-                  <input
-                    type="number" step="0.01" min="0"
-                    value={discountForm.value}
-                    onChange={(e) => setDiscountForm({ ...discountForm, value: e.target.value })}
-                    placeholder={discountForm.type === "PERCENT" ? "Ex: 10" : "Ex: 5.00"}
-                    className={inputClass}
-                  />
+                  {discountForm.type === "PERCENT" ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={discountForm.value}
+                      onChange={(e) => setDiscountForm({ ...discountForm, value: e.target.value })}
+                      placeholder="Ex: 10"
+                      className={inputClass}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={discountForm.value}
+                      onChange={(e) => setDiscountForm({ ...discountForm, value: moneyMask(e.target.value) })}
+                      placeholder="Ex: 5,00"
+                      className={inputClass}
+                    />
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
