@@ -928,6 +928,8 @@ function buildApiRoutes({ prisma, log }) {
     },
   };
 
+  const EXPORT_TABLE_ORDER = Object.keys(IMPORT_TABLES);
+
   function normalizeImportHeader(value) {
     return String(value || "").trim().replace(/^\uFEFF/, "");
   }
@@ -972,6 +974,101 @@ function buildApiRoutes({ prisma, log }) {
     if (!v) return fallback;
     const n = Number(v);
     return Number.isFinite(n) ? n : fallback;
+  }
+
+  function normalizeExportCell(value) {
+    if (value == null) return "";
+    return String(value)
+      .replace(/\r\n/g, " ")
+      .replace(/\r/g, " ")
+      .replace(/\n/g, " ")
+      .replace(/;/g, ",")
+      .trim();
+  }
+
+  function buildDelimitedText(headers, rows) {
+    const safeHeaders = Array.isArray(headers) ? headers.map((h) => String(h || "").trim()) : [];
+    const lines = [safeHeaders.join(";")];
+    for (const row of rows || []) {
+      const line = safeHeaders.map((h) => normalizeExportCell(row?.[h])).join(";");
+      lines.push(line);
+    }
+    return `${lines.join("\n")}\n`;
+  }
+
+  async function collectExportRows({ tenantId, table }) {
+    const schema = IMPORT_TABLES[table];
+    if (!schema) {
+      throw Object.assign(new Error(`Tabela nao suportada para exportacao: ${table}`), { statusCode: 400 });
+    }
+    if (table === "stores") {
+      const stores = await prisma.store.findMany({
+        where: { tenantId },
+        orderBy: [{ name: "asc" }],
+      });
+      return stores.map((s) => ({
+        name: s.name || "",
+        type: s.type || "LOJA",
+        active: s.active ? "true" : "false",
+        isDefault: s.isDefault ? "true" : "false",
+        cnpj: s.cnpj || "",
+        phone: s.phone || "",
+        email: s.email || "",
+        street: s.street || "",
+        number: s.number || "",
+        complement: s.complement || "",
+        district: s.district || "",
+        city: s.city || "",
+        state: s.state || "",
+        zipCode: s.zipCode || "",
+      }));
+    }
+
+    if (table === "categories") {
+      const categories = await prisma.category.findMany({
+        where: { tenantId },
+        orderBy: [{ name: "asc" }],
+      });
+      return categories.map((c) => ({
+        name: c.name || "",
+        active: "true",
+      }));
+    }
+
+    if (table === "products") {
+      const products = await prisma.product.findMany({
+        where: { tenantId },
+        include: { category: { select: { name: true } } },
+        orderBy: [{ name: "asc" }],
+      });
+      return products.map((p) => ({
+        name: p.name || "",
+        ean: p.ean || "",
+        active: p.active ? "true" : "false",
+        requiresPrescription: "",
+        controlled: p.controlled ? "true" : "false",
+        defaultMarkup: p.defaultMarkup != null ? String(p.defaultMarkup) : "",
+        categoryName: p.category?.name || "",
+        basePrice: "",
+      }));
+    }
+
+    if (table === "customers") {
+      const customers = await prisma.customer.findMany({
+        where: { tenantId },
+        orderBy: [{ name: "asc" }],
+      });
+      return customers.map((c) => ({
+        name: c.name || "",
+        document: c.document || "",
+        birthDate: c.birthDate ? new Date(c.birthDate).toISOString().slice(0, 10) : "",
+        whatsapp: c.whatsapp || "",
+        phone: c.phone || "",
+        email: c.email || "",
+      }));
+    }
+
+    return [];
   }
 
   function validateImportFile({ table, fileName, content }) {
@@ -2095,6 +2192,74 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
+  router.post("/license/me/export", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: { code: 403, message: "Somente admin pode exportar dados" } });
+    }
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    const tablesRaw = Array.isArray(req.body?.tables) ? req.body.tables : [];
+    const tables = (tablesRaw.length > 0 ? tablesRaw : EXPORT_TABLE_ORDER)
+      .map((t) => String(t || "").trim())
+      .filter(Boolean);
+    const duplicated = tables.find((t, idx) => tables.indexOf(t) !== idx);
+    if (duplicated) {
+      return res.status(400).json({ error: { code: 400, message: `Tabela duplicada no envio: ${duplicated}` } });
+    }
+    const invalid = tables.find((t) => !IMPORT_TABLES[t]);
+    if (invalid) {
+      return res.status(400).json({ error: { code: 400, message: `Tabela nao suportada: ${invalid}` } });
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Exportacao indisponivel para licenca Desenvolvedor" } });
+    }
+
+    const files = [];
+    for (const table of tables) {
+      // eslint-disable-next-line no-await-in-loop
+      const rows = await collectExportRows({ tenantId: tenant.id, table });
+      const headers = IMPORT_TABLES[table]?.allowed || [];
+      const content = buildDelimitedText(headers, rows);
+      files.push({
+        table,
+        label: IMPORT_TABLES[table]?.label || table,
+        fileName: `${table}_${new Date().toISOString().slice(0, 10)}.txt`,
+        columns: headers,
+        totalRows: rows.length,
+        content,
+      });
+    }
+
+    const targetLicense = await resolveLicenseByTenantId(tenant.id);
+    await prisma.tenantLicenseAudit.create({
+      data: {
+        tenantId: tenant.id,
+        previousPlan: targetLicense?.planCode || null,
+        newPlan: targetLicense?.planCode || "MINIMO",
+        previousStatus: targetLicense?.status || null,
+        newStatus: targetLicense?.status || "ACTIVE",
+        changedById: req.user?.id || null,
+        changedByName: req.user?.name || req.user?.email || "Admin",
+        reason: "Exportacao de dados pelo admin do licenciado",
+        payload: {
+          exportedTables: files.map((f) => ({ table: f.table, totalRows: f.totalRows })),
+        },
+      },
+    });
+
+    return sendOk(res, req, {
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      exported: files,
+    });
+  }));
+
   router.post("/license/onboarding/finalize", asyncHandler(async (req, res) => {
     const sourceTenantId = await assertDeveloperAdmin(req);
     if (!sourceTenantId) return res.status(400).json({ error: { code: 400, message: "Tenant do desenvolvedor não identificado" } });
@@ -2688,6 +2853,74 @@ function buildApiRoutes({ prisma, log }) {
       tenantId: tenant.id,
       tenantName: tenant.name,
       imported: summary,
+    });
+  }));
+
+  router.post("/license/admin/export", asyncHandler(async (req, res) => {
+    const sourceTenantId = await assertDeveloperAdmin(req);
+    const tenantId = String(req.body?.tenantId || "").trim();
+    const tablesRaw = Array.isArray(req.body?.tables) ? req.body.tables : [];
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    const tables = (tablesRaw.length > 0 ? tablesRaw : EXPORT_TABLE_ORDER)
+      .map((t) => String(t || "").trim())
+      .filter(Boolean);
+    const duplicated = tables.find((t, idx) => tables.indexOf(t) !== idx);
+    if (duplicated) {
+      return res.status(400).json({ error: { code: 400, message: `Tabela duplicada no envio: ${duplicated}` } });
+    }
+    const invalid = tables.find((t) => !IMPORT_TABLES[t]);
+    if (invalid) {
+      return res.status(400).json({ error: { code: 400, message: `Tabela nao suportada: ${invalid}` } });
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Nao e permitido exportar dados da licenca Desenvolvedor nesta tela" } });
+    }
+
+    const files = [];
+    for (const table of tables) {
+      // eslint-disable-next-line no-await-in-loop
+      const rows = await collectExportRows({ tenantId: tenant.id, table });
+      const headers = IMPORT_TABLES[table]?.allowed || [];
+      const content = buildDelimitedText(headers, rows);
+      files.push({
+        table,
+        label: IMPORT_TABLES[table]?.label || table,
+        fileName: `${table}_${new Date().toISOString().slice(0, 10)}.txt`,
+        columns: headers,
+        totalRows: rows.length,
+        content,
+      });
+    }
+
+    const sourceLicense = await resolveLicenseByTenantId(sourceTenantId);
+    await prisma.tenantLicenseAudit.create({
+      data: {
+        tenantId: sourceTenantId,
+        previousPlan: sourceLicense?.planCode || null,
+        newPlan: sourceLicense?.planCode || "ENTERPRISE",
+        previousStatus: sourceLicense?.status || null,
+        newStatus: sourceLicense?.status || "ACTIVE",
+        changedById: req.user?.id || null,
+        changedByName: req.user?.name || req.user?.email || "Admin",
+        reason: "Exportacao de dados de licenciado",
+        payload: {
+          targetTenantId: tenant.id,
+          targetTenantName: tenant.name,
+          exportedTables: files.map((f) => ({ table: f.table, totalRows: f.totalRows })),
+        },
+      },
+    });
+
+    return sendOk(res, req, {
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      exported: files,
     });
   }));
 

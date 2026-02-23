@@ -210,6 +210,9 @@ export default function Config() {
   const [importValidating, setImportValidating] = useState(false);
   const [importExecuting, setImportExecuting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [exportSelections, setExportSelections] = useState({});
+  const [exportExecuting, setExportExecuting] = useState(false);
+  const [exportResult, setExportResult] = useState(null);
   const [licensePayments, setLicensePayments] = useState([]);
   const [licenseAlerts, setLicenseAlerts] = useState([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
@@ -652,6 +655,65 @@ export default function Config() {
       addToast(err.message || "Falha na importação", "error");
     } finally {
       setImportExecuting(false);
+    }
+  };
+
+  const toggleExportTable = (tableKey, checked) => {
+    setExportSelections((prev) => ({
+      ...prev,
+      [tableKey]: { selected: Boolean(checked) },
+    }));
+    setExportResult(null);
+  };
+
+  const triggerDownloadTextFile = (fileName, content) => {
+    const blob = new Blob([String(content || "")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName || "exportacao.txt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+  };
+
+  const executeSelectedExports = async () => {
+    const targetTenantId = isDeveloperAdmin ? selectedLicense?.id : licenseData?.tenantId;
+    if (!targetTenantId) {
+      addToast("Licenciado não identificado para exportar", "warning");
+      return;
+    }
+    const tables = IMPORT_TABLE_OPTIONS
+      .map((opt) => opt.key)
+      .filter((key) => Boolean(exportSelections[key]?.selected));
+    if (!tables.length) {
+      addToast("Selecione ao menos uma tabela para exportar", "warning");
+      return;
+    }
+    setExportExecuting(true);
+    try {
+      const endpoint = isDeveloperAdmin ? "/api/license/admin/export" : "/api/license/me/export";
+      const body = isDeveloperAdmin ? { tenantId: targetTenantId, tables } : { tables };
+      const res = await apiFetch(endpoint, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const exported = res?.data?.exported || [];
+      if (!exported.length) {
+        addToast("Nenhum arquivo gerado para exportação", "warning");
+        setExportResult([]);
+        return;
+      }
+      exported.forEach((file) => {
+        triggerDownloadTextFile(file.fileName || `${file.table}.txt`, file.content || "");
+      });
+      setExportResult(exported);
+      addToast("Exportação concluída com sucesso", "success");
+    } catch (err) {
+      addToast(err.message || "Falha na exportação", "error");
+    } finally {
+      setExportExecuting(false);
     }
   };
 
@@ -1597,6 +1659,57 @@ export default function Config() {
                                   <td className="px-2 py-1 text-gray-700">{row.fileName || "-"}</td>
                                   <td className="px-2 py-1 text-gray-700">{Number(row.totalRows || 0)}</td>
                                   <td className="px-2 py-1 text-emerald-700 font-semibold">{Number(row.imported || 0)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {!planosLicenciamentoMode && canManageLicense && (!isDeveloperAdmin || selectedLicense) ? (
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Exportação de tabelas</p>
+                        <p className="text-xs text-gray-500">Selecione uma ou mais tabelas para gerar e baixar os arquivos em TXT.</p>
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-2">
+                        {IMPORT_TABLE_OPTIONS.map((opt) => (
+                          <label key={`export-${opt.key}`} className="rounded border border-gray-200 p-2 flex items-start gap-2 text-sm text-gray-800">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(exportSelections[opt.key]?.selected)}
+                              onChange={(e) => toggleExportTable(opt.key, e.target.checked)}
+                            />
+                            <span>
+                              <span className="font-medium">{opt.label}</span>
+                              <span className="block text-[11px] text-gray-500 mt-1">Colunas: {opt.columns}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" onClick={executeSelectedExports} loading={exportExecuting}>
+                          Exportar selecionadas
+                        </Button>
+                      </div>
+                      {exportResult?.length ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-gray-200 text-left text-gray-500">
+                                <th className="px-2 py-1">Tabela</th>
+                                <th className="px-2 py-1">Arquivo</th>
+                                <th className="px-2 py-1">Linhas</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {exportResult.map((row) => (
+                                <tr key={`${row.table}-${row.fileName}`}>
+                                  <td className="px-2 py-1 font-medium text-gray-900">{row.label || row.table}</td>
+                                  <td className="px-2 py-1 text-gray-700">{row.fileName || "-"}</td>
+                                  <td className="px-2 py-1 text-gray-700">{Number(row.totalRows || 0)}</td>
                                 </tr>
                               ))}
                             </tbody>
