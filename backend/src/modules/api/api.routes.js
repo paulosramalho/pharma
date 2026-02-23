@@ -775,6 +775,15 @@ function buildApiRoutes({ prisma, log }) {
   }
 
   async function deleteTenantData(tx, tenantId) {
+    const adminUsers = await tx.user.findMany({
+      where: {
+        tenantId,
+        role: { name: "ADMIN" },
+      },
+      select: { id: true },
+    });
+    const adminIds = adminUsers.map((u) => u.id).filter(Boolean);
+
     // Child tables with direct tenantId
     await tx.chatMessage.deleteMany({ where: { tenantId } });
     await tx.stockReservationItem.deleteMany({ where: { tenantId } });
@@ -815,12 +824,24 @@ function buildApiRoutes({ prisma, log }) {
         store: { tenantId },
       },
     });
-    await tx.roleUser.deleteMany({
-      where: {
-        user: { tenantId },
-      },
-    });
-    await tx.user.deleteMany({ where: { tenantId } });
+    await tx.roleUser.deleteMany(
+      adminIds.length
+        ? {
+            where: {
+              user: { tenantId, id: { notIn: adminIds } },
+            },
+          }
+        : {
+            where: {
+              user: { tenantId },
+            },
+          },
+    );
+    await tx.user.deleteMany(
+      adminIds.length
+        ? { where: { tenantId, id: { notIn: adminIds } } }
+        : { where: { tenantId } },
+    );
     await tx.fiscalEvent.deleteMany({
       where: {
         doc: { store: { tenantId } },
@@ -852,6 +873,7 @@ function buildApiRoutes({ prisma, log }) {
     const [
       stores,
       users,
+      adminUsers,
       customers,
       categories,
       products,
@@ -863,6 +885,7 @@ function buildApiRoutes({ prisma, log }) {
     ] = await Promise.all([
       prisma.store.count({ where: { tenantId } }),
       prisma.user.count({ where: { tenantId } }),
+      prisma.user.count({ where: { tenantId, role: { name: "ADMIN" } } }),
       prisma.customer.count({ where: { tenantId } }),
       prisma.category.count({ where: { tenantId } }),
       prisma.product.count({ where: { tenantId } }),
@@ -875,6 +898,8 @@ function buildApiRoutes({ prisma, log }) {
     return {
       stores,
       users,
+      adminUsers,
+      nonAdminUsers: Math.max(0, Number(users || 0) - Number(adminUsers || 0)),
       customers,
       categories,
       products,
@@ -2794,7 +2819,18 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     const summary = await getTenantDataSummary(tenant.id);
-    const hasData = Object.values(summary).some((v) => Number(v || 0) > 0);
+    const hasData = [
+      summary.stores,
+      summary.nonAdminUsers,
+      summary.customers,
+      summary.categories,
+      summary.products,
+      summary.sales,
+      summary.transfers,
+      summary.reservations,
+      summary.chats,
+      summary.cashSessions,
+    ].some((v) => Number(v || 0) > 0);
     if (hasData) {
       return res.status(400).json({
         error: { code: 400, message: "Licenciado possui dados. Limpe a base antes de excluir a licenca." },
