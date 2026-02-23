@@ -55,7 +55,13 @@ export default function Layout() {
   });
   const currentStore = stores.find((s) => s.id === storeId);
   const contractor = license?.contractor || {};
-  const brandName = contractor?.tradeName || contractor?.tenantName || "Pharma";
+  const rawTradeName = String(contractor?.tradeName || "").trim();
+  const rawTenantName = String(contractor?.tenantName || "").trim();
+  const isDeveloperTenant = Boolean(contractor?.isDeveloperTenant);
+  const isGenericTenantName = /^tenant\s*default$/i.test(rawTenantName);
+  const brandName = isDeveloperTenant
+    ? (rawTradeName && !/^tenant\s*default$/i.test(rawTradeName) ? rawTradeName : "Pharma")
+    : (rawTradeName || (!isGenericTenantName ? rawTenantName : "") || "Pharma");
   const brandLogo = contractor?.logoFile || "/brand/LogoPharma.PNG";
 
   const hasPositiveNotice = (billingNotice?.notices || []).some((n) => Number(n?.amountCents || 0) > 0);

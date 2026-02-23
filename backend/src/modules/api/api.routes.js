@@ -846,8 +846,6 @@ function buildApiRoutes({ prisma, log }) {
     await tx.tenantLicensePayment.deleteMany({ where: { tenantId } });
     await tx.tenantLicenseChangeRequest.deleteMany({ where: { tenantId } });
     await tx.tenantLicenseAudit.deleteMany({ where: { tenantId } });
-    await tx.tenantLicense.deleteMany({ where: { tenantId } });
-    await tx.tenant.delete({ where: { id: tenantId } });
   }
 
   async function buildProvisionalAdminByTenantMap(tenantIds = []) {

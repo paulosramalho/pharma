@@ -343,7 +343,7 @@ export default function Config() {
             confirm: cleanupConfirm.trim().toUpperCase(),
           }),
         });
-        addToast("Licença removida com sucesso", "success");
+        addToast("Base do licenciado limpa com sucesso", "success");
       }
       setCleanupTarget(null);
       const listRes = await apiFetch("/api/license/admin/licenses");
