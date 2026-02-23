@@ -171,7 +171,7 @@ export async function apiFetch(path, opts = {}) {
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const storeId = getStoreId();
-  if (storeId) headers["X-Store-Id"] = storeId;
+  if (storeId && !headers["X-Store-Id"]) headers["X-Store-Id"] = storeId;
 
   const method = (opts.method || "GET").toUpperCase();
   const isGet = method === "GET";
