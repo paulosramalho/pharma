@@ -136,7 +136,7 @@ export default function Config() {
     email: "",
     logoFile: "",
   });
-  const [novoContratanteMode, setNovoContratanteMode] = useState(false);
+  const [licenciamentoView, setLicenciamentoView] = useState("CONTRATANTES");
   const contractorLogoInputRef = useRef(null);
 
   const [submitting, setSubmitting] = useState(false);
@@ -182,11 +182,13 @@ export default function Config() {
   });
   const [planEditingCode, setPlanEditingCode] = useState("");
   const [planSubmitting, setPlanSubmitting] = useState(false);
+  const [copyPlanCode, setCopyPlanCode] = useState("");
   const [importSelections, setImportSelections] = useState({});
   const [importValidation, setImportValidation] = useState([]);
   const [importValidating, setImportValidating] = useState(false);
   const [importExecuting, setImportExecuting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const planosLicenciamentoMode = licenciamentoView === "PLANOS";
 
   // Load data based on tab
   useEffect(() => {
@@ -432,6 +434,7 @@ export default function Config() {
 
   const resetPlanForm = () => {
     setPlanEditingCode("");
+    setCopyPlanCode("");
     setPlanForm({
       code: "NOVO_PLANO",
       name: "",
@@ -472,6 +475,35 @@ export default function Config() {
       active: Boolean(plan.active),
       features,
     });
+  };
+
+  const copyPlanToNew = () => {
+    const source = (licensePlans || []).find((p) => String(p.code || "").toUpperCase() === String(copyPlanCode || "").toUpperCase());
+    if (!source) {
+      addToast("Selecione um plano para copiar", "warning");
+      return;
+    }
+    const limits = source?.limits || {};
+    const roleCaps = limits?.maxRoleActive || {};
+    const features = LICENSE_FEATURE_KEYS.reduce((acc, key) => ({ ...acc, [key]: Boolean(source?.features?.[key]) }), {});
+    setPlanEditingCode("");
+    setPlanForm({
+      code: `${String(source.code || "NOVO").toUpperCase()}_NOVO`,
+      name: `${String(source.name || "Plano")} (cópia)`,
+      currency: String(source.currency || "BRL").toUpperCase(),
+      monthlyPriceCents: String(source.monthlyPriceCents ?? ""),
+      annualPriceCents: String(source.annualPriceCents ?? ""),
+      dashboardMode: String(source.dashboardMode || "FULL").toUpperCase(),
+      maxActiveUsers: String(limits.maxActiveUsers ?? ""),
+      maxActiveStores: String(limits.maxActiveStores ?? ""),
+      roleAdmin: String(roleCaps.ADMIN ?? ""),
+      roleVendedor: String(roleCaps.VENDEDOR ?? ""),
+      roleCaixa: String(roleCaps.CAIXA ?? ""),
+      roleFarmaceutico: String(roleCaps.FARMACEUTICO ?? ""),
+      active: Boolean(source.active),
+      features,
+    });
+    addToast("Plano copiado para criação de novo", "success");
   };
 
   const submitPlan = async () => {
@@ -916,7 +948,7 @@ export default function Config() {
     setImportSelections({});
     setImportValidation([]);
     setImportResult(null);
-  }, [selectedLicenseId, novoContratanteMode]);
+  }, [selectedLicenseId, licenciamentoView]);
 
   useEffect(() => {
     if (!selectedAdminRequest) return;
@@ -940,7 +972,7 @@ export default function Config() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-        {((adminLicenseLocked || novoContratanteMode) ? TABS.filter((t) => t.key === "licenciamento") : TABS).map((t) => (
+        {((adminLicenseLocked || licenciamentoView !== "CONTRATANTES") ? TABS.filter((t) => t.key === "licenciamento") : TABS).map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${tab === t.key ? "bg-white text-primary-700 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
             <t.icon size={16} /> {t.label}
@@ -1100,18 +1132,21 @@ export default function Config() {
             <CardBody className="space-y-4">
               {isDeveloperAdmin ? (
                 <div className="flex items-center justify-end gap-2">
-                  <Button type="button" variant={novoContratanteMode ? "secondary" : "primary"} onClick={() => setNovoContratanteMode(false)}>
+                  <Button type="button" variant={licenciamentoView === "CONTRATANTES" ? "primary" : "secondary"} onClick={() => setLicenciamentoView("CONTRATANTES")}>
                     Contratantes
                   </Button>
-                  <Button type="button" variant={novoContratanteMode ? "primary" : "secondary"} onClick={() => setNovoContratanteMode(true)}>
+                  <Button type="button" variant={licenciamentoView === "NOVO" ? "primary" : "secondary"} onClick={() => setLicenciamentoView("NOVO")}>
                     Novo contratante
+                  </Button>
+                  <Button type="button" variant={licenciamentoView === "PLANOS" ? "primary" : "secondary"} onClick={() => setLicenciamentoView("PLANOS")}>
+                    Planos de Licenciamento
                   </Button>
                 </div>
               ) : null}
 
-              {!novoContratanteMode ? (
+              {licenciamentoView !== "NOVO" ? (
                 <>
-                  {isDeveloperAdmin ? (
+                  {isDeveloperAdmin && planosLicenciamentoMode ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <p className="text-sm font-semibold text-gray-900">Licenças (Planos)</p>
                       <div className="overflow-x-auto">
@@ -1162,6 +1197,22 @@ export default function Config() {
                             {!licensePlans?.length ? <tr><td colSpan={9} className="px-2 py-2 text-gray-400">Nenhum plano cadastrado.</td></tr> : null}
                           </tbody>
                         </table>
+                      </div>
+                      <div className="grid md:grid-cols-[1fr_auto] gap-2 items-end">
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Copiar plano (para criar novo)</label>
+                          <select className={inputClass} value={copyPlanCode} onChange={(e) => setCopyPlanCode(e.target.value)}>
+                            <option value="">Selecione...</option>
+                            {(licensePlans || []).map((plan) => (
+                              <option key={`copy-${plan.id}`} value={String(plan.code || "").toUpperCase()}>
+                                {String(plan.code || "").toUpperCase()} - {plan.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <Button type="button" variant="secondary" onClick={copyPlanToNew}>
+                          Copiar plano
+                        </Button>
                       </div>
                       <div className="grid md:grid-cols-4 gap-2">
                         <div className="space-y-1">
@@ -1246,7 +1297,7 @@ export default function Config() {
                     </div>
                   ) : null}
 
-                  {isDeveloperAdmin ? (
+                  {!planosLicenciamentoMode && isDeveloperAdmin ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <p className="text-sm font-semibold text-gray-900">Contratantes</p>
                       <div className="overflow-x-auto">
@@ -1300,7 +1351,7 @@ export default function Config() {
                     </div>
                   ) : null}
 
-                  {isDeveloperAdmin ? (
+                  {!planosLicenciamentoMode && isDeveloperAdmin ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <p className="text-sm font-semibold text-gray-900">Solicitações pendentes de ajuste de licença</p>
                       <div className="space-y-1">
@@ -1362,7 +1413,7 @@ export default function Config() {
                     </div>
                   ) : null}
 
-                  {canManageLicense && !isDeveloperAdmin ? (
+                  {!planosLicenciamentoMode && canManageLicense && !isDeveloperAdmin ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <div>
                         <p className="text-sm font-semibold text-gray-900">Importação de tabelas</p>
@@ -1458,11 +1509,11 @@ export default function Config() {
                     </div>
                   ) : null}
 
-                  {isDeveloperAdmin && !selectedLicense ? (
+                  {!planosLicenciamentoMode && isDeveloperAdmin && !selectedLicense ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-600">
                       Selecione um contratante para visualizar o plano e alterar a licença.
                     </div>
-                  ) : (
+                  ) : !planosLicenciamentoMode ? (
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="p-3 rounded-lg border border-gray-200 bg-white">
                       <p className="text-sm font-semibold text-gray-900 mb-2">Plano contratado</p>
@@ -1579,7 +1630,7 @@ export default function Config() {
                       </div>
                     )}
                   </div>
-                  )}
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -1601,7 +1652,7 @@ export default function Config() {
                           addToast(err.message || "Falha ao atualizar contratantes", "error");
                         }
                       }
-                      setNovoContratanteMode(false);
+                      setLicenciamentoView("CONTRATANTES");
                       setTab("licenciamento");
                     }}
                   />
