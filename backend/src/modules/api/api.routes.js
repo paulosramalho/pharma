@@ -842,6 +842,9 @@ function buildApiRoutes({ prisma, log }) {
       },
     });
     await tx.store.deleteMany({ where: { tenantId } });
+    await tx.tenantLicenseAlert.deleteMany({ where: { tenantId } });
+    await tx.tenantLicensePayment.deleteMany({ where: { tenantId } });
+    await tx.tenantLicenseChangeRequest.deleteMany({ where: { tenantId } });
     await tx.tenantLicenseAudit.deleteMany({ where: { tenantId } });
     await tx.tenantLicense.deleteMany({ where: { tenantId } });
     await tx.tenant.delete({ where: { id: tenantId } });
