@@ -2095,9 +2095,6 @@ function buildApiRoutes({ prisma, log }) {
       select: { id: true, name: true, isDeveloperTenant: true },
     });
     if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
-    if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Importacao indisponivel para licença Desenvolvedor" } });
-    }
 
     const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
     const duplicated = tables.find((t, idx) => tables.indexOf(t) !== idx);
@@ -2128,9 +2125,6 @@ function buildApiRoutes({ prisma, log }) {
       select: { id: true, name: true, isDeveloperTenant: true },
     });
     if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
-    if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Importacao indisponivel para licença Desenvolvedor" } });
-    }
 
     const tables = files.map((f) => String(f?.table || "").trim()).filter(Boolean);
     const duplicated = tables.find((t, idx) => tables.indexOf(t) !== idx);
@@ -2216,9 +2210,6 @@ function buildApiRoutes({ prisma, log }) {
       select: { id: true, name: true, isDeveloperTenant: true },
     });
     if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
-    if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Exportacao indisponivel para licenca Desenvolvedor" } });
-    }
 
     const files = [];
     for (const table of tables) {

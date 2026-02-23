@@ -422,8 +422,17 @@ export default function Config() {
     return files;
   };
 
+  const resolveImportExportTarget = () => {
+    const selectedTenantId = String(selectedLicense?.id || "").trim();
+    const ownTenantId = String(licenseData?.tenantId || "").trim();
+    if (isDeveloperAdmin && selectedTenantId) {
+      return { targetTenantId: selectedTenantId, useAdminEndpoint: true };
+    }
+    return { targetTenantId: ownTenantId, useAdminEndpoint: false };
+  };
+
   const validateSelectedImports = async () => {
-    const targetTenantId = isDeveloperAdmin ? selectedLicense?.id : licenseData?.tenantId;
+    const { targetTenantId, useAdminEndpoint } = resolveImportExportTarget();
     if (!targetTenantId) {
       addToast("Licenciado não identificado para validar importação", "warning");
       return false;
@@ -431,8 +440,8 @@ export default function Config() {
     setImportValidating(true);
     try {
       const files = await buildImportFilesPayload();
-      const endpoint = isDeveloperAdmin ? "/api/license/admin/import/validate" : "/api/license/me/import/validate";
-      const body = isDeveloperAdmin ? { tenantId: targetTenantId, files } : { files };
+      const endpoint = useAdminEndpoint ? "/api/license/admin/import/validate" : "/api/license/me/import/validate";
+      const body = useAdminEndpoint ? { tenantId: targetTenantId, files } : { files };
       const res = await apiFetch(endpoint, {
         method: "POST",
         body: JSON.stringify(body),
@@ -619,7 +628,7 @@ export default function Config() {
   };
 
   const executeSelectedImports = async () => {
-    const targetTenantId = isDeveloperAdmin ? selectedLicense?.id : licenseData?.tenantId;
+    const { targetTenantId, useAdminEndpoint } = resolveImportExportTarget();
     if (!targetTenantId) {
       addToast("Licenciado não identificado para importar", "warning");
       return;
@@ -635,8 +644,8 @@ export default function Config() {
         addToast("Importação bloqueada. Corrija os arquivos incompatíveis.", "warning");
         return;
       }
-      const endpoint = isDeveloperAdmin ? "/api/license/admin/import/execute" : "/api/license/me/import/execute";
-      const body = isDeveloperAdmin ? { tenantId: targetTenantId, files } : { files };
+      const endpoint = useAdminEndpoint ? "/api/license/admin/import/execute" : "/api/license/me/import/execute";
+      const body = useAdminEndpoint ? { tenantId: targetTenantId, files } : { files };
       const res = await apiFetch(endpoint, {
         method: "POST",
         body: JSON.stringify(body),
@@ -644,7 +653,7 @@ export default function Config() {
       const imported = res?.data?.imported || [];
       setImportResult(imported);
       addToast("Importação concluída com sucesso", "success");
-      if (isDeveloperAdmin) {
+      if (useAdminEndpoint) {
         const listRes = await apiFetch("/api/license/admin/licenses");
         setLicensesList(listRes?.data?.licenses || []);
       } else {
@@ -679,7 +688,7 @@ export default function Config() {
   };
 
   const executeSelectedExports = async () => {
-    const targetTenantId = isDeveloperAdmin ? selectedLicense?.id : licenseData?.tenantId;
+    const { targetTenantId, useAdminEndpoint } = resolveImportExportTarget();
     if (!targetTenantId) {
       addToast("Licenciado não identificado para exportar", "warning");
       return;
@@ -693,8 +702,8 @@ export default function Config() {
     }
     setExportExecuting(true);
     try {
-      const endpoint = isDeveloperAdmin ? "/api/license/admin/export" : "/api/license/me/export";
-      const body = isDeveloperAdmin ? { tenantId: targetTenantId, tables } : { tables };
+      const endpoint = useAdminEndpoint ? "/api/license/admin/export" : "/api/license/me/export";
+      const body = useAdminEndpoint ? { tenantId: targetTenantId, tables } : { tables };
       const res = await apiFetch(endpoint, {
         method: "POST",
         body: JSON.stringify(body),
@@ -1572,7 +1581,7 @@ export default function Config() {
                     </div>
                   ) : null}
 
-                  {!planosLicenciamentoMode && canManageLicense && !isDeveloperAdmin ? (
+                  {!planosLicenciamentoMode && canManageLicense ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <div>
                         <p className="text-sm font-semibold text-gray-900">Importação de tabelas</p>
@@ -1668,7 +1677,7 @@ export default function Config() {
                     </div>
                   ) : null}
 
-                  {!planosLicenciamentoMode && canManageLicense && (!isDeveloperAdmin || selectedLicense) ? (
+                  {!planosLicenciamentoMode && canManageLicense ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <div>
                         <p className="text-sm font-semibold text-gray-900">Exportação de tabelas</p>
@@ -2122,6 +2131,7 @@ export default function Config() {
     </div>
   );
 }
+
 
 
 
