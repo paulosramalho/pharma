@@ -8,6 +8,8 @@
     "dev": "node src/server.js",
     "start": "node src/server.js",
     "postinstall": "prisma generate",
+    "check:text": "node ../scripts/check-text-integrity.cjs src",
+    "prebuild": "npm run check:text",
     "build": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

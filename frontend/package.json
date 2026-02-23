@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "check:text": "node ../scripts/check-text-integrity.cjs src",
+    "prebuild": "npm run check:text",
     "build": "vite build",
     "preview": "vite preview"
   },
