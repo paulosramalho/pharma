@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../lib/api";
-import { money, formatDate, formatDateTime } from "../lib/format";
+import { money, formatDate, formatDateTime, moneyMask, parseMoney } from "../lib/format";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import Card, { CardBody, CardHeader } from "../components/ui/Card";
@@ -245,7 +245,7 @@ export default function Estoque() {
           productId: receiveForm.productId,
           lotNumber: receiveForm.lotNumber,
           expiration: receiveForm.expiration,
-          costUnit: parseFloat(receiveForm.costUnit),
+          costUnit: parseMoney(receiveForm.costUnit),
           quantity: parseInt(receiveForm.quantity),
         }),
       });
@@ -504,7 +504,11 @@ export default function Estoque() {
   // Edit lot
   const openEditLot = (lotId, lotNumber, currentQty, currentCost) => {
     setEditModal({ lotId, lotNumber });
-    setEditForm({ quantity: String(currentQty), costUnit: String(currentCost), reason: "" });
+    setEditForm({
+      quantity: String(currentQty),
+      costUnit: moneyMask(String(Math.round(Number(currentCost || 0) * 100))),
+      reason: "",
+    });
   };
 
   const submitEditLot = async () => {
@@ -514,7 +518,7 @@ export default function Estoque() {
         method: "PUT",
         body: JSON.stringify({
           quantity: parseInt(editForm.quantity),
-          costUnit: parseFloat(editForm.costUnit),
+          costUnit: parseMoney(editForm.costUnit),
           reason: editForm.reason,
         }),
       });
@@ -826,7 +830,14 @@ export default function Estoque() {
               </div>
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">Custo Unitário (R$)</label>
-                <input type="number" step="0.0001" value={receiveForm.costUnit} onChange={(e) => setReceiveForm({ ...receiveForm, costUnit: e.target.value })} className={inputClass} />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={receiveForm.costUnit}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, costUnit: moneyMask(e.target.value) })}
+                  className={inputClass}
+                  placeholder="0,00"
+                />
               </div>
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">Quantidade</label>
@@ -1291,7 +1302,14 @@ export default function Estoque() {
               </div>
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">Custo Unitário</label>
-                <input type="number" step="0.0001" value={editForm.costUnit} onChange={(e) => setEditForm({ ...editForm, costUnit: e.target.value })} className={inputClass} />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={editForm.costUnit}
+                  onChange={(e) => setEditForm({ ...editForm, costUnit: moneyMask(e.target.value) })}
+                  className={inputClass}
+                  placeholder="0,00"
+                />
               </div>
             </div>
             <div className="space-y-1">

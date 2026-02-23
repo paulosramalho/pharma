@@ -919,7 +919,7 @@ function buildApiRoutes({ prisma, log }) {
     products: {
       label: "Produtos",
       required: ["name"],
-      allowed: ["name", "ean", "active", "requiresPrescription", "controlled", "defaultMarkup", "categoryName", "basePrice"],
+      allowed: ["name", "ean", "active", "requiresPrescription", "controlled", "defaultMarkup", "categoryName", "basePrice", "stockQty", "stockValue", "soldQty", "soldValue"],
     },
     customers: {
       label: "Clientes",
@@ -1036,6 +1036,37 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     if (table === "products") {
+      const lots = await prisma.inventoryLot.findMany({
+        where: { tenantId, quantity: { gt: 0 } },
+        select: { productId: true, quantity: true, costUnit: true },
+      });
+      const lotAgg = {};
+      for (const lot of lots) {
+        const pid = String(lot.productId || "");
+        if (!pid) continue;
+        if (!lotAgg[pid]) lotAgg[pid] = { stockQty: 0, stockValue: 0 };
+        lotAgg[pid].stockQty += Number(lot.quantity || 0);
+        lotAgg[pid].stockValue += Number(lot.quantity || 0) * Number(lot.costUnit || 0);
+      }
+
+      const saleItems = await prisma.saleItem.findMany({
+        where: {
+          sale: {
+            tenantId,
+            status: "PAID",
+          },
+        },
+        select: { productId: true, quantity: true, subtotal: true },
+      });
+      const soldAgg = {};
+      for (const item of saleItems) {
+        const pid = String(item.productId || "");
+        if (!pid) continue;
+        if (!soldAgg[pid]) soldAgg[pid] = { soldQty: 0, soldValue: 0 };
+        soldAgg[pid].soldQty += Number(item.quantity || 0);
+        soldAgg[pid].soldValue += Number(item.subtotal || 0);
+      }
+
       const products = await prisma.product.findMany({
         where: { tenantId },
         include: { category: { select: { name: true } } },
@@ -1050,6 +1081,10 @@ function buildApiRoutes({ prisma, log }) {
         defaultMarkup: p.defaultMarkup != null ? String(p.defaultMarkup) : "",
         categoryName: p.category?.name || "",
         basePrice: "",
+        stockQty: String(Number((lotAgg[p.id]?.stockQty ?? 0))),
+        stockValue: String(Number((lotAgg[p.id]?.stockValue ?? 0).toFixed(2))),
+        soldQty: String(Number((soldAgg[p.id]?.soldQty ?? 0))),
+        soldValue: String(Number((soldAgg[p.id]?.soldValue ?? 0).toFixed(2))),
       }));
     }
 

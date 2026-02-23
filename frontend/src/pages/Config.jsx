@@ -118,12 +118,12 @@ const USER_ROLE_ORDER = ["ADMIN", "VENDEDOR", "CAIXA", "FARMACEUTICO"];
 const IMPORT_TABLE_OPTIONS = [
   { key: "stores", label: "Lojas", columns: "name;type;active;isDefault;cnpj;phone;email;street;number;complement;district;city;state;zipCode" },
   { key: "categories", label: "Categorias", columns: "name;active" },
-  { key: "products", label: "Produtos", columns: "name;ean;active;requiresPrescription;controlled;defaultMarkup;categoryName;basePrice" },
+  { key: "products", label: "Produtos", columns: "name;ean;active;requiresPrescription;controlled;defaultMarkup;categoryName;basePrice;stockQty;stockValue;soldQty;soldValue" },
   { key: "customers", label: "Clientes", columns: "name;document;birthDate;whatsapp;phone;email" },
 ];
 
 export default function Config() {
-  const { user, isLicenseActive } = useAuth();
+  const { user, isLicenseActive, refreshSession } = useAuth();
   const { addToast } = useToast();
   const [tab, setTab] = useState("lojas");
   const [loading, setLoading] = useState(true);
@@ -656,9 +656,13 @@ export default function Config() {
       if (useAdminEndpoint) {
         const listRes = await apiFetch("/api/license/admin/licenses");
         setLicensesList(listRes?.data?.licenses || []);
+        if (String(targetTenantId || "") === String(licenseData?.tenantId || "")) {
+          await refreshSession().catch(() => {});
+        }
       } else {
         const meRes = await apiFetch("/api/license/me");
         setLicenseData(meRes?.data || null);
+        await refreshSession().catch(() => {});
       }
     } catch (err) {
       addToast(err.message || "Falha na importação", "error");
