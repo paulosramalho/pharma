@@ -1699,7 +1699,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }
 
-  // â”€â”€â”€ DASHBOARD â”€â”€â”€
+  // --- DASHBOARD ---
   router.get("/license/me", asyncHandler(async (req, res) => {
     const license = await getLicense(req);
     const profile = await getTenantLicenseProfile(req);
@@ -3119,7 +3119,7 @@ function buildApiRoutes({ prisma, log }) {
       : null;
     const cashSession = openSession ? {
       id: openSession.id,
-      openedBy: openSession.openedBy?.name || "â€”",
+      openedBy: openSession.openedBy?.name || "-",
       openedAt: openSession.openedAt,
       initialCash: Number(openSession.initialCash),
     } : null;
@@ -3252,7 +3252,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // â”€â”€â”€ STORES â”€â”€â”€
+  // --- STORES ---
   router.get("/stores", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { all } = req.query; // ?all=true to include inactive
@@ -3315,14 +3315,14 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, store);
   }));
 
-  // â”€â”€â”€ CATEGORIES â”€â”€â”€
+  // --- CATEGORIES ---
   router.get("/categories", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const categories = await prisma.category.findMany({ where: { tenantId }, orderBy: { name: "asc" } });
     return sendOk(res, req, categories);
   }));
 
-  // â”€â”€â”€ PRODUCTS â”€â”€â”€
+  // --- PRODUCTS ---
   router.get("/products", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { search, categoryId, page = 1, limit = 50 } = req.query;
@@ -3476,7 +3476,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, product);
   }));
 
-  // â”€â”€â”€ DISCOUNTS â”€â”€â”€
+  // --- DISCOUNTS ---
   router.get("/discounts", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { productId, active } = req.query;
@@ -3565,7 +3565,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { success: true });
   }));
 
-  // â”€â”€â”€ USERS â”€â”€â”€
+  // --- USERS ---
   router.get("/users", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const users = await prisma.user.findMany({
@@ -3667,7 +3667,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: user.id, name: user.name, email: user.email });
   }));
 
-  // â”€â”€â”€ USER PROFILE (self-service email/password change) â”€â”€â”€
+  // --- USER PROFILE (self-service email/password change) ---
   router.put("/users/:id/profile", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const bcrypt = require("bcryptjs");
@@ -3727,7 +3727,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // â”€â”€â”€ INVENTORY â”€â”€â”€
+  // --- INVENTORY ---
 
 
   // --- CHAT ---
@@ -4890,7 +4890,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { fulfilled: true });
   }));
 
-  // â”€â”€â”€ INVENTORY EDIT (correct wrong entry) â”€â”€â”€
+  // --- INVENTORY EDIT (correct wrong entry) ---
   router.put("/inventory/lots/:id", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { quantity, costUnit, reason } = req.body;
@@ -4926,7 +4926,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, updated);
   }));
 
-  // â”€â”€â”€ STOCK VALUATION â”€â”€â”€
+  // --- STOCK VALUATION ---
   router.get("/inventory/valuation", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = req.query.storeId || null;
@@ -5013,7 +5013,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // â”€â”€â”€ AUTO-PRICE (calculate selling price from cost) â”€â”€â”€
+  // --- AUTO-PRICE (calculate selling price from cost) ---
   router.post("/products/:id/auto-price", asyncHandler(async (req, res) => {
     const { markup } = req.body; // markup percentage (e.g., 30 = 30%)
     if (!markup || markup <= 0) {
@@ -5048,7 +5048,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { avgCost: Math.round(avgCost * 100) / 100, markup: Number(markup), sellingPrice, price });
   }));
 
-  // â”€â”€â”€ CUSTOMERS â”€â”€â”€
+  // --- CUSTOMERS ---
   router.get("/customers", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { search, page = 1, limit = 50 } = req.query;
@@ -5173,7 +5173,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { suggestions });
   }));
 
-  // â”€â”€â”€ SALES â”€â”€â”€
+  // --- SALES ---
   router.get("/sales", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
@@ -5583,12 +5583,12 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, updated);
   }));
 
-  // â”€â”€â”€ EXCHANGE (TROCA) â”€â”€â”€
+  // --- EXCHANGE (TROCA) ---
   router.post("/sales/:id/exchange", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const { returnedItems, newItems, reason } = req.body;
-    // returnedItems: [{ saleItemId, quantity }] â€” items to return
-    // newItems: [{ productId, quantity }] â€” new items the customer takes
+    // returnedItems: [{ saleItemId, quantity }] - items to return
+    // newItems: [{ productId, quantity }] - new items the customer takes
     if ((!returnedItems || !returnedItems.length) && (!newItems || !newItems.length)) {
       return res.status(400).json({ error: { code: 400, message: "Informe os itens para troca" } });
     }
@@ -5605,7 +5605,7 @@ function buildApiRoutes({ prisma, log }) {
     let totalNew = 0;
     const now = new Date();
 
-    // 1) Process returned items â€” refund + return to inventory
+    // 1) Process returned items - refund + return to inventory
     for (const ri of (returnedItems || [])) {
       const saleItem = sale.items.find((i) => i.id === ri.saleItemId);
       if (!saleItem) continue;
@@ -5631,7 +5631,7 @@ function buildApiRoutes({ prisma, log }) {
       }
     }
 
-    // 2) Process new items â€” add to sale + deduct from inventory
+    // 2) Process new items - add to sale + deduct from inventory
     for (const ni of (newItems || [])) {
       if (!ni.productId || !ni.quantity || ni.quantity <= 0) continue;
 
@@ -5725,7 +5725,7 @@ function buildApiRoutes({ prisma, log }) {
     });
   }));
 
-  // â”€â”€â”€ SETTLE EXCHANGE (CAIXA) â”€â”€â”€
+  // --- SETTLE EXCHANGE (CAIXA) ---
   router.post("/sales/:id/settle-exchange", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const sale = await prisma.sale.findFirst({ where: { id: req.params.id, tenantId } });
@@ -5756,7 +5756,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { sale: updated, settled: Math.abs(amount) });
   }));
 
-  // â”€â”€â”€ CASH OPERATOR AUTH â”€â”€â”€
+  // --- CASH OPERATOR AUTH ---
   // --- POS TRANSACTIONS (base integration) ---
   router.post("/pos/transactions", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
@@ -5894,7 +5894,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { id: user.id, name: user.name, matricula: String(idx + 1).padStart(4, "0") });
   }));
 
-  // â”€â”€â”€ CASH SESSIONS â”€â”€â”€
+  // --- CASH SESSIONS ---
   router.get("/cash/sessions/current", asyncHandler(async (req, res) => {
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
@@ -5978,7 +5978,7 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, movement, 201);
   }));
 
-  // â”€â”€â”€ REPORTS â”€â”€â”€
+  // --- REPORTS ---
   router.get("/reports/cash-closings", asyncHandler(async (req, res) => {
     await assertFeature(req, "reportsCashClosings", "Relatorio de fechamento de caixa indisponivel no plano atual");
     const tenantId = await resolveTenantId(req);
@@ -6298,7 +6298,7 @@ function buildApiRoutes({ prisma, log }) {
       const truncate = (v, max = 24) => {
         const s = String(v || "-");
         if (s.length <= max) return s;
-        return `${s.slice(0, Math.max(0, max - 1))}â€¦`;
+        return `${s.slice(0, Math.max(0, max - 1))}...`;
       };
 
       const pdfBuf = await makeReportCustomPdfBuffer({
