@@ -591,6 +591,65 @@ function buildApiRoutes({ prisma, log }) {
     return { payments, alerts };
   }
 
+  async function getTenantBillingNotices({ tenantId, actorUserId = null }) {
+    if (!tenantId) return { hasAdminNotice: false, notices: [] };
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { isDeveloperTenant: true },
+    });
+    if (tenant?.isDeveloperTenant) return { hasAdminNotice: false, notices: [] };
+
+    await processTenantLicenseBillingIfNeeded({ tenantId, actorUserId, force: true });
+    const now = atNoon(new Date());
+    const windowEnd = addDays(now, 5);
+    const openPayments = await prisma.tenantLicensePayment.findMany({
+      where: {
+        tenantId,
+        status: { in: ["PENDING", "OVERDUE"] },
+        OR: [
+          { dueDate: { lte: windowEnd } },
+          { status: "OVERDUE" },
+        ],
+      },
+      orderBy: [{ dueDate: "asc" }],
+      take: 8,
+    });
+    const paymentIds = openPayments.map((p) => p.id);
+    const alerts = paymentIds.length
+      ? await prisma.tenantLicenseAlert.findMany({
+        where: {
+          tenantId,
+          paymentId: { in: paymentIds },
+          alertDate: { lte: now },
+        },
+        orderBy: [{ alertDate: "desc" }, { createdAt: "desc" }],
+        take: 20,
+      })
+      : [];
+    const alertByPaymentId = alerts.reduce((acc, row) => {
+      if (!row.paymentId) return acc;
+      if (!acc[row.paymentId]) acc[row.paymentId] = row;
+      return acc;
+    }, {});
+    const notices = openPayments.map((payment) => {
+      const dueDate = atNoon(payment.dueDate);
+      const msPerDay = 86400000;
+      const daysToDue = Math.round((dueDate.getTime() - now.getTime()) / msPerDay);
+      const linkedAlert = alertByPaymentId[payment.id] || null;
+      return {
+        paymentId: payment.id,
+        status: payment.status,
+        dueDate,
+        amountCents: payment.amountCents,
+        daysToDue,
+        type: linkedAlert?.type || null,
+        message: linkedAlert?.message || null,
+        alertDate: linkedAlert?.alertDate || null,
+      };
+    });
+    return { hasAdminNotice: notices.length > 0, notices };
+  }
+
   async function upsertTenantLicenseWithAudit({ tenantId, actor, body }) {
     const nextPlan = String(body?.planCode || "").trim().toUpperCase();
     const nextStatus = normalizeStatus(body?.status || "ACTIVE");
@@ -1280,6 +1339,7 @@ function buildApiRoutes({ prisma, log }) {
       p === "/license/me"
       || p === "/license/me/contractor"
       || p === "/license/me/payments"
+      || p === "/license/me/billing-notices"
       || p === "/license/onboarding/finalize"
       || p.startsWith("/license/cep/")
     ) return next();
@@ -1493,6 +1553,17 @@ function buildApiRoutes({ prisma, log }) {
     if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
     const view = await getTenantLicenseBillingView({ tenantId, actorUserId: req.user?.id || null, forceProcess: true });
     return sendOk(res, req, view);
+  }));
+
+  router.get("/license/me/billing-notices", asyncHandler(async (req, res) => {
+    const role = String(req.user?.role || "").toUpperCase();
+    if (!["ADMIN", "FARMACEUTICO"].includes(role)) {
+      return res.status(403).json({ error: { code: 403, message: "Acesso permitido apenas para Admin ou Farmaceutico" } });
+    }
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+    const data = await getTenantBillingNotices({ tenantId, actorUserId: req.user?.id || null });
+    return sendOk(res, req, data);
   }));
 
   router.put("/license/me", asyncHandler(async (req, res) => {

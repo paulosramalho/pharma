@@ -1,6 +1,7 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
 import { apiFetch } from "../lib/api";
 import { useOfflineSync } from "../hooks/useOfflineSync";
 import {
@@ -29,10 +30,13 @@ const ROLE_NAV_RESTRICT = {
 
 export default function Layout() {
   const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive, license } = useAuth();
+  const { addToast } = useToast();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [billingNotice, setBillingNotice] = useState({ hasAdminNotice: false, notices: [] });
+  const shownBillingNoticeIdsRef = useRef(new Set());
   const { isOnline, pendingCount, failedCount, syncStatus, syncNow, clearFailed } = useOfflineSync();
 
   const roleRestrict = ROLE_NAV_RESTRICT[user?.role];
@@ -79,6 +83,40 @@ export default function Layout() {
       clearInterval(id);
     };
   }, [user?.id, hasFeature]);
+
+  useEffect(() => {
+    const role = String(user?.role || "").toUpperCase();
+    if (!user?.id || !["ADMIN", "FARMACEUTICO"].includes(role)) return undefined;
+    let cancelled = false;
+
+    const loadBillingNotices = async () => {
+      try {
+        const res = await apiFetch("/api/license/me/billing-notices");
+        const data = res?.data || { hasAdminNotice: false, notices: [] };
+        if (cancelled) return;
+        setBillingNotice(data);
+        if (role !== "ADMIN") return;
+        const notices = Array.isArray(data.notices) ? data.notices : [];
+        notices.slice(0, 2).forEach((n) => {
+          if (!n?.paymentId || shownBillingNoticeIdsRef.current.has(n.paymentId)) return;
+          const fallback = Number(n?.daysToDue || 0) < 0
+            ? `Licença em atraso desde ${new Date(n.dueDate).toLocaleDateString("pt-BR")}.`
+            : `Licença vence em ${new Date(n.dueDate).toLocaleDateString("pt-BR")}.`;
+          addToast(n?.message || fallback, Number(n?.daysToDue || 0) < 0 ? "warning" : "info", 6500);
+          shownBillingNoticeIdsRef.current.add(n.paymentId);
+        });
+      } catch {
+        if (!cancelled) setBillingNotice({ hasAdminNotice: false, notices: [] });
+      }
+    };
+
+    loadBillingNotices();
+    const id = setInterval(loadBillingNotices, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [user?.id, user?.role, addToast]);
 
   const linkClass = ({ isActive }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
@@ -243,6 +281,15 @@ export default function Layout() {
           </div>
         )}
 
+        {String(user?.role || "").toUpperCase() === "FARMACEUTICO" && billingNotice?.hasAdminNotice ? (
+          <div className="px-4 py-2 text-sm flex items-center gap-3 border-b bg-amber-50 border-amber-200 text-amber-800">
+            <AlertTriangle size={15} className="shrink-0" />
+            <span className="flex-1">
+              Existe aviso financeiro para o administrador. Solicite acesso em Configurações &gt; Licenciamento.
+            </span>
+          </div>
+        ) : null}
+
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet key={storeId || "no-store"} />
         </main>
@@ -250,4 +297,3 @@ export default function Layout() {
     </div>
   );
 }
-

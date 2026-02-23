@@ -157,8 +157,8 @@ model TenantLicense {
   overrideAnnualPriceCents Int?
   extrasDescription String?
   billingToleranceDays Int @default(3)
-  alertDaysPrimary Int @default(10)
-  alertDaysSecondary Int @default(5)
+  alertDaysPrimary Int @default(5)
+  alertDaysSecondary Int @default(3)
   payments       TenantLicensePayment[]
   updatedAt      DateTime      @updatedAt
   createdAt      DateTime      @default(now())
