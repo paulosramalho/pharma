@@ -118,7 +118,7 @@ const USER_ROLE_ORDER = ["ADMIN", "VENDEDOR", "CAIXA", "FARMACEUTICO"];
 const IMPORT_TABLE_OPTIONS = [
   { key: "stores", label: "Lojas", columns: "name;type;active;isDefault;cnpj;phone;email;street;number;complement;district;city;state;zipCode" },
   { key: "categories", label: "Categorias", columns: "name;active" },
-  { key: "products", label: "Produtos", columns: "name;ean;active;requiresPrescription;controlled;defaultMarkup;categoryName;basePrice;stockQty;stockValue;soldQty;soldValue" },
+  { key: "products", label: "Produtos", columns: "name;ean;active;requiresPrescription;controlled;defaultMarkup;categoryName;basePrice" },
   { key: "customers", label: "Clientes", columns: "name;document;birthDate;whatsapp;phone;email" },
 ];
 
