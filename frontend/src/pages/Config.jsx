@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../lib/api";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -15,22 +15,22 @@ import { Settings, Store, Shield, Plus, Pencil, Users, UserCheck } from "lucide-
 
 const TABS = [
   { key: "lojas", label: "Lojas", icon: Store },
-  { key: "usuarios", label: "Usuários", icon: Users },
+  { key: "usuarios", label: "UsuÃ¡rios", icon: Users },
   { key: "clientes", label: "Clientes", icon: UserCheck },
   { key: "licenciamento", label: "Licenciamento", icon: Settings },
-  { key: "permissoes", label: "Permissões", icon: Shield },
+  { key: "permissoes", label: "PermissÃµes", icon: Shield },
 ];
 
-const TYPE_LABELS = { CENTRAL: "Central (Depósito)", LOJA: "Loja" };
+const TYPE_LABELS = { CENTRAL: "Central (DepÃ³sito)", LOJA: "Loja" };
 const ROLE_COLORS = { ADMIN: "purple", CAIXA: "blue", VENDEDOR: "green", FARMACUTICO: "yellow" };
-const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "Farmacêutico" };
+const ROLE_LABELS = { ADMIN: "Administrador", CAIXA: "Caixa", VENDEDOR: "Vendedor", FARMACEUTICO: "FarmacÃªutico" };
 
 const emptyStoreForm = { name: "", type: "LOJA", cnpj: "", phone: "", email: "", street: "", number: "", complement: "", district: "", city: "", state: "", zipCode: "" };
 const emptyUserForm = { name: "", email: "", password: "", passwordConfirm: "", roleName: "VENDEDOR", storeIds: [] };
 const emptyCustomerForm = { name: "", document: "", birthDate: "", whatsapp: "", phone: "", email: "" };
 
 const PERMISSIONS = [
-  { key: "users.manage", label: "Gerenciar usuários" },
+  { key: "users.manage", label: "Gerenciar usuÃ¡rios" },
   { key: "stores.manage", label: "Gerenciar lojas" },
   { key: "products.manage", label: "Gerenciar produtos" },
   { key: "inventory.receive", label: "Receber estoque" },
@@ -40,7 +40,7 @@ const PERMISSIONS = [
   { key: "cash.open", label: "Abrir caixa" },
   { key: "cash.close", label: "Fechar caixa" },
   { key: "cash.refund", label: "Estornar" },
-  { key: "reports.view", label: "Ver relatórios" },
+  { key: "reports.view", label: "Ver relatÃ³rios" },
 ];
 
 const ROLES = [
@@ -53,7 +53,7 @@ const ROLES = [
 const STATUS_LABELS = {
   TRIAL: "Teste",
   ACTIVE: "Ativa",
-  GRACE: "Carência",
+  GRACE: "CarÃªncia",
   SUSPENDED: "Suspensa",
   EXPIRED: "Expirada",
   CANCELED: "Cancelada",
@@ -68,19 +68,19 @@ const PAYMENT_STATUS_LABELS = {
 const ALERT_TYPE_LABELS = {
   DUE_DAYS_BEFORE_PRIMARY: "Aviso antecipado (X dias)",
   DUE_DAYS_BEFORE_SECONDARY: "Aviso antecipado (Y dias)",
-  DUE_EVE: "Véspera do vencimento",
+  DUE_EVE: "VÃ©spera do vencimento",
   DUE_TODAY: "Vencimento hoje",
   PAYMENT_RECEIVED: "Pagamento recebido",
-  THREE_BUSINESS_DAYS_OVERDUE: "3 dias úteis em atraso",
-  THREE_DAYS_AFTER_OVERDUE_WARNING: "3 dias após aviso de atraso",
-  SERVICE_SUSPENDED: "Serviço suspenso",
+  THREE_BUSINESS_DAYS_OVERDUE: "3 dias Ãºteis em atraso",
+  THREE_DAYS_AFTER_OVERDUE_WARNING: "3 dias apÃ³s aviso de atraso",
+  SERVICE_SUSPENDED: "ServiÃ§o suspenso",
 };
 
 const PERFIL_LABELS = {
   ADMIN: "Administrador",
   VENDEDOR: "Vendedor",
   CAIXA: "Caixa",
-  FARMACEUTICO: "Farmacêutico",
+  FARMACEUTICO: "FarmacÃªutico",
 };
 
 const MODULO_LABELS = {
@@ -88,14 +88,14 @@ const MODULO_LABELS = {
   sales: "Vendas",
   cash: "Caixa",
   inventory: "Estoque",
-  inventoryTransfers: "Transferências de estoque",
+  inventoryTransfers: "TransferÃªncias de estoque",
   inventoryReservations: "Reservas de estoque",
   products: "Produtos",
   chat: "Chat",
-  config: "Configurações",
-  reportsSales: "Relatórios de vendas",
-  reportsCashClosings: "Relatórios de caixa",
-  reportsTransfers: "Relatórios de transferências",
+  config: "ConfiguraÃ§Ãµes",
+  reportsSales: "RelatÃ³rios de vendas",
+  reportsCashClosings: "RelatÃ³rios de caixa",
+  reportsTransfers: "RelatÃ³rios de transferÃªncias",
 };
 
 const LICENSE_FEATURE_KEYS = Object.keys(MODULO_LABELS);
@@ -169,6 +169,9 @@ export default function Config() {
   const [cleanupTarget, setCleanupTarget] = useState(null);
   const [cleanupConfirm, setCleanupConfirm] = useState("");
   const [cleanupSubmitting, setCleanupSubmitting] = useState(false);
+  const [deleteLicenseTarget, setDeleteLicenseTarget] = useState(null);
+  const [deleteLicenseConfirm, setDeleteLicenseConfirm] = useState("");
+  const [deleteLicenseSubmitting, setDeleteLicenseSubmitting] = useState(false);
   const [myLicenseRequests, setMyLicenseRequests] = useState([]);
   const [adminLicenseRequests, setAdminLicenseRequests] = useState([]);
   const [requestForm, setRequestForm] = useState({ ADMIN: 1, VENDEDOR: 1, CAIXA: 1, FARMACEUTICO: 1, note: "" });
@@ -321,6 +324,12 @@ export default function Config() {
     setCleanupConfirm("");
   };
 
+  const openDeleteLicense = (tenant) => {
+    if (!tenant?.id || tenant?.isDeveloperTenant) return;
+    setDeleteLicenseTarget(tenant);
+    setDeleteLicenseConfirm("");
+  };
+
   const runCleanupLicense = async () => {
     if (!cleanupTarget?.id) return;
     if (cleanupConfirm.trim().toUpperCase() !== "CONFIRMAR") {
@@ -349,7 +358,7 @@ export default function Config() {
       const listRes = await apiFetch("/api/license/admin/licenses");
       setLicensesList(listRes?.data?.licenses || []);
     } catch (err) {
-      addToast(err.message || "Falha ao limpar licença", "error");
+      addToast(err.message || "Falha ao limpar licenÃ§a", "error");
     } finally {
       setCleanupSubmitting(false);
     }
@@ -434,7 +443,7 @@ export default function Config() {
   const validateSelectedImports = async () => {
     const { targetTenantId, useAdminEndpoint } = resolveImportExportTarget();
     if (!targetTenantId) {
-      addToast("Licenciado não identificado para validar importação", "warning");
+      addToast("Licenciado nÃ£o identificado para validar importaÃ§Ã£o", "warning");
       return false;
     }
     setImportValidating(true);
@@ -450,13 +459,40 @@ export default function Config() {
       setImportValidation(validation);
       setImportResult(null);
       const compatible = validation.every((item) => item.compatible);
-      addToast(compatible ? "Arquivos validados com sucesso" : "Existem arquivos incompatíveis", compatible ? "success" : "warning");
+      addToast(compatible ? "Arquivos validados com sucesso" : "Existem arquivos incompatÃ­veis", compatible ? "success" : "warning");
       return compatible;
     } catch (err) {
-      addToast(err.message || "Falha na validação dos arquivos", "error");
+      addToast(err.message || "Falha na validaÃ§Ã£o dos arquivos", "error");
       return false;
     } finally {
       setImportValidating(false);
+    }
+  };
+
+  const runDeleteLicense = async () => {
+    if (!deleteLicenseTarget?.id) return;
+    if (deleteLicenseConfirm.trim().toUpperCase() !== "CONFIRMAR") {
+      addToast("Digite CONFIRMAR para excluir a licenÃ§a", "warning");
+      return;
+    }
+    setDeleteLicenseSubmitting(true);
+    try {
+      await apiFetch("/api/license/admin/delete-license", {
+        method: "POST",
+        body: JSON.stringify({
+          tenantId: deleteLicenseTarget.id,
+          confirm: deleteLicenseConfirm.trim().toUpperCase(),
+        }),
+      });
+      addToast("LicenÃ§a excluÃ­da com sucesso", "success");
+      setDeleteLicenseTarget(null);
+      setSelectedLicenseId((prev) => (prev === deleteLicenseTarget.id ? "" : prev));
+      const listRes = await apiFetch("/api/license/admin/licenses");
+      setLicensesList(listRes?.data?.licenses || []);
+    } catch (err) {
+      addToast(err.message || "Falha ao excluir licenÃ§a", "error");
+    } finally {
+      setDeleteLicenseSubmitting(false);
     }
   };
 
@@ -527,7 +563,7 @@ export default function Config() {
     setPlanEditingCode("");
     setPlanForm({
       code: `${String(source.code || "NOVO").toUpperCase()}_NOVO`,
-      name: `${String(source.name || "Plano")} (cópia)`,
+      name: `${String(source.name || "Plano")} (cÃ³pia)`,
       currency: String(source.currency || "BRL").toUpperCase(),
       monthlyPriceCents: centsToInput(source.monthlyPriceCents),
       annualPriceCents: centsToInput(source.annualPriceCents),
@@ -541,7 +577,7 @@ export default function Config() {
       active: Boolean(source.active),
       features,
     });
-    addToast("Plano copiado para criação de novo", "success");
+    addToast("Plano copiado para criaÃ§Ã£o de novo", "success");
   };
 
   const submitPlan = async () => {
@@ -549,11 +585,11 @@ export default function Config() {
     const code = String(planForm.code || "").trim().toUpperCase();
     const name = String(planForm.name || "").trim();
     if (!code && !planEditingCode) {
-      addToast("Código do plano é obrigatório", "warning");
+      addToast("CÃ³digo do plano Ã© obrigatÃ³rio", "warning");
       return;
     }
     if (!name) {
-      addToast("Nome do plano é obrigatório", "warning");
+      addToast("Nome do plano Ã© obrigatÃ³rio", "warning");
       return;
     }
     setPlanSubmitting(true);
@@ -613,7 +649,7 @@ export default function Config() {
       await apiFetch(`/api/license/admin/plans/${encodeURIComponent(String(code).toUpperCase())}`, {
         method: "DELETE",
       });
-      addToast("Plano excluído", "success");
+      addToast("Plano excluÃ­do", "success");
       await loadLicensePlans();
       const meRes = await apiFetch("/api/license/me");
       setLicenseData(meRes?.data || null);
@@ -630,7 +666,7 @@ export default function Config() {
   const executeSelectedImports = async () => {
     const { targetTenantId, useAdminEndpoint } = resolveImportExportTarget();
     if (!targetTenantId) {
-      addToast("Licenciado não identificado para importar", "warning");
+      addToast("Licenciado nÃ£o identificado para importar", "warning");
       return;
     }
     setImportExecuting(true);
@@ -641,7 +677,7 @@ export default function Config() {
       let compatible = !needsValidation && currentValidation.every((item) => item.compatible);
       if (needsValidation) compatible = await validateSelectedImports();
       if (!compatible) {
-        addToast("Importação bloqueada. Corrija os arquivos incompatíveis.", "warning");
+        addToast("ImportaÃ§Ã£o bloqueada. Corrija os arquivos incompatÃ­veis.", "warning");
         return;
       }
       const endpoint = useAdminEndpoint ? "/api/license/admin/import/execute" : "/api/license/me/import/execute";
@@ -652,7 +688,7 @@ export default function Config() {
       });
       const imported = res?.data?.imported || [];
       setImportResult(imported);
-      addToast("Importação concluída com sucesso", "success");
+      addToast("ImportaÃ§Ã£o concluÃ­da com sucesso", "success");
       if (useAdminEndpoint) {
         const listRes = await apiFetch("/api/license/admin/licenses");
         setLicensesList(listRes?.data?.licenses || []);
@@ -665,7 +701,7 @@ export default function Config() {
         await refreshSession().catch(() => {});
       }
     } catch (err) {
-      addToast(err.message || "Falha na importação", "error");
+      addToast(err.message || "Falha na importaÃ§Ã£o", "error");
     } finally {
       setImportExecuting(false);
     }
@@ -694,7 +730,7 @@ export default function Config() {
   const executeSelectedExports = async () => {
     const { targetTenantId, useAdminEndpoint } = resolveImportExportTarget();
     if (!targetTenantId) {
-      addToast("Licenciado não identificado para exportar", "warning");
+      addToast("Licenciado nÃ£o identificado para exportar", "warning");
       return;
     }
     const tables = IMPORT_TABLE_OPTIONS
@@ -713,8 +749,10 @@ export default function Config() {
         body: JSON.stringify(body),
       });
       const exported = res?.data?.exported || [];
+      const targetName = res?.data?.tenantName || "Licenciado";
+      const totalRows = exported.reduce((sum, file) => sum + Number(file?.totalRows || 0), 0);
       if (!exported.length) {
-        addToast("Nenhum arquivo gerado para exportação", "warning");
+        addToast(`Nenhum arquivo gerado para exportação (${targetName})`, "warning");
         setExportResult([]);
         return;
       }
@@ -722,9 +760,9 @@ export default function Config() {
         triggerDownloadTextFile(file.fileName || `${file.table}.txt`, file.content || "");
       });
       setExportResult(exported);
-      addToast("Exportação concluída com sucesso", "success");
+      addToast(`Exportação concluída (${targetName}) - ${totalRows} linha(s)`, totalRows > 0 ? "success" : "warning");
     } catch (err) {
-      addToast(err.message || "Falha na exportação", "error");
+      addToast(err.message || "Falha na exportaÃ§Ã£o", "error");
     } finally {
       setExportExecuting(false);
     }
@@ -746,9 +784,9 @@ export default function Config() {
       });
       const myReqRes = await apiFetch("/api/license/me/change-requests");
       setMyLicenseRequests(myReqRes?.data?.requests || []);
-      addToast("Solicitação enviada ao Desenvolvedor", "success");
+      addToast("SolicitaÃ§Ã£o enviada ao Desenvolvedor", "success");
     } catch (err) {
-      addToast(err.message || "Falha ao enviar solicitação", "error");
+      addToast(err.message || "Falha ao enviar solicitaÃ§Ã£o", "error");
     } finally {
       setRequestSubmitting(false);
     }
@@ -768,9 +806,9 @@ export default function Config() {
       ]);
       setMyLicenseRequests(myReqRes?.data?.requests || []);
       setLicenseData(meRes?.data || null);
-      addToast("Nova configuração aplicada com sucesso", "success");
+      addToast("Nova configuraÃ§Ã£o aplicada com sucesso", "success");
     } catch (err) {
-      addToast(err.message || "Falha ao aprovar alteração", "error");
+      addToast(err.message || "Falha ao aprovar alteraÃ§Ã£o", "error");
     } finally {
       setRequestSubmitting(false);
     }
@@ -780,7 +818,7 @@ export default function Config() {
 
   const sendAdminProposal = async (action = "PROPOSE") => {
     if (!selectedAdminRequestId) {
-      addToast("Selecione uma solicitação", "warning");
+      addToast("Selecione uma solicitaÃ§Ã£o", "warning");
       return;
     }
     setAdminReviewSubmitting(true);
@@ -802,9 +840,9 @@ export default function Config() {
       });
       const adminReqRes = await apiFetch("/api/license/admin/change-requests");
       setAdminLicenseRequests(adminReqRes?.data?.requests || []);
-      addToast(action === "REJECT" ? "Solicitação rejeitada" : "Proposta enviada ao contratante", "success");
+      addToast(action === "REJECT" ? "SolicitaÃ§Ã£o rejeitada" : "Proposta enviada ao contratante", "success");
     } catch (err) {
-      addToast(err.message || "Falha ao revisar solicitação", "error");
+      addToast(err.message || "Falha ao revisar solicitaÃ§Ã£o", "error");
     } finally {
       setAdminReviewSubmitting(false);
     }
@@ -842,7 +880,7 @@ export default function Config() {
   const toggleStoreDefault = async (s) => {
     try {
       await apiFetch(`/api/stores/${s.id}`, { method: "PUT", body: JSON.stringify({ isDefault: !s.isDefault }) });
-      addToast(s.isDefault ? "Removido como padrão" : `${s.name} definida como padrão`, "success");
+      addToast(s.isDefault ? "Removido como padrÃ£o" : `${s.name} definida como padrÃ£o`, "success");
       apiFetch("/api/stores?all=true").then((res) => setStores(res.data || []));
     } catch (err) { addToast(err.message, "error"); }
   };
@@ -862,7 +900,7 @@ export default function Config() {
   };
   const submitUser = async () => {
     if (userForm.password && userForm.password !== userForm.passwordConfirm) {
-      addToast("As senhas não coincidem", "error"); return;
+      addToast("As senhas nÃ£o coincidem", "error"); return;
     }
     if (userForm.roleName !== "ADMIN" && (!userForm.storeIds || userForm.storeIds.length === 0)) {
       addToast("Selecione ao menos uma loja para este perfil", "warning");
@@ -875,11 +913,11 @@ export default function Config() {
       if (userForm.password) body.password = userForm.password;
       if (userEditId) {
         await apiFetch(`/api/users/${userEditId}`, { method: "PUT", body: JSON.stringify(body) });
-        addToast("Usuário atualizado!", "success");
+        addToast("UsuÃ¡rio atualizado!", "success");
       } else {
-        if (!userForm.password) { addToast("Senha obrigatória", "error"); setSubmitting(false); return; }
+        if (!userForm.password) { addToast("Senha obrigatÃ³ria", "error"); setSubmitting(false); return; }
         await apiFetch("/api/users", { method: "POST", body: JSON.stringify(body) });
-        addToast("Usuário criado!", "success");
+        addToast("UsuÃ¡rio criado!", "success");
       }
       setUserModal(false);
       apiFetch("/api/users").then((res) => setUsers(res.data || []));
@@ -908,7 +946,7 @@ export default function Config() {
     setSubmitting(false);
   };
 
-  const roleName = (u) => u.role?.name || u.role || "—";
+  const roleName = (u) => u.role?.name || u.role || "â€”";
   const canManageLicense = user?.role === "ADMIN";
   const isDeveloperAdmin = canManageLicense && Boolean(licenseData?.contractor?.isDeveloperTenant);
   const contractorLicenses = (licensesList || []).filter((l) => !l.isDeveloperTenant);
@@ -943,9 +981,9 @@ export default function Config() {
       } else {
         setLicenseData(res.data || null);
       }
-      addToast("Licença atualizada com sucesso!", "success");
+      addToast("LicenÃ§a atualizada com sucesso!", "success");
     } catch (err) {
-      addToast(err.message || "Erro ao atualizar licença", "error");
+      addToast(err.message || "Erro ao atualizar licenÃ§a", "error");
     } finally {
       setSubmitting(false);
     }
@@ -960,17 +998,17 @@ export default function Config() {
     }
     const contractorDocDigits = String(contractorForm.document || "").replace(/\D/g, "");
     if (contractorDocDigits && !validateCPFOrCNPJ(contractorDocDigits)) {
-      addToast("CPF/CNPJ inválido", "error");
+      addToast("CPF/CNPJ invÃ¡lido", "error");
       return;
     }
     const contractorZipDigits = String(contractorForm.zipCode || "").replace(/\D/g, "");
     if (contractorZipDigits && contractorZipDigits.length !== 8) {
-      addToast("CEP inválido", "error");
+      addToast("CEP invÃ¡lido", "error");
       return;
     }
     const phoneDigits = String(contractorForm.phoneWhatsapp || "").replace(/\D/g, "");
     if (phoneDigits && phoneDigits.length !== 10 && phoneDigits.length !== 11) {
-      addToast("Telefone/WhatsApp inválido", "error");
+      addToast("Telefone/WhatsApp invÃ¡lido", "error");
       return;
     }
     setSubmitting(true);
@@ -1016,15 +1054,15 @@ export default function Config() {
       setContractorForm((prev) => ({ ...prev, logoFile: dataUrl }));
       addToast("Arquivo de logo carregado", "success");
     } catch {
-      addToast("Não foi possível ler o arquivo", "error");
+      addToast("NÃ£o foi possÃ­vel ler o arquivo", "error");
     } finally {
       event.target.value = "";
     }
   };
 
-  const dateLabel = (v) => (v ? formatDate(v) : "—");
+  const dateLabel = (v) => (v ? formatDate(v) : "â€”");
   const dateTimeLabel = (v) => {
-    if (!v) return "—";
+    if (!v) return "â€”";
     return new Date(v).toLocaleString("pt-BR");
   };
   const moduloHabilitado = (features = {}) =>
@@ -1053,7 +1091,7 @@ export default function Config() {
       setLicensePayments(res?.data?.payments || []);
       setLicenseAlerts(res?.data?.alerts || []);
     } catch (err) {
-      addToast(err.message || "Falha ao carregar pagamentos da licença", "error");
+      addToast(err.message || "Falha ao carregar pagamentos da licenÃ§a", "error");
       setLicensePayments([]);
       setLicenseAlerts([]);
     } finally {
@@ -1140,7 +1178,7 @@ export default function Config() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
+      <h1 className="text-2xl font-bold text-gray-900">ConfiguraÃ§Ãµes</h1>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
@@ -1158,7 +1196,7 @@ export default function Config() {
           <CardHeader className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Store size={18} className="text-gray-400" />
-              <h3 className="font-semibold text-gray-900">Lojas e Depósitos</h3>
+              <h3 className="font-semibold text-gray-900">Lojas e DepÃ³sitos</h3>
             </div>
             <Button size="sm" onClick={openCreateStore}><Plus size={14} /> Nova Loja</Button>
           </CardHeader>
@@ -1170,7 +1208,7 @@ export default function Config() {
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-gray-900">{s.name}</p>
                       <Badge color={s.type === "CENTRAL" ? "blue" : "green"}>{TYPE_LABELS[s.type] || s.type}</Badge>
-                      {s.isDefault && <Badge color="purple">Padrão</Badge>}
+                      {s.isDefault && <Badge color="purple">PadrÃ£o</Badge>}
                       {!s.active && <Badge color="red">Inativa</Badge>}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
@@ -1180,14 +1218,14 @@ export default function Config() {
                       {!s.cnpj && !s.phone && !s.city && <span className="text-gray-400 italic">Sem dados cadastrais</span>}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
-                      <span>{s._count?.accessUsers || 0} usuários</span>
+                      <span>{s._count?.accessUsers || 0} usuÃ¡rios</span>
                       <span>{s._count?.sales || 0} vendas</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     <button onClick={() => toggleStoreDefault(s)}
                       className={`text-xs px-2 py-1 rounded ${s.isDefault ? "text-purple-600 hover:bg-purple-50 font-medium" : "text-gray-500 hover:bg-gray-100"}`}>
-                      {s.isDefault ? "Padrão" : "Def. Padrão"}
+                      {s.isDefault ? "PadrÃ£o" : "Def. PadrÃ£o"}
                     </button>
                     <button onClick={() => toggleStoreActive(s)}
                       className={`text-xs px-2 py-1 rounded ${s.active ? "text-red-600 hover:bg-red-50" : "text-emerald-600 hover:bg-emerald-50"}`}>
@@ -1207,16 +1245,16 @@ export default function Config() {
       {tab === "usuarios" && (
         <Card>
           <CardHeader className="flex items-center justify-between">
-            <div className="flex items-center gap-2"><Users size={18} className="text-gray-400" /><h3 className="font-semibold text-gray-900">Usuários</h3></div>
-            <Button size="sm" onClick={openCreateUser}><Plus size={14} /> Novo Usuário</Button>
+            <div className="flex items-center gap-2"><Users size={18} className="text-gray-400" /><h3 className="font-semibold text-gray-900">UsuÃ¡rios</h3></div>
+            <Button size="sm" onClick={openCreateUser}><Plus size={14} /> Novo UsuÃ¡rio</Button>
           </CardHeader>
           {loading ? <PageSpinner /> : users.length === 0 ? (
-            <EmptyState icon={Users} title="Nenhum usuário" />
+            <EmptyState icon={Users} title="Nenhum usuÃ¡rio" />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-gray-200 text-left">
-                  <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Matrícula</th>
+                  <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">MatrÃ­cula</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Nome</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Email</th>
                   <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Perfil</th>
@@ -1230,13 +1268,13 @@ export default function Config() {
                     const rn = roleName(u);
                     return (
                       <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{u.matricula || "—"}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{u.matricula || "â€”"}</td>
                         <td className="px-4 py-2 font-medium text-gray-900">{u.name}</td>
                         <td className="px-4 py-2 text-gray-500">{u.email}</td>
                         <td className="px-4 py-2"><Badge color={ROLE_COLORS[rn] || "gray"}>{ROLE_LABELS[rn] || rn}</Badge></td>
                         <td className="px-4 py-2 text-gray-500">{u.storeCount ?? u.stores?.length ?? 0}</td>
                         <td className="px-4 py-2"><Badge color={u.active ? "green" : "red"}>{u.active ? "Ativo" : "Inativo"}</Badge></td>
-                        <td className="px-4 py-2 text-xs text-gray-400">{u.createdAt ? formatDate(u.createdAt) : "—"}</td>
+                        <td className="px-4 py-2 text-xs text-gray-400">{u.createdAt ? formatDate(u.createdAt) : "â€”"}</td>
                         <td className="px-4 py-2">
                           <button onClick={() => openEditUser(u)} className="p-1 text-gray-400 hover:text-primary-600 rounded">
                             <Pencil size={14} />
@@ -1279,10 +1317,10 @@ export default function Config() {
                   {customers.map((c) => (
                     <tr key={c.id} className="hover:bg-gray-50">
                       <td className="px-4 py-2 font-medium text-gray-900">{c.name}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.document ? cpfMask(c.document) : "—"}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.whatsapp ? whatsappMask(c.whatsapp) : "—"}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.birthDate ? formatDate(c.birthDate) : "—"}</td>
-                      <td className="px-4 py-2 text-gray-500">{c.email || "—"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.document ? cpfMask(c.document) : "â€”"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.whatsapp ? whatsappMask(c.whatsapp) : "â€”"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.birthDate ? formatDate(c.birthDate) : "â€”"}</td>
+                      <td className="px-4 py-2 text-gray-500">{c.email || "â€”"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1320,20 +1358,20 @@ export default function Config() {
                 <>
                   {isDeveloperAdmin && planosLicenciamentoMode ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
-                      <p className="text-sm font-semibold text-gray-900">Licenças (Planos)</p>
+                      <p className="text-sm font-semibold text-gray-900">LicenÃ§as (Planos)</p>
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="border-b border-gray-200 text-left text-gray-500">
-                              <th className="px-2 py-1">Código</th>
+                              <th className="px-2 py-1">CÃ³digo</th>
                               <th className="px-2 py-1">Nome</th>
                               <th className="px-2 py-1">Mensal</th>
                               <th className="px-2 py-1">Anual</th>
                               <th className="px-2 py-1">Dashboard</th>
                               <th className="px-2 py-1">Limites</th>
-                              <th className="px-2 py-1">Módulos</th>
+                              <th className="px-2 py-1">MÃ³dulos</th>
                               <th className="px-2 py-1">Status</th>
-                              <th className="px-2 py-1">Ações</th>
+                              <th className="px-2 py-1">AÃ§Ãµes</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -1388,7 +1426,7 @@ export default function Config() {
                       </div>
                       <div className="grid md:grid-cols-4 gap-2">
                         <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-600">Código</label>
+                          <label className="block text-xs font-medium text-gray-600">CÃ³digo</label>
                           <input className={inputClass} value={planForm.code} onChange={(e) => setPlanForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))} disabled={Boolean(planEditingCode)} />
                         </div>
                         <div className="space-y-1">
@@ -1415,7 +1453,7 @@ export default function Config() {
                           <input type="text" inputMode="numeric" className={inputClass} value={planForm.annualPriceCents} onChange={(e) => setPlanForm((prev) => ({ ...prev, annualPriceCents: moneyMask(e.target.value) }))} />
                         </div>
                         <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-600">Max usuários</label>
+                          <label className="block text-xs font-medium text-gray-600">Max usuÃ¡rios</label>
                           <input type="number" min={0} className={inputClass} value={planForm.maxActiveUsers} onChange={(e) => setPlanForm((prev) => ({ ...prev, maxActiveUsers: e.target.value }))} />
                         </div>
                         <div className="space-y-1">
@@ -1437,12 +1475,12 @@ export default function Config() {
                           <input type="number" min={0} className={inputClass} value={planForm.roleCaixa} onChange={(e) => setPlanForm((prev) => ({ ...prev, roleCaixa: e.target.value }))} />
                         </div>
                         <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-600">Perfil FARMACÊUTICO</label>
+                          <label className="block text-xs font-medium text-gray-600">Perfil FARMACÃŠUTICO</label>
                           <input type="number" min={0} className={inputClass} value={planForm.roleFarmaceutico} onChange={(e) => setPlanForm((prev) => ({ ...prev, roleFarmaceutico: e.target.value }))} />
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <p className="text-xs font-medium text-gray-600">Módulos habilitados</p>
+                        <p className="text-xs font-medium text-gray-600">MÃ³dulos habilitados</p>
                         <div className="grid md:grid-cols-3 gap-2">
                           {LICENSE_FEATURE_KEYS.map((key) => (
                             <label key={key} className="flex items-center gap-2 text-xs text-gray-700">
@@ -1464,7 +1502,7 @@ export default function Config() {
                         <Button type="button" onClick={submitPlan} loading={planSubmitting}>
                           {planEditingCode ? "Salvar plano" : "Criar plano"}
                         </Button>
-                        {planEditingCode ? <Button type="button" variant="secondary" onClick={resetPlanForm}>Cancelar edição</Button> : null}
+                        {planEditingCode ? <Button type="button" variant="secondary" onClick={resetPlanForm}>Cancelar ediÃ§Ã£o</Button> : null}
                       </div>
                     </div>
                   ) : null}
@@ -1481,7 +1519,7 @@ export default function Config() {
                               <th className="px-2 py-1">Plano</th>
                               <th className="px-2 py-1">Status</th>
                               <th className="px-2 py-1">L/U/C</th>
-                              <th className="px-2 py-1">Ação</th>
+                              <th className="px-2 py-1">AÃ§Ã£o</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -1499,9 +1537,14 @@ export default function Config() {
                                 <td className="px-2 py-1 text-gray-700">{STATUS_LABELS[String(l.license?.status || "").toUpperCase()] || l.license?.status || "-"}</td>
                                 <td className="px-2 py-1 text-gray-700">{Number(l?._count?.stores || 0)}/{Number(l?._count?.users || 0)}/{Number(l?._count?.customers || 0)}</td>
                                 <td className="px-2 py-1">
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); openCleanupLicense(l); }} className="text-red-600 hover:text-red-700">
-                                    Limpar base
-                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); openCleanupLicense(l); }} className="text-red-600 hover:text-red-700">
+                                      Limpar base
+                                    </button>
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); openDeleteLicense(l); }} className="text-rose-700 hover:text-rose-800">
+                                      Excluir licença
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -1509,7 +1552,7 @@ export default function Config() {
                           </tbody>
                         </table>
                       </div>
-                      <p className="text-[11px] text-gray-500">L/U/C = Lojas / Usuários / Clientes</p>
+                      <p className="text-[11px] text-gray-500">L/U/C = Lojas / UsuÃ¡rios / Clientes</p>
                       <div className="flex flex-wrap gap-2 pt-1">
                         <Button
                           type="button"
@@ -1519,15 +1562,23 @@ export default function Config() {
                         >
                           Zerar base do licenciado selecionado
                         </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => openDeleteLicense(selectedLicense)}
+                          disabled={!selectedLicense}
+                        >
+                          Excluir licença selecionada
+                        </Button>
                       </div>
                     </div>
                   ) : null}
 
                   {!planosLicenciamentoMode && isDeveloperAdmin ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
-                      <p className="text-sm font-semibold text-gray-900">Solicitações pendentes de ajuste de licença</p>
+                      <p className="text-sm font-semibold text-gray-900">SolicitaÃ§Ãµes pendentes de ajuste de licenÃ§a</p>
                       <div className="space-y-1">
-                        <label className="block text-xs font-medium text-gray-600">Solicitação</label>
+                        <label className="block text-xs font-medium text-gray-600">SolicitaÃ§Ã£o</label>
                         <select
                           className={inputClass}
                           value={selectedAdminRequestId}
@@ -1541,7 +1592,7 @@ export default function Config() {
                         </select>
                       </div>
                       {!adminLicenseRequests?.length ? (
-                        <p className="text-xs text-gray-500">Nenhuma solicitação encontrada.</p>
+                        <p className="text-xs text-gray-500">Nenhuma solicitaÃ§Ã£o encontrada.</p>
                       ) : (
                         <>
                           <div className="grid md:grid-cols-4 gap-2">
@@ -1569,7 +1620,7 @@ export default function Config() {
                             </div>
                           </div>
                           <div className="space-y-1">
-                            <label className="block text-xs font-medium text-gray-600">Extras / observação</label>
+                            <label className="block text-xs font-medium text-gray-600">Extras / observaÃ§Ã£o</label>
                             <input className={inputClass} value={adminProposalForm.extrasDescription} onChange={(e) => setAdminProposalForm((prev) => ({ ...prev, extrasDescription: e.target.value }))} />
                           </div>
                           <div className="space-y-1">
@@ -1588,7 +1639,7 @@ export default function Config() {
                   {!planosLicenciamentoMode && canManageLicense ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <div>
-                        <p className="text-sm font-semibold text-gray-900">Importação de tabelas</p>
+                        <p className="text-sm font-semibold text-gray-900">ImportaÃ§Ã£o de tabelas</p>
                         <p className="text-xs text-gray-500">Selecione uma ou mais tabelas, anexe os arquivos e valide antes de importar.</p>
                       </div>
                       <div className="grid md:grid-cols-2 gap-2">
@@ -1632,7 +1683,7 @@ export default function Config() {
                               <tr className="border-b border-gray-200 text-left text-gray-500">
                                 <th className="px-2 py-1">Tabela</th>
                                 <th className="px-2 py-1">Arquivo</th>
-                                <th className="px-2 py-1">Compatível</th>
+                                <th className="px-2 py-1">CompatÃ­vel</th>
                                 <th className="px-2 py-1">Detalhes</th>
                               </tr>
                             </thead>
@@ -1642,7 +1693,7 @@ export default function Config() {
                                   <td className="px-2 py-1 font-medium text-gray-900">{item.label || item.table}</td>
                                   <td className="px-2 py-1 text-gray-700">{item.fileName || "-"}</td>
                                   <td className={`px-2 py-1 font-semibold ${item.compatible ? "text-emerald-700" : "text-red-700"}`}>
-                                    {item.compatible ? "Sim" : "Não"}
+                                    {item.compatible ? "Sim" : "NÃ£o"}
                                   </td>
                                   <td className="px-2 py-1 text-gray-700">
                                     {item.errors?.length ? item.errors.join(" | ") : (item.warnings?.join(" | ") || "OK")}
@@ -1684,7 +1735,7 @@ export default function Config() {
                   {!planosLicenciamentoMode && canManageLicense ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <div>
-                        <p className="text-sm font-semibold text-gray-900">Exportação de tabelas</p>
+                        <p className="text-sm font-semibold text-gray-900">ExportaÃ§Ã£o de tabelas</p>
                         <p className="text-xs text-gray-500">Selecione uma ou mais tabelas para gerar e baixar os arquivos em TXT.</p>
                       </div>
                       <div className="grid md:grid-cols-2 gap-2">
@@ -1734,7 +1785,7 @@ export default function Config() {
 
                   {!planosLicenciamentoMode && isDeveloperAdmin && !selectedLicense ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-600">
-                      Selecione um contratante para visualizar o plano e alterar a licença.
+                      Selecione um contratante para visualizar o plano e alterar a licenÃ§a.
                     </div>
                   ) : !planosLicenciamentoMode ? (
                   <div className="grid md:grid-cols-2 gap-3">
@@ -1742,8 +1793,8 @@ export default function Config() {
                       <p className="text-sm font-semibold text-gray-900 mb-2">Plano contratado</p>
                       {isDeveloperAdmin && selectedLicense?.provisionalAdmin?.temporaryPassword ? (
                         <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-                          <p className="font-semibold">Senha temporária do Admin (até ser alterada)</p>
-                          <p>Usuário: {selectedLicense.provisionalAdmin.email || "-"}</p>
+                          <p className="font-semibold">Senha temporÃ¡ria do Admin (atÃ© ser alterada)</p>
+                          <p>UsuÃ¡rio: {selectedLicense.provisionalAdmin.email || "-"}</p>
                           <p>Senha: <span className="font-mono">{selectedLicense.provisionalAdmin.temporaryPassword}</span></p>
                         </div>
                       ) : null}
@@ -1753,15 +1804,15 @@ export default function Config() {
                           <li>Validade: {dateLabel(isDeveloperAdmin ? selectedLicense?.license?.endsAt : licenseData?.endsAt)}</li>
                           <li>Valor mensal: {selectedPlanMeta ? moneyLabel(selectedPlanMeta.monthlyPriceCents, selectedPlanMeta.currency) : "-"}</li>
                           <li>Valor anual: {selectedPlanMeta ? moneyLabel(selectedPlanMeta.annualPriceCents, selectedPlanMeta.currency) : "-"}</li>
-                          <li>Usuários contratados: {Number(selectedPlanMeta?.limits?.maxActiveUsers || 0)}</li>
-                          <li>Tipos de usuários: {(perfisContratados(selectedPlanMeta?.limits).join(", ") || "Sem limite por perfil")}</li>
-                          <li>Módulos: {(moduloHabilitado(selectedPlanMeta?.features).join(", ") || "Nenhum módulo habilitado")}</li>
+                          <li>UsuÃ¡rios contratados: {Number(selectedPlanMeta?.limits?.maxActiveUsers || 0)}</li>
+                          <li>Tipos de usuÃ¡rios: {(perfisContratados(selectedPlanMeta?.limits).join(", ") || "Sem limite por perfil")}</li>
+                          <li>MÃ³dulos: {(moduloHabilitado(selectedPlanMeta?.features).join(", ") || "Nenhum mÃ³dulo habilitado")}</li>
                         </ul>
                     </div>
 
                     {isDeveloperAdmin ? (
                       <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
-                        <p className="text-sm font-semibold text-gray-900">Alterar licença</p>
+                        <p className="text-sm font-semibold text-gray-900">Alterar licenÃ§a</p>
                         <div className="grid md:grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className="block text-sm font-medium text-gray-700">Plano</label>
@@ -1786,15 +1837,15 @@ export default function Config() {
                         </div>
                         {isDeveloperAdmin && selectedLicense ? (
                           <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                            Implicações: alterar plano/status pode impactar limite de usuários, módulos disponíveis e valores.
+                            ImplicaÃ§Ãµes: alterar plano/status pode impactar limite de usuÃ¡rios, mÃ³dulos disponÃ­veis e valores.
                           </div>
                         ) : null}
-                        {canManageLicense ? <div className="flex justify-end"><Button onClick={submitLicense} loading={submitting}>Salvar licença</Button></div> : null}
+                        {canManageLicense ? <div className="flex justify-end"><Button onClick={submitLicense} loading={submitting}>Salvar licenÃ§a</Button></div> : null}
                       </div>
                     ) : (
                       <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
-                        <p className="text-sm font-semibold text-gray-900">Solicitar ajuste de usuários</p>
-                        <p className="text-xs text-gray-500">Contratante não altera licença diretamente. Envie a solicitação para revisão do Desenvolvedor.</p>
+                        <p className="text-sm font-semibold text-gray-900">Solicitar ajuste de usuÃ¡rios</p>
+                        <p className="text-xs text-gray-500">Contratante nÃ£o altera licenÃ§a diretamente. Envie a solicitaÃ§Ã£o para revisÃ£o do Desenvolvedor.</p>
                         <div className="grid md:grid-cols-4 gap-2">
                           {USER_ROLE_ORDER.map((role) => (
                             <div key={role} className="space-y-1">
@@ -1810,14 +1861,14 @@ export default function Config() {
                           ))}
                         </div>
                         <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-600">Observação</label>
+                          <label className="block text-xs font-medium text-gray-600">ObservaÃ§Ã£o</label>
                           <input className={inputClass} value={requestForm.note} onChange={(e) => setRequestForm((prev) => ({ ...prev, note: e.target.value }))} />
                         </div>
                         <div className="flex justify-end">
-                          <Button type="button" onClick={submitLicenseRequest} loading={requestSubmitting}>Enviar solicitação</Button>
+                          <Button type="button" onClick={submitLicenseRequest} loading={requestSubmitting}>Enviar solicitaÃ§Ã£o</Button>
                         </div>
                         <div className="space-y-2">
-                          <p className="text-xs font-semibold text-gray-700">Solicitações</p>
+                          <p className="text-xs font-semibold text-gray-700">SolicitaÃ§Ãµes</p>
                           <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
@@ -1825,8 +1876,8 @@ export default function Config() {
                                   <th className="px-2 py-1">Status</th>
                                   <th className="px-2 py-1">Plano proposto</th>
                                   <th className="px-2 py-1">Mensal</th>
-                                  <th className="px-2 py-1">Diferença</th>
-                                  <th className="px-2 py-1">Ação</th>
+                                  <th className="px-2 py-1">DiferenÃ§a</th>
+                                  <th className="px-2 py-1">AÃ§Ã£o</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-100">
@@ -1845,7 +1896,7 @@ export default function Config() {
                                     </td>
                                   </tr>
                                 ))}
-                                {!myLicenseRequests?.length ? <tr><td colSpan={5} className="px-2 py-2 text-gray-400">Sem solicitações.</td></tr> : null}
+                                {!myLicenseRequests?.length ? <tr><td colSpan={5} className="px-2 py-2 text-gray-400">Sem solicitaÃ§Ãµes.</td></tr> : null}
                               </tbody>
                             </table>
                           </div>
@@ -1858,7 +1909,7 @@ export default function Config() {
                   {!planosLicenciamentoMode && canManageLicense && (!isDeveloperAdmin || selectedLicense) ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-semibold text-gray-900">Controle de pagamentos da licença</p>
+                        <p className="text-sm font-semibold text-gray-900">Controle de pagamentos da licenÃ§a</p>
                         {paymentsLoading ? <span className="text-xs text-gray-500">Atualizando...</span> : null}
                       </div>
                       <div className="overflow-x-auto">
@@ -1870,7 +1921,7 @@ export default function Config() {
                               <th className="px-2 py-1">Status</th>
                               <th className="px-2 py-1">Pago em</th>
                               <th className="px-2 py-1">Valor pago</th>
-                              <th className="px-2 py-1">Ação</th>
+                              <th className="px-2 py-1">AÃ§Ã£o</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -1897,14 +1948,14 @@ export default function Config() {
                             ))}
                             {!licensePayments?.length ? (
                               <tr>
-                                <td colSpan={6} className="px-2 py-2 text-gray-400">Sem parcelas geradas para esta licença.</td>
+                                <td colSpan={6} className="px-2 py-2 text-gray-400">Sem parcelas geradas para esta licenÃ§a.</td>
                               </tr>
                             ) : null}
                           </tbody>
                         </table>
                       </div>
                       <div className="space-y-2">
-                        <p className="text-xs font-semibold text-gray-700">Alertas de cobrança</p>
+                        <p className="text-xs font-semibold text-gray-700">Alertas de cobranÃ§a</p>
                         <div className="max-h-56 overflow-auto rounded border border-gray-200">
                           <table className="w-full text-xs">
                             <thead>
@@ -1959,8 +2010,8 @@ export default function Config() {
                     }}
                   />
                   <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-2">
-                    <p className="text-sm font-semibold text-gray-900">Layouts para importações</p>
-                    <p className="text-xs text-gray-500">Use os arquivos como modelo para importação de dados do novo licenciado.</p>
+                    <p className="text-sm font-semibold text-gray-900">Layouts para importaÃ§Ãµes</p>
+                    <p className="text-xs text-gray-500">Use os arquivos como modelo para importaÃ§Ã£o de dados do novo licenciado.</p>
                     <div className="flex flex-wrap gap-2">
                       <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_contratante.txt" target="_blank" rel="noreferrer">layout_contratante.txt</a>
                       <a className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50" href="/import-layouts/tenant_licenca.txt" target="_blank" rel="noreferrer">layout_licenca.txt</a>
@@ -1986,12 +2037,12 @@ export default function Config() {
         <Card>
           <CardHeader className="flex items-center gap-2">
             <Shield size={18} className="text-gray-400" />
-            <h3 className="font-semibold text-gray-900">Matriz de Permissões</h3>
+            <h3 className="font-semibold text-gray-900">Matriz de PermissÃµes</h3>
           </CardHeader>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-200">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Permissão</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">PermissÃ£o</th>
                 {ROLES.map((r) => <th key={r.name} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{r.name}</th>)}
               </tr></thead>
               <tbody className="divide-y divide-gray-100">
@@ -2012,13 +2063,13 @@ export default function Config() {
       )}
 
       {/* STORE MODAL */}
-      <Modal open={!!cleanupTarget} onClose={() => setCleanupTarget(null)} title="Limpar licença selecionada">
+      <Modal open={!!cleanupTarget} onClose={() => setCleanupTarget(null)} title="Limpar licenÃ§a selecionada">
         <div className="space-y-3">
           <p className="text-sm text-gray-700">
-            Esta ação apagará todos os dados da licença selecionada.
+            Esta aÃ§Ã£o apagarÃ¡ todos os dados da licenÃ§a selecionada.
           </p>
           <p className="text-xs text-gray-500">
-            Licença selecionada: <span className="font-medium">{cleanupTarget?.name || "-"}</span>
+            LicenÃ§a selecionada: <span className="font-medium">{cleanupTarget?.name || "-"}</span>
           </p>
           <p className="text-xs text-red-600">
             Digite <span className="font-semibold">CONFIRMAR</span> para continuar.
@@ -2036,11 +2087,38 @@ export default function Config() {
         </div>
       </Modal>
 
+      <Modal open={!!deleteLicenseTarget} onClose={() => setDeleteLicenseTarget(null)} title="Excluir licenÃ§a selecionada">
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">
+            Esta aÃ§Ã£o excluirÃ¡ definitivamente a licenÃ§a/contratante selecionado.
+          </p>
+          <p className="text-xs text-gray-500">
+            LicenÃ§a selecionada: <span className="font-medium">{deleteLicenseTarget?.name || "-"}</span>
+          </p>
+          <p className="text-xs text-amber-700">
+            PolÃ­tica: sÃ³ Ã© possÃ­vel excluir licenÃ§a com base vazia. Se houver dados, execute antes a limpeza de base.
+          </p>
+          <p className="text-xs text-red-600">
+            Digite <span className="font-semibold">CONFIRMAR</span> para continuar.
+          </p>
+          <input
+            className={inputClass}
+            value={deleteLicenseConfirm}
+            onChange={(e) => setDeleteLicenseConfirm(e.target.value)}
+            placeholder="CONFIRMAR"
+          />
+          <div className="flex gap-2 pt-1">
+            <Button variant="secondary" className="flex-1" onClick={() => setDeleteLicenseTarget(null)}>Cancelar</Button>
+            <Button className="flex-1" loading={deleteLicenseSubmitting} onClick={runDeleteLicense}>Excluir licenÃ§a</Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={storeModal} onClose={() => setStoreModal(false)} title={storeEditId ? "Editar Loja" : "Nova Loja"} size="lg">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 space-y-1"><label className="block text-sm font-medium text-gray-700">Nome *</label><input value={storeForm.name} onChange={(e) => setStoreForm({ ...storeForm, name: e.target.value })} className={inputClass} /></div>
-            <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Tipo *</label><select value={storeForm.type} onChange={(e) => setStoreForm({ ...storeForm, type: e.target.value })} className={inputClass}><option value="LOJA">Loja</option><option value="CENTRAL">Central (Depósito)</option></select></div>
+            <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Tipo *</label><select value={storeForm.type} onChange={(e) => setStoreForm({ ...storeForm, type: e.target.value })} className={inputClass}><option value="LOJA">Loja</option><option value="CENTRAL">Central (DepÃ³sito)</option></select></div>
             <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">CNPJ</label><input value={cnpjMask(storeForm.cnpj)} onChange={(e) => setStoreForm({ ...storeForm, cnpj: e.target.value.replace(/\D/g, "").slice(0, 14) })} placeholder="00.000.000/0000-00" className={inputClass} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -2048,10 +2126,10 @@ export default function Config() {
             <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Email</label><input type="email" value={storeForm.email} onChange={(e) => setStoreForm({ ...storeForm, email: e.target.value })} className={inputClass} /></div>
           </div>
           <div className="border-t pt-3">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Endereço</p>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">EndereÃ§o</p>
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2 space-y-1"><label className="block text-sm font-medium text-gray-700">Rua</label><input value={storeForm.street} onChange={(e) => setStoreForm({ ...storeForm, street: e.target.value })} className={inputClass} /></div>
-              <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Número</label><input value={storeForm.number} onChange={(e) => setStoreForm({ ...storeForm, number: e.target.value })} className={inputClass} /></div>
+              <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">NÃºmero</label><input value={storeForm.number} onChange={(e) => setStoreForm({ ...storeForm, number: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Complemento</label><input value={storeForm.complement} onChange={(e) => setStoreForm({ ...storeForm, complement: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Bairro</label><input value={storeForm.district} onChange={(e) => setStoreForm({ ...storeForm, district: e.target.value })} className={inputClass} /></div>
               <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">CEP</label><input value={storeForm.zipCode} onChange={(e) => setStoreForm({ ...storeForm, zipCode: e.target.value.replace(/\D/g, "").slice(0, 8) })} placeholder="00000-000" className={inputClass} /></div>
@@ -2067,18 +2145,18 @@ export default function Config() {
       </Modal>
 
       {/* USER MODAL */}
-      <Modal open={userModal} onClose={() => setUserModal(false)} title={userEditId ? "Editar Usuário" : "Novo Usuário"}>
+      <Modal open={userModal} onClose={() => setUserModal(false)} title={userEditId ? "Editar UsuÃ¡rio" : "Novo UsuÃ¡rio"}>
         <div className="space-y-4">
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Nome *</label><input value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} className={inputClass} /></div>
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Email *</label><input type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} className={inputClass} /></div>
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">{userEditId ? "Nova Senha (deixe vazio para manter)" : "Senha *"}</label><input type="password" value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} onPaste={(e) => e.preventDefault()} autoComplete="new-password" className={inputClass} /></div>
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Confirmar Senha {!userEditId && "*"}</label><input type="password" value={userForm.passwordConfirm} onChange={(e) => setUserForm({ ...userForm, passwordConfirm: e.target.value })} onPaste={(e) => e.preventDefault()} autoComplete="new-password" className={inputClass} /></div>
           {userForm.password && userForm.passwordConfirm && userForm.password !== userForm.passwordConfirm && (
-            <p className="text-xs text-red-600">As senhas não coincidem</p>
+            <p className="text-xs text-red-600">As senhas nÃ£o coincidem</p>
           )}
           <div className="space-y-1"><label className="block text-sm font-medium text-gray-700">Perfil</label>
             <select value={userForm.roleName} onChange={(e) => setUserForm({ ...userForm, roleName: e.target.value, storeIds: e.target.value === "ADMIN" ? [] : userForm.storeIds })} className={inputClass}>
-              <option value="ADMIN">Administrador</option><option value="VENDEDOR">Vendedor</option><option value="CAIXA">Caixa</option><option value="FARMACEUTICO">Farmacêutico</option>
+              <option value="ADMIN">Administrador</option><option value="VENDEDOR">Vendedor</option><option value="CAIXA">Caixa</option><option value="FARMACEUTICO">FarmacÃªutico</option>
             </select>
           </div>
           {userForm.roleName !== "ADMIN" ? (
@@ -2100,7 +2178,7 @@ export default function Config() {
                     <span>{s.name}</span>
                   </label>
                 ))}
-                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponível</p>}
+                {stores.length === 0 && <p className="text-xs text-gray-400">Nenhuma loja disponÃ­vel</p>}
               </div>
             </div>
           ) : (
@@ -2135,6 +2213,8 @@ export default function Config() {
     </div>
   );
 }
+
+
 
 
 

@@ -848,6 +848,44 @@ function buildApiRoutes({ prisma, log }) {
     await tx.tenantLicenseAudit.deleteMany({ where: { tenantId } });
   }
 
+  async function getTenantDataSummary(tenantId) {
+    const [
+      stores,
+      users,
+      customers,
+      categories,
+      products,
+      sales,
+      transfers,
+      reservations,
+      chats,
+      cashSessions,
+    ] = await Promise.all([
+      prisma.store.count({ where: { tenantId } }),
+      prisma.user.count({ where: { tenantId } }),
+      prisma.customer.count({ where: { tenantId } }),
+      prisma.category.count({ where: { tenantId } }),
+      prisma.product.count({ where: { tenantId } }),
+      prisma.sale.count({ where: { tenantId } }),
+      prisma.stockTransfer.count({ where: { tenantId } }),
+      prisma.stockReservation.count({ where: { tenantId } }),
+      prisma.chatMessage.count({ where: { tenantId } }),
+      prisma.cashSession.count({ where: { tenantId } }),
+    ]);
+    return {
+      stores,
+      users,
+      customers,
+      categories,
+      products,
+      sales,
+      transfers,
+      reservations,
+      chats,
+      cashSessions,
+    };
+  }
+
   async function buildProvisionalAdminByTenantMap(tenantIds = []) {
     const ids = Array.from(new Set((tenantIds || []).filter(Boolean)));
     if (ids.length === 0) return {};
@@ -2735,6 +2773,45 @@ function buildApiRoutes({ prisma, log }) {
       deletedCount: nonMaster.length,
       deletedTenants: nonMaster,
     });
+  }));
+
+  router.post("/license/admin/delete-license", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const tenantId = String(req.body?.tenantId || "").trim();
+    const confirm = String(req.body?.confirm || "").trim().toUpperCase();
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (confirm !== "CONFIRMAR") {
+      return res.status(400).json({ error: { code: 400, message: "Confirmacao invalida. Informe CONFIRMAR." } });
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true, slug: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "A licenca Desenvolvedor nao pode ser excluida" } });
+    }
+
+    const summary = await getTenantDataSummary(tenant.id);
+    const hasData = Object.values(summary).some((v) => Number(v || 0) > 0);
+    if (hasData) {
+      return res.status(400).json({
+        error: { code: 400, message: "Licenciado possui dados. Limpe a base antes de excluir a licenca." },
+        data: { summary },
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.tenantLicenseAlert.deleteMany({ where: { tenantId: tenant.id } });
+      await tx.tenantLicensePayment.deleteMany({ where: { tenantId: tenant.id } });
+      await tx.tenantLicenseChangeRequest.deleteMany({ where: { tenantId: tenant.id } });
+      await tx.tenantLicenseAudit.deleteMany({ where: { tenantId: tenant.id } });
+      await tx.tenantLicense.deleteMany({ where: { tenantId: tenant.id } });
+      await tx.tenant.delete({ where: { id: tenant.id } });
+    });
+
+    return sendOk(res, req, { deleted: true, tenant });
   }));
 
   router.post("/license/admin/import/validate", asyncHandler(async (req, res) => {
