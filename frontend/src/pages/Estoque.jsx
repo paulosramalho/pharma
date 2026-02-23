@@ -20,7 +20,7 @@ const BASE_TABS = [
   { key: "receive", label: "Entrada" },
   { key: "adjust", label: "Ajuste" },
   { key: "valuation", label: "Valoração" },
-  { key: "transfers", label: "Transferencias" },
+  { key: "transfers", label: "Transferências" },
   { key: "reservations", label: "Reservas" },
 ];
 
@@ -351,7 +351,7 @@ export default function Estoque() {
       });
       setTransferForm({ originStoreId: "", note: "" });
       setTransferItems([]);
-      addToast("Solicitacao de transferencia criada", "success");
+      addToast("Solicitação de transferência criada", "success");
       loadTransfers();
     } catch (err) { addToast(err.message, "error"); }
     setSubmitting(false);
@@ -399,7 +399,7 @@ export default function Estoque() {
     setSubmitting(true);
     try {
       await apiFetch(`/api/inventory/transfers/${id}/send`, { method: "POST", body: JSON.stringify({ items: sendRows }) });
-      addToast("Transferencia enviada", "success");
+      addToast("Transferência enviada", "success");
       setTransferSendDraft((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${id}:`))));
       setTransferSendConfirm(null);
       loadTransfers();
@@ -410,14 +410,14 @@ export default function Estoque() {
 
   const receiveTransfer = async (id) => {
     setSubmitting(true);
-    try { await apiFetch(`/api/inventory/transfers/${id}/receive`, { method: "POST" }); addToast("Transferencia recebida", "success"); loadTransfers(); loadOverview(); }
+    try { await apiFetch(`/api/inventory/transfers/${id}/receive`, { method: "POST" }); addToast("Transferência recebida", "success"); loadTransfers(); loadOverview(); }
     catch (err) { addToast(err.message, "error"); }
     setSubmitting(false);
   };
 
   const cancelTransfer = async (id) => {
     setSubmitting(true);
-    try { await apiFetch(`/api/inventory/transfers/${id}/cancel`, { method: "POST" }); addToast("Transferencia cancelada", "warning"); loadTransfers(); }
+    try { await apiFetch(`/api/inventory/transfers/${id}/cancel`, { method: "POST" }); addToast("Transferência cancelada", "warning"); loadTransfers(); }
     catch (err) { addToast(err.message, "error"); }
     setSubmitting(false);
   };
@@ -457,7 +457,7 @@ export default function Estoque() {
       setReservationItems([]);
       setCustomerSearch("");
       setCustomerResults([]);
-      addToast("Solicitacao de reserva enviada", "success");
+      addToast("Solicitação de reserva enviada", "success");
       loadReservations();
     } catch (err) { addToast(err.message, "error"); }
     setSubmitting(false);
@@ -471,7 +471,7 @@ export default function Estoque() {
   };
 
   const rejectReservation = async (id) => {
-    const reason = window.prompt("Motivo da rejeicao:");
+    const reason = window.prompt("Motivo da rejeição:");
     if (!reason) return;
     setSubmitting(true);
     try { await apiFetch(`/api/inventory/reservations/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); addToast("Reserva rejeitada", "warning"); loadReservations(); }
@@ -999,7 +999,7 @@ export default function Estoque() {
           <Card>
             <CardHeader className="flex items-center gap-2">
               <Truck size={18} className="text-gray-400" />
-              <h3 className="font-semibold text-gray-900">Solicitar Transferencia</h3>
+              <h3 className="font-semibold text-gray-900">Solicitar Transferência</h3>
             </CardHeader>
             <CardBody className="space-y-3 max-w-2xl">
               <div className="space-y-1">
@@ -1090,14 +1090,14 @@ export default function Estoque() {
                 <input value={transferForm.note} onChange={(e) => setTransferForm({ ...transferForm, note: e.target.value })} className={inputClass} />
               </div>
               <Button loading={submitting} onClick={createTransfer} disabled={!transferForm.originStoreId || transferItems.length === 0}>
-                <Plus size={16} /> Solicitar Transferencia
+                <Plus size={16} /> Solicitar Transferência
               </Button>
             </CardBody>
           </Card>
 
           <Card>
             <CardHeader className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Transferencias</h3>
+              <h3 className="font-semibold text-gray-900">Transferências</h3>
               <Button variant="secondary" onClick={loadTransfers}>Atualizar</Button>
             </CardHeader>
             {flowLoading ? <PageSpinner /> : (
@@ -1253,7 +1253,7 @@ export default function Estoque() {
                       <div>
                         <p className="text-sm font-medium text-gray-900">{r.customer?.name || "Sem cliente"} • {r.sourceStore?.name}</p>
                         <p className="text-xs text-gray-500">{formatDateTime(r.createdAt)} • {r.items?.length || 0} item(ns)</p>
-                        {r.rejectReason && <p className="text-xs text-red-600">Motivo rejeicao: {r.rejectReason}</p>}
+                        {r.rejectReason && <p className="text-xs text-red-600">Motivo rejeição: {r.rejectReason}</p>}
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge color={r.status === "APPROVED" ? "green" : r.status === "REQUESTED" ? "yellow" : r.status === "REJECTED" ? "red" : "gray"}>{r.status}</Badge>
@@ -1277,10 +1277,10 @@ export default function Estoque() {
       )}
 
       {/* Edit Lot Modal */}
-      <Modal open={!!transferSendConfirm} onClose={() => setTransferSendConfirm(null)} title="Confirmar Envio de Transferencia">
+      <Modal open={!!transferSendConfirm} onClose={() => setTransferSendConfirm(null)} title="Confirmar Envio de Transferência">
         {transferSendConfirm && (
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">Confirme as quantidades que serao enviadas:</p>
+            <p className="text-sm text-gray-600">Confirme as quantidades que serão enviadas:</p>
             <div className="max-h-52 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
               {transferSendConfirm.rows.map((row) => (
                 <div key={row.productId} className="px-3 py-2 text-sm flex items-center justify-between">
@@ -1375,6 +1375,5 @@ export default function Estoque() {
     </div>
   );
 }
-
 
 

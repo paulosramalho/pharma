@@ -99,7 +99,7 @@ export default function Dashboard() {
       color: "text-sky-700 bg-sky-50",
     },
     {
-      label: "Evolucao - Transferencia",
+      label: "Evolução - Transferência",
       value: `${data?.stockEvolution?.transferDelta ?? 0}`,
       icon: ArrowDownUp,
       color: "text-violet-700 bg-violet-50",
@@ -289,7 +289,7 @@ export default function Dashboard() {
           <CardBody>
             <div className="flex items-center gap-2 mb-3">
               <PieChartIcon size={16} className="text-gray-500" />
-              <h3 className="font-semibold text-gray-900">Transferencias por Status (pizza)</h3>
+              <h3 className="font-semibold text-gray-900">Transferências por Status (pizza)</h3>
             </div>
             <div className="space-y-3">
               {transferStatus.length === 0 ? (

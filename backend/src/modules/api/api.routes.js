@@ -1063,7 +1063,7 @@ function buildApiRoutes({ prisma, log }) {
   async function collectExportRows({ tenantId, table }) {
     const schema = IMPORT_TABLES[table];
     if (!schema) {
-      throw Object.assign(new Error(`Tabela nao suportada para exportacao: ${table}`), { statusCode: 400 });
+      throw Object.assign(new Error(`Tabela não suportada para exportação: ${table}`), { statusCode: 400 });
     }
     if (table === "stores") {
       const stores = await prisma.store.findMany({
@@ -1159,7 +1159,7 @@ function buildApiRoutes({ prisma, log }) {
     }
     const missing = schema.required.filter((c) => !headers.includes(c));
     if (missing.length > 0) {
-      errors.push(`Colunas obrigatorias ausentes: ${missing.join(", ")}`);
+      errors.push(`Colunas obrigatórias ausentes: ${missing.join(", ")}`);
     }
     const unknown = headers.filter((h) => !schema.allowed.includes(h));
     if (unknown.length > 0) {
@@ -1526,7 +1526,7 @@ function buildApiRoutes({ prisma, log }) {
     return res.status(403).json({
       error: {
         code: 403,
-        message: "Troca de senha obrigatoria no primeiro acesso.",
+        message: "Troca de senha obrigatória no primeiro acesso.",
       },
     });
   }));
@@ -1555,13 +1555,13 @@ function buildApiRoutes({ prisma, log }) {
     if (data.buyerDocument.length !== 11) throw Object.assign(new Error("CPF do comprador inválido"), { statusCode: 400 });
     if (!data.prescriberName) throw Object.assign(new Error("Prescritor obrigatório"), { statusCode: 400 });
     if (!data.prescriberCrm) throw Object.assign(new Error("CRM obrigatório"), { statusCode: 400 });
-    if (data.prescriberUf.length !== 2) throw Object.assign(new Error("UF do CRM obrigatoria"), { statusCode: 400 });
+    if (data.prescriberUf.length !== 2) throw Object.assign(new Error("UF do CRM obrigatória"), { statusCode: 400 });
     if (!data.prescriptionNumber) throw Object.assign(new Error("Numero da receita obrigatório"), { statusCode: 400 });
     if (!data.prescriptionDate || Number.isNaN(data.prescriptionDate.getTime())) {
-      throw Object.assign(new Error("Data da receita obrigatoria"), { statusCode: 400 });
+      throw Object.assign(new Error("Data da receita obrigatória"), { statusCode: 400 });
     }
     if (!data.signatureDataUrl.startsWith("data:image/") || data.signatureDataUrl.length < 100) {
-      throw Object.assign(new Error("Assinatura do cliente obrigatoria"), { statusCode: 400 });
+      throw Object.assign(new Error("Assinatura do cliente obrigatória"), { statusCode: 400 });
     }
 
     if (!data.patientDocument) data.patientDocument = null;
@@ -1679,7 +1679,7 @@ function buildApiRoutes({ prisma, log }) {
     const sentUnits = movements.reduce((sum, m) => sum + Number(m.quantity || 0), 0);
     const senderName = sender?.name || "Usuário";
 
-    const message = `Transferencia enviada para ${transfer.destinationStore?.name || "loja solicitante"}. Enviado por ${senderName}: ${sentItemsCount} item(ns), ${sentUnits} unidade(s).`;
+    const message = `Transferência enviada para ${transfer.destinationStore?.name || "loja solicitante"}. Enviado por ${senderName}: ${sentItemsCount} item(ns), ${sentUnits} unidade(s).`;
 
     await prisma.chatMessage.create({
       data: {
@@ -1939,7 +1939,7 @@ function buildApiRoutes({ prisma, log }) {
     if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado não identificado" } });
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, isDeveloperTenant: true } });
     if (!tenant || tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Solicitacao indisponivel para licença Desenvolvedor" } });
+      return res.status(403).json({ error: { code: 403, message: "Solicitação indisponível para licença Desenvolvedor" } });
     }
 
     const open = await prisma.tenantLicenseChangeRequest.findFirst({
@@ -1976,9 +1976,9 @@ function buildApiRoutes({ prisma, log }) {
     const tenantId = await resolveTenantId(req);
     const id = String(req.params.id || "").trim();
     const request = await prisma.tenantLicenseChangeRequest.findFirst({ where: { id, tenantId } });
-    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitacao não encontrada" } });
+    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitação não encontrada" } });
     if (request.status !== "PENDING_CONTRACTOR_APPROVAL") {
-      return res.status(400).json({ error: { code: 400, message: "Solicitacao ainda não esta pronta para aprovacao do contratante" } });
+      return res.status(400).json({ error: { code: 400, message: "Solicitação ainda não está pronta para aprovação do contratante" } });
     }
 
     await prisma.$transaction(async (tx) => {
@@ -2090,9 +2090,9 @@ function buildApiRoutes({ prisma, log }) {
     const id = String(req.params.id || "").trim();
     const action = String(req.body?.action || "PROPOSE").trim().toUpperCase();
     const request = await prisma.tenantLicenseChangeRequest.findUnique({ where: { id } });
-    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitacao não encontrada" } });
+    if (!request) return res.status(404).json({ error: { code: 404, message: "Solicitação não encontrada" } });
     if (request.status !== "PENDING_MASTER_REVIEW") {
-      return res.status(400).json({ error: { code: 400, message: "Solicitacao não esta pendente para revisao do Desenvolvedor" } });
+      return res.status(400).json({ error: { code: 400, message: "Solicitação não está pendente para revisão do Desenvolvedor" } });
     }
 
     if (action === "REJECT") {
@@ -2255,7 +2255,7 @@ function buildApiRoutes({ prisma, log }) {
       return res.status(403).json({ error: { code: 403, message: "Somente admin pode exportar dados" } });
     }
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado nao identificado" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Licenciado não identificado" } });
     const tablesRaw = Array.isArray(req.body?.tables) ? req.body.tables : [];
     const tables = (tablesRaw.length > 0 ? tablesRaw : EXPORT_TABLE_ORDER)
       .map((t) => String(t || "").trim())
@@ -2266,14 +2266,14 @@ function buildApiRoutes({ prisma, log }) {
     }
     const invalid = tables.find((t) => !IMPORT_TABLES[t]);
     if (invalid) {
-      return res.status(400).json({ error: { code: 400, message: `Tabela nao suportada: ${invalid}` } });
+      return res.status(400).json({ error: { code: 400, message: `Tabela não suportada: ${invalid}` } });
     }
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, name: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
 
     const files = [];
     for (const table of tables) {
@@ -2804,7 +2804,7 @@ function buildApiRoutes({ prisma, log }) {
     await assertDeveloperAdmin(req);
     const tenantId = String(req.body?.tenantId || "").trim();
     const confirm = String(req.body?.confirm || "").trim().toUpperCase();
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatório" } });
     if (confirm !== "CONFIRMAR") {
       return res.status(400).json({ error: { code: 400, message: "Confirmacao invalida. Informe CONFIRMAR." } });
     }
@@ -2813,9 +2813,9 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: tenantId },
       select: { id: true, name: true, slug: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "A licenca Desenvolvedor nao pode ser excluida" } });
+      return res.status(403).json({ error: { code: 403, message: "A licença Desenvolvedor não pode ser excluída" } });
     }
 
     const summary = await getTenantDataSummary(tenant.id);
@@ -2833,7 +2833,7 @@ function buildApiRoutes({ prisma, log }) {
     ].some((v) => Number(v || 0) > 0);
     if (hasData) {
       return res.status(400).json({
-        error: { code: 400, message: "Licenciado possui dados. Limpe a base antes de excluir a licenca." },
+        error: { code: 400, message: "Licenciado possui dados. Limpe a base antes de excluir a licença." },
         data: { summary },
       });
     }
@@ -2965,7 +2965,7 @@ function buildApiRoutes({ prisma, log }) {
     const sourceTenantId = await assertDeveloperAdmin(req);
     const tenantId = String(req.body?.tenantId || "").trim();
     const tablesRaw = Array.isArray(req.body?.tables) ? req.body.tables : [];
-    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatório" } });
     const tables = (tablesRaw.length > 0 ? tablesRaw : EXPORT_TABLE_ORDER)
       .map((t) => String(t || "").trim())
       .filter(Boolean);
@@ -2975,16 +2975,16 @@ function buildApiRoutes({ prisma, log }) {
     }
     const invalid = tables.find((t) => !IMPORT_TABLES[t]);
     if (invalid) {
-      return res.status(400).json({ error: { code: 400, message: `Tabela nao suportada: ${invalid}` } });
+      return res.status(400).json({ error: { code: 400, message: `Tabela não suportada: ${invalid}` } });
     }
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { id: true, name: true, isDeveloperTenant: true },
     });
-    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
     if (tenant.isDeveloperTenant) {
-      return res.status(403).json({ error: { code: 403, message: "Nao e permitido exportar dados da licenca Desenvolvedor nesta tela" } });
+      return res.status(403).json({ error: { code: 403, message: "Não é permitido exportar dados da licença Desenvolvedor nesta tela" } });
     }
 
     const files = [];
@@ -3917,7 +3917,7 @@ function buildApiRoutes({ prisma, log }) {
     if (!senderId) return res.status(401).json({ error: { code: 401, message: "Não autenticado" } });
     if (!recipientId) return res.status(400).json({ error: { code: 400, message: "recipientId obrigatório" } });
     if (recipientId === senderId) return res.status(400).json({ error: { code: 400, message: "Não e permitido enviar para si mesmo" } });
-    if (!content) return res.status(400).json({ error: { code: 400, message: "Mensagem obrigatoria" } });
+    if (!content) return res.status(400).json({ error: { code: 400, message: "Mensagem obrigatória" } });
 
     const recipient = await prisma.user.findFirst({
       where: { id: recipientId, tenantId, active: true },
@@ -4396,7 +4396,7 @@ function buildApiRoutes({ prisma, log }) {
 
   // Transfers between stores (request -> send -> receive)
   router.get("/inventory/transfers", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    await assertFeature(req, "inventoryTransfers", "Transferências indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     if (!storeId) return sendOk(res, req, { transfers: [] });
@@ -4422,7 +4422,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/transfers", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    await assertFeature(req, "inventoryTransfers", "Transferências indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     const destinationStoreId = await resolveStoreId(req);
     const { originStoreId, note, items = [] } = req.body || {};
@@ -4474,7 +4474,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/transfers/:id/send", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    await assertFeature(req, "inventoryTransfers", "Transferências indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const currentStoreId = await resolveStoreId(req);
@@ -4483,8 +4483,8 @@ function buildApiRoutes({ prisma, log }) {
       where: { id: req.params.id, tenantId },
       include: { items: true },
     });
-    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia não encontrada" } });
-    if (transfer.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Transferencia não pode ser enviada neste status" } });
+    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferência não encontrada" } });
+    if (transfer.status !== "DRAFT") return res.status(400).json({ error: { code: 400, message: "Transferência não pode ser enviada neste status" } });
     if (transfer.originStoreId !== currentStoreId) return res.status(403).json({ error: { code: 403, message: "Somente a loja de origem pode enviar" } });
 
     const requestedByProduct = {};
@@ -4558,7 +4558,7 @@ function buildApiRoutes({ prisma, log }) {
               transferId: transfer.id,
               type: "TRANSFER_OUT",
               quantity: take,
-              reason: `Transferencia para loja ${transfer.destinationStoreId}`,
+              reason: `Transferência para loja ${transfer.destinationStoreId}`,
               createdById: req.user?.id,
             },
           });
@@ -4597,7 +4597,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/transfers/:id/receive", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    await assertFeature(req, "inventoryTransfers", "Transferências indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const currentStoreId = await resolveStoreId(req);
@@ -4610,11 +4610,11 @@ function buildApiRoutes({ prisma, log }) {
         },
       },
     });
-    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia não encontrada" } });
-    if (transfer.status !== "SENT") return res.status(400).json({ error: { code: 400, message: "Transferencia não pode ser recebida neste status" } });
+    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferência não encontrada" } });
+    if (transfer.status !== "SENT") return res.status(400).json({ error: { code: 400, message: "Transferência não pode ser recebida neste status" } });
     if (transfer.destinationStoreId !== currentStoreId) return res.status(403).json({ error: { code: 403, message: "Somente a loja destino pode receber" } });
     if ((transfer.movements || []).length === 0) {
-      return res.status(400).json({ error: { code: 400, message: "Transferencia sem movimentacoes de envio" } });
+      return res.status(400).json({ error: { code: 400, message: "Transferência sem movimentações de envio" } });
     }
 
     await prisma.$transaction(async (tx) => {
@@ -4692,12 +4692,12 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/transfers/:id/cancel", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryTransfers", "Transferencias indisponiveis no plano atual");
+    await assertFeature(req, "inventoryTransfers", "Transferências indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     const transfer = await prisma.stockTransfer.findFirst({ where: { id: req.params.id, tenantId } });
-    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferencia não encontrada" } });
-    if (transfer.status === "RECEIVED") return res.status(400).json({ error: { code: 400, message: "Transferencia recebida não pode ser cancelada" } });
-    if (transfer.status === "SENT") return res.status(400).json({ error: { code: 400, message: "Transferencia enviada deve ser recebida ou tratada por ajuste" } });
+    if (!transfer) return res.status(404).json({ error: { code: 404, message: "Transferência não encontrada" } });
+    if (transfer.status === "RECEIVED") return res.status(400).json({ error: { code: 400, message: "Transferência recebida não pode ser cancelada" } });
+    if (transfer.status === "SENT") return res.status(400).json({ error: { code: 400, message: "Transferência enviada deve ser recebida ou tratada por ajuste" } });
 
     await prisma.stockTransfer.update({
       where: { id: transfer.id },
@@ -4708,7 +4708,7 @@ function buildApiRoutes({ prisma, log }) {
 
   // Reservation flow between stores
   router.get("/inventory/reservations", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    await assertFeature(req, "inventoryReservations", "Reservas indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     if (!storeId) return sendOk(res, req, { reservations: [] });
@@ -4735,7 +4735,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    await assertFeature(req, "inventoryReservations", "Reservas indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const requestStoreId = await resolveStoreId(req);
@@ -4775,7 +4775,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations/:id/approve", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    await assertFeature(req, "inventoryReservations", "Reservas indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const storeId = await resolveStoreId(req);
@@ -4830,7 +4830,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations/:id/reject", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    await assertFeature(req, "inventoryReservations", "Reservas indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const storeId = await resolveStoreId(req);
@@ -4854,7 +4854,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations/:id/cancel", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    await assertFeature(req, "inventoryReservations", "Reservas indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     const storeId = await resolveStoreId(req);
     const reservation = await prisma.stockReservation.findFirst({ where: { id: req.params.id, tenantId } });
@@ -4874,7 +4874,7 @@ function buildApiRoutes({ prisma, log }) {
   }));
 
   router.post("/inventory/reservations/:id/fulfill", asyncHandler(async (req, res) => {
-    await assertFeature(req, "inventoryReservations", "Reservas indisponiveis no plano atual");
+    await assertFeature(req, "inventoryReservations", "Reservas indisponíveis no plano atual");
     const tenantId = await resolveTenantId(req);
     assertPharmacistOrAdmin(req);
     const storeId = await resolveStoreId(req);
@@ -6196,7 +6196,7 @@ function buildApiRoutes({ prisma, log }) {
         { title: `Registros (${sessions.length})`, lines: lines.length > 0 ? lines : ["Nenhum fechamento encontrado."] },
       ];
     } else if (type === "transferencias") {
-      reportName = "Relatorio de Transferencias";
+      reportName = "Relatório de Transferências";
       const tenantId = await resolveTenantId(req);
       const allowedStoreIds = await getUserStoreIds(req);
       const andWhere = [

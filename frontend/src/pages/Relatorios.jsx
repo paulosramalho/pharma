@@ -16,7 +16,7 @@ import {
 const BASE_TABS = [
   { key: "vendas", label: "Vendas", icon: ShoppingCart },
   { key: "caixa", label: "Fechamentos de Caixa", icon: Wallet },
-  { key: "transferencias", label: "Transferencias", icon: ArrowUpCircle },
+  { key: "transferencias", label: "Transferências", icon: ArrowUpCircle },
 ];
 
 const STATUS_LABELS = { DRAFT: "Rascunho", CONFIRMED: "Confirmada", PAID: "Paga", CANCELED: "Cancelada", REFUNDED: "Estornada" };
@@ -477,7 +477,7 @@ export default function Relatorios() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card>
               <CardBody>
-                <p className="text-xs text-gray-500 uppercase">Transferencias</p>
+                <p className="text-xs text-gray-500 uppercase">Transferências</p>
                 <p className="text-xl font-bold text-gray-900">{transferData.summary?.totalTransfers || 0}</p>
               </CardBody>
             </Card>
@@ -498,7 +498,7 @@ export default function Relatorios() {
           <Card>
             <CardHeader className="flex items-center gap-2">
               <ArrowUpCircle size={18} className="text-gray-400" />
-              <h3 className="font-semibold text-gray-900">Relatorio de Transferencias</h3>
+              <h3 className="font-semibold text-gray-900">Relatório de Transferências</h3>
               <span className="text-xs text-gray-400 ml-2">{transferData.total || 0} registros</span>
             </CardHeader>
             {(transferData.transfers || []).length === 0 ? (
