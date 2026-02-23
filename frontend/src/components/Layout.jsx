@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { useToast } from "../contexts/ToastContext";
 import { apiFetch } from "../lib/api";
 import { useOfflineSync } from "../hooks/useOfflineSync";
 import {
@@ -22,7 +21,6 @@ const NAV_ITEMS = [
   { to: "/perfil", label: "Meu Perfil", icon: UserCircle, perm: null, restrictedOnly: true },
 ];
 
-// Restricted roles see only specific items
 const ROLE_NAV_RESTRICT = {
   CAIXA: ["/caixa", "/chat", "/perfil"],
   VENDEDOR: ["/vendas", "/chat", "/perfil"],
@@ -37,13 +35,12 @@ const ROLE_LABELS = {
 
 export default function Layout() {
   const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive, license } = useAuth();
-  const { addToast } = useToast();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [billingNotice, setBillingNotice] = useState({ hasAdminNotice: false, notices: [] });
-  const shownBillingNoticeIdsRef = useRef(new Set());
+  const [adminBillingModalNotice, setAdminBillingModalNotice] = useState(null);
   const { isOnline, pendingCount, failedCount, syncStatus, syncNow, clearFailed } = useOfflineSync();
 
   const roleRestrict = ROLE_NAV_RESTRICT[user?.role];
@@ -53,7 +50,7 @@ export default function Layout() {
     if (item.feature && !hasFeature(item.feature)) return false;
     if (roleRestrict) return roleRestrict.includes(item.to);
     if (item.to === "/caixa" && user?.role === "FARMACEUTICO") return true;
-    if (item.restrictedOnly) return false; // only shown for restricted roles
+    if (item.restrictedOnly) return false;
     return !item.perm || hasPermission(item.perm);
   });
   const currentStore = stores.find((s) => s.id === storeId);
@@ -61,9 +58,30 @@ export default function Layout() {
   const brandName = contractor?.tradeName || contractor?.tenantName || "Pharma";
   const brandLogo = contractor?.logoFile || "/brand/LogoPharma.PNG";
 
+  const hasPositiveNotice = (billingNotice?.notices || []).some((n) => Number(n?.amountCents || 0) > 0);
+
+  const amountLabel = (amountCents) =>
+    new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(amountCents || 0) / 100);
+
+  const dateLabel = (value) => (value
+    ? new Date(value).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
+    : "—");
+
   const handleLogout = () => {
     logout();
     navigate("/login");
+  };
+
+  const closeAdminBillingModal = () => {
+    if (!adminBillingModalNotice || !user?.id) {
+      setAdminBillingModalNotice(null);
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const tenantId = String(license?.tenantId || license?.contractor?.tenantSlug || "tenant");
+    const ackKey = `license-billing-modal-ack:${tenantId}:${user.id}:${today}`;
+    localStorage.setItem(ackKey, "1");
+    setAdminBillingModalNotice(null);
   };
 
   useEffect(() => {
@@ -103,15 +121,16 @@ export default function Layout() {
         if (cancelled) return;
         setBillingNotice(data);
         if (role !== "ADMIN") return;
-        const notices = Array.isArray(data.notices) ? data.notices : [];
-        notices.slice(0, 2).forEach((n) => {
-          if (!n?.paymentId || shownBillingNoticeIdsRef.current.has(n.paymentId)) return;
-          const fallback = Number(n?.daysToDue || 0) < 0
-            ? `Licença em atraso desde ${new Date(n.dueDate).toLocaleDateString("pt-BR")}.`
-            : `Licença vence em ${new Date(n.dueDate).toLocaleDateString("pt-BR")}.`;
-          addToast(n?.message || fallback, Number(n?.daysToDue || 0) < 0 ? "warning" : "info", 6500);
-          shownBillingNoticeIdsRef.current.add(n.paymentId);
-        });
+
+        const notices = (Array.isArray(data.notices) ? data.notices : []).filter((n) => Number(n?.amountCents || 0) > 0);
+        if (!notices.length) return;
+
+        const today = new Date().toISOString().slice(0, 10);
+        const tenantId = String(license?.tenantId || license?.contractor?.tenantSlug || "tenant");
+        const ackKey = `license-billing-modal-ack:${tenantId}:${user.id}:${today}`;
+        if (localStorage.getItem(ackKey) === "1") return;
+
+        setAdminBillingModalNotice(notices[0]);
       } catch {
         if (!cancelled) setBillingNotice({ hasAdminNotice: false, notices: [] });
       }
@@ -123,7 +142,7 @@ export default function Layout() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [user?.id, user?.role, addToast]);
+  }, [user?.id, user?.role, license?.tenantId, license?.contractor?.tenantSlug]);
 
   const linkClass = ({ isActive }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
@@ -134,14 +153,11 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transition-transform lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
-        {/* Logo */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <img
@@ -158,7 +174,6 @@ export default function Layout() {
           </button>
         </div>
 
-        {/* Store selector */}
         {stores.length > 1 && (
           <div className="px-3 py-3 border-b border-gray-100">
             <div className="relative">
@@ -187,7 +202,6 @@ export default function Layout() {
           </div>
         )}
 
-        {/* Nav links */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {visibleItems.map((item) => (
             <NavLink key={item.to} to={item.to} className={linkClass} onClick={() => setSidebarOpen(false)}>
@@ -202,7 +216,6 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* User / Logout */}
         <div className="px-3 py-4 border-t border-gray-100">
           <div className="flex items-center gap-3 px-3 py-2">
             <div className="w-8 h-8 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center text-sm font-bold">
@@ -219,9 +232,7 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar (mobile) */}
         <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
           <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-gray-600 hover:bg-gray-100">
             <Menu size={20} />
@@ -238,7 +249,6 @@ export default function Layout() {
           </div>
         </header>
 
-        {/* Offline / sync status banner */}
         {(!isOnline || pendingCount > 0 || failedCount > 0) && (
           <div className={`px-4 py-2 text-sm flex items-center gap-3 border-b ${
             failedCount > 0
@@ -288,7 +298,7 @@ export default function Layout() {
           </div>
         )}
 
-        {String(user?.role || "").toUpperCase() === "FARMACEUTICO" && billingNotice?.hasAdminNotice ? (
+        {String(user?.role || "").toUpperCase() === "FARMACEUTICO" && hasPositiveNotice ? (
           <div className="px-4 py-2 text-sm flex items-center gap-3 border-b bg-amber-50 border-amber-200 text-amber-800">
             <AlertTriangle size={15} className="shrink-0" />
             <span className="flex-1">
@@ -301,6 +311,31 @@ export default function Layout() {
           <Outlet key={storeId || "no-store"} />
         </main>
       </div>
+
+      {String(user?.role || "").toUpperCase() === "ADMIN" && adminBillingModalNotice ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/45" />
+          <div className="relative w-full max-w-lg rounded-xl bg-white shadow-2xl border border-gray-200 p-5">
+            <h3 className="text-lg font-semibold text-gray-900">Aviso de Vencimento de Licença</h3>
+            <p className="text-sm text-gray-600 mt-1">Leia e confirme este aviso.</p>
+            <div className="mt-4 grid grid-cols-1 gap-2 text-sm">
+              <p><span className="font-medium text-gray-700">Licença:</span> {license?.planName || license?.planCode || "-"}</p>
+              <p><span className="font-medium text-gray-700">Contratante:</span> {license?.contractor?.tradeName || license?.contractor?.nameOrCompany || license?.contractor?.tenantName || "-"}</p>
+              <p><span className="font-medium text-gray-700">Data de vencimento:</span> {dateLabel(adminBillingModalNotice?.dueDate)}</p>
+              <p><span className="font-medium text-gray-700">Valor:</span> {amountLabel(adminBillingModalNotice?.amountCents)}</p>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeAdminBillingModal}
+                className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
