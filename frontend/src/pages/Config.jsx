@@ -81,6 +81,8 @@ const MODULO_LABELS = {
   reportsTransfers: "Relatórios de transferências",
 };
 
+const LICENSE_FEATURE_KEYS = Object.keys(MODULO_LABELS);
+
 const LICENSE_REQUEST_STATUS = {
   PENDING_MASTER_REVIEW: "Pendente do Desenvolvedor",
   PENDING_CONTRACTOR_APPROVAL: "Pendente do Contratante",
@@ -161,6 +163,25 @@ export default function Config() {
     note: "",
   });
   const [adminReviewSubmitting, setAdminReviewSubmitting] = useState(false);
+  const [licensePlans, setLicensePlans] = useState([]);
+  const [planForm, setPlanForm] = useState({
+    code: "NOVO_PLANO",
+    name: "",
+    currency: "BRL",
+    monthlyPriceCents: "",
+    annualPriceCents: "",
+    dashboardMode: "FULL",
+    maxActiveUsers: "",
+    maxActiveStores: "",
+    roleAdmin: "",
+    roleVendedor: "",
+    roleCaixa: "",
+    roleFarmaceutico: "",
+    active: true,
+    features: LICENSE_FEATURE_KEYS.reduce((acc, key) => ({ ...acc, [key]: false }), {}),
+  });
+  const [planEditingCode, setPlanEditingCode] = useState("");
+  const [planSubmitting, setPlanSubmitting] = useState(false);
   const [importSelections, setImportSelections] = useState({});
   const [importValidation, setImportValidation] = useState([]);
   const [importValidating, setImportValidating] = useState(false);
@@ -195,8 +216,9 @@ export default function Config() {
         canManageLicense ? apiFetch("/api/license/admin/licenses").catch(() => ({ data: { licenses: [] } })) : Promise.resolve({ data: { licenses: [] } }),
         canManageLicense ? apiFetch("/api/license/me/change-requests").catch(() => ({ data: { requests: [] } })) : Promise.resolve({ data: { requests: [] } }),
         canManageLicense ? apiFetch("/api/license/admin/change-requests").catch(() => ({ data: { requests: [] } })) : Promise.resolve({ data: { requests: [] } }),
+        canManageLicense ? apiFetch("/api/license/admin/plans").catch(() => ({ data: { plans: [] } })) : Promise.resolve({ data: { plans: [] } }),
       ])
-        .then(([res, listRes, myReqRes, adminReqRes]) => {
+        .then(([res, listRes, myReqRes, adminReqRes, plansRes]) => {
           const lic = res.data || null;
           const now = new Date();
           const oneYear = new Date(now);
@@ -225,6 +247,7 @@ export default function Config() {
           setLicensesList(list);
           setMyLicenseRequests(reqs);
           setAdminLicenseRequests(adminReqs);
+          setLicensePlans(plansRes?.data?.plans || []);
           setSelectedLicenseId((prev) => {
             if (prev && list.some((l) => l.id === prev && !l.isDeveloperTenant)) return prev;
             return "";
@@ -394,6 +417,143 @@ export default function Config() {
       return false;
     } finally {
       setImportValidating(false);
+    }
+  };
+
+  const loadLicensePlans = async () => {
+    if (!isDeveloperAdmin) return;
+    try {
+      const res = await apiFetch("/api/license/admin/plans");
+      setLicensePlans(res?.data?.plans || []);
+    } catch (err) {
+      addToast(err.message || "Falha ao carregar planos", "error");
+    }
+  };
+
+  const resetPlanForm = () => {
+    setPlanEditingCode("");
+    setPlanForm({
+      code: "NOVO_PLANO",
+      name: "",
+      currency: "BRL",
+      monthlyPriceCents: "",
+      annualPriceCents: "",
+      dashboardMode: "FULL",
+      maxActiveUsers: "",
+      maxActiveStores: "",
+      roleAdmin: "",
+      roleVendedor: "",
+      roleCaixa: "",
+      roleFarmaceutico: "",
+      active: true,
+      features: LICENSE_FEATURE_KEYS.reduce((acc, key) => ({ ...acc, [key]: false }), {}),
+    });
+  };
+
+  const mountPlanForm = (plan) => {
+    if (!plan) return;
+    const limits = plan?.limits || {};
+    const roleCaps = limits?.maxRoleActive || {};
+    const features = LICENSE_FEATURE_KEYS.reduce((acc, key) => ({ ...acc, [key]: Boolean(plan?.features?.[key]) }), {});
+    setPlanEditingCode(String(plan.code || "").toUpperCase());
+    setPlanForm({
+      code: String(plan.code || "").toUpperCase(),
+      name: String(plan.name || ""),
+      currency: String(plan.currency || "BRL").toUpperCase(),
+      monthlyPriceCents: String(plan.monthlyPriceCents ?? ""),
+      annualPriceCents: String(plan.annualPriceCents ?? ""),
+      dashboardMode: String(plan.dashboardMode || "FULL").toUpperCase(),
+      maxActiveUsers: String(limits.maxActiveUsers ?? ""),
+      maxActiveStores: String(limits.maxActiveStores ?? ""),
+      roleAdmin: String(roleCaps.ADMIN ?? ""),
+      roleVendedor: String(roleCaps.VENDEDOR ?? ""),
+      roleCaixa: String(roleCaps.CAIXA ?? ""),
+      roleFarmaceutico: String(roleCaps.FARMACEUTICO ?? ""),
+      active: Boolean(plan.active),
+      features,
+    });
+  };
+
+  const submitPlan = async () => {
+    if (!isDeveloperAdmin) return;
+    const code = String(planForm.code || "").trim().toUpperCase();
+    const name = String(planForm.name || "").trim();
+    if (!code && !planEditingCode) {
+      addToast("Código do plano é obrigatório", "warning");
+      return;
+    }
+    if (!name) {
+      addToast("Nome do plano é obrigatório", "warning");
+      return;
+    }
+    setPlanSubmitting(true);
+    try {
+      const payload = {
+        code: planEditingCode || code,
+        name,
+        currency: String(planForm.currency || "BRL").trim().toUpperCase() || "BRL",
+        monthlyPriceCents: Number(planForm.monthlyPriceCents || 0),
+        annualPriceCents: Number(planForm.annualPriceCents || 0),
+        dashboardMode: String(planForm.dashboardMode || "FULL").trim().toUpperCase(),
+        active: Boolean(planForm.active),
+        limits: {
+          maxActiveUsers: Number(planForm.maxActiveUsers || 0),
+          maxActiveStores: Number(planForm.maxActiveStores || 0),
+          maxRoleActive: {
+            ADMIN: Number(planForm.roleAdmin || 0),
+            VENDEDOR: Number(planForm.roleVendedor || 0),
+            CAIXA: Number(planForm.roleCaixa || 0),
+            FARMACEUTICO: Number(planForm.roleFarmaceutico || 0),
+          },
+        },
+        features: LICENSE_FEATURE_KEYS.reduce((acc, key) => {
+          acc[key] = Boolean(planForm.features?.[key]);
+          return acc;
+        }, {}),
+      };
+      if (planEditingCode) {
+        await apiFetch(`/api/license/admin/plans/${encodeURIComponent(planEditingCode)}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        addToast("Plano atualizado", "success");
+      } else {
+        await apiFetch("/api/license/admin/plans", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        addToast("Plano criado", "success");
+      }
+      await loadLicensePlans();
+      const meRes = await apiFetch("/api/license/me");
+      setLicenseData(meRes?.data || null);
+      resetPlanForm();
+    } catch (err) {
+      addToast(err.message || "Falha ao salvar plano", "error");
+    } finally {
+      setPlanSubmitting(false);
+    }
+  };
+
+  const removePlan = async (code) => {
+    if (!isDeveloperAdmin || !code) return;
+    if (!window.confirm(`Excluir plano ${code}?`)) return;
+    setPlanSubmitting(true);
+    try {
+      await apiFetch(`/api/license/admin/plans/${encodeURIComponent(String(code).toUpperCase())}`, {
+        method: "DELETE",
+      });
+      addToast("Plano excluído", "success");
+      await loadLicensePlans();
+      const meRes = await apiFetch("/api/license/me");
+      setLicenseData(meRes?.data || null);
+      if (String(planEditingCode || "").toUpperCase() === String(code || "").toUpperCase()) {
+        resetPlanForm();
+      }
+    } catch (err) {
+      addToast(err.message || "Falha ao excluir plano", "error");
+    } finally {
+      setPlanSubmitting(false);
     }
   };
 
@@ -951,6 +1111,141 @@ export default function Config() {
 
               {!novoContratanteMode ? (
                 <>
+                  {isDeveloperAdmin ? (
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                      <p className="text-sm font-semibold text-gray-900">Licenças (Planos)</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-gray-200 text-left text-gray-500">
+                              <th className="px-2 py-1">Código</th>
+                              <th className="px-2 py-1">Nome</th>
+                              <th className="px-2 py-1">Mensal</th>
+                              <th className="px-2 py-1">Anual</th>
+                              <th className="px-2 py-1">Dashboard</th>
+                              <th className="px-2 py-1">Limites</th>
+                              <th className="px-2 py-1">Módulos</th>
+                              <th className="px-2 py-1">Status</th>
+                              <th className="px-2 py-1">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {(licensePlans || []).map((plan) => {
+                              const limits = plan?.limits || {};
+                              const roleCaps = limits?.maxRoleActive || {};
+                              const enabledFeatures = LICENSE_FEATURE_KEYS.filter((key) => Boolean(plan?.features?.[key]));
+                              return (
+                                <tr key={plan.id}>
+                                  <td className="px-2 py-1 font-medium text-gray-900">{plan.code}</td>
+                                  <td className="px-2 py-1 text-gray-700">{plan.name}</td>
+                                  <td className="px-2 py-1 text-gray-700">{moneyLabel(plan.monthlyPriceCents, plan.currency || "BRL")}</td>
+                                  <td className="px-2 py-1 text-gray-700">{moneyLabel(plan.annualPriceCents, plan.currency || "BRL")}</td>
+                                  <td className="px-2 py-1 text-gray-700">{plan.dashboardMode}</td>
+                                  <td className="px-2 py-1 text-gray-700">
+                                    U:{Number(limits.maxActiveUsers || 0)} / L:{Number(limits.maxActiveStores || 0)} / Perfis:{Object.values(roleCaps || {}).some((n) => Number(n || 0) > 0) ? `${Number(roleCaps.ADMIN || 0)}/${Number(roleCaps.VENDEDOR || 0)}/${Number(roleCaps.CAIXA || 0)}/${Number(roleCaps.FARMACEUTICO || 0)}` : "ilimitado"}
+                                  </td>
+                                  <td className="px-2 py-1 text-gray-700">{enabledFeatures.length}</td>
+                                  <td className="px-2 py-1 text-gray-700">{plan.active ? "Ativo" : "Inativo"}</td>
+                                  <td className="px-2 py-1">
+                                    <div className="flex gap-2">
+                                      <button type="button" className="text-primary-700 hover:text-primary-800" onClick={() => mountPlanForm(plan)}>
+                                        Editar
+                                      </button>
+                                      <button type="button" className="text-red-600 hover:text-red-700" onClick={() => removePlan(plan.code)}>
+                                        Excluir
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {!licensePlans?.length ? <tr><td colSpan={9} className="px-2 py-2 text-gray-400">Nenhum plano cadastrado.</td></tr> : null}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="grid md:grid-cols-4 gap-2">
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Código</label>
+                          <input className={inputClass} value={planForm.code} onChange={(e) => setPlanForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))} disabled={Boolean(planEditingCode)} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Nome</label>
+                          <input className={inputClass} value={planForm.name} onChange={(e) => setPlanForm((prev) => ({ ...prev, name: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Moeda</label>
+                          <input className={inputClass} value={planForm.currency} onChange={(e) => setPlanForm((prev) => ({ ...prev, currency: e.target.value.toUpperCase() }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Dashboard</label>
+                          <select className={inputClass} value={planForm.dashboardMode} onChange={(e) => setPlanForm((prev) => ({ ...prev, dashboardMode: e.target.value }))}>
+                            <option value="SIMPLIFIED">SIMPLIFIED</option>
+                            <option value="FULL">FULL</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Valor mensal (centavos)</label>
+                          <input type="number" min={0} className={inputClass} value={planForm.monthlyPriceCents} onChange={(e) => setPlanForm((prev) => ({ ...prev, monthlyPriceCents: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Valor anual (centavos)</label>
+                          <input type="number" min={0} className={inputClass} value={planForm.annualPriceCents} onChange={(e) => setPlanForm((prev) => ({ ...prev, annualPriceCents: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Max usuários</label>
+                          <input type="number" min={0} className={inputClass} value={planForm.maxActiveUsers} onChange={(e) => setPlanForm((prev) => ({ ...prev, maxActiveUsers: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Max lojas</label>
+                          <input type="number" min={0} className={inputClass} value={planForm.maxActiveStores} onChange={(e) => setPlanForm((prev) => ({ ...prev, maxActiveStores: e.target.value }))} />
+                        </div>
+                      </div>
+                      <div className="grid md:grid-cols-4 gap-2">
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Perfil ADMIN</label>
+                          <input type="number" min={0} className={inputClass} value={planForm.roleAdmin} onChange={(e) => setPlanForm((prev) => ({ ...prev, roleAdmin: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Perfil VENDEDOR</label>
+                          <input type="number" min={0} className={inputClass} value={planForm.roleVendedor} onChange={(e) => setPlanForm((prev) => ({ ...prev, roleVendedor: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Perfil CAIXA</label>
+                          <input type="number" min={0} className={inputClass} value={planForm.roleCaixa} onChange={(e) => setPlanForm((prev) => ({ ...prev, roleCaixa: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-600">Perfil FARMACÊUTICO</label>
+                          <input type="number" min={0} className={inputClass} value={planForm.roleFarmaceutico} onChange={(e) => setPlanForm((prev) => ({ ...prev, roleFarmaceutico: e.target.value }))} />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-gray-600">Módulos habilitados</p>
+                        <div className="grid md:grid-cols-3 gap-2">
+                          {LICENSE_FEATURE_KEYS.map((key) => (
+                            <label key={key} className="flex items-center gap-2 text-xs text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(planForm.features?.[key])}
+                                onChange={(e) => setPlanForm((prev) => ({ ...prev, features: { ...(prev.features || {}), [key]: e.target.checked } }))}
+                              />
+                              <span>{MODULO_LABELS[key] || key}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-gray-700">
+                        <input type="checkbox" checked={Boolean(planForm.active)} onChange={(e) => setPlanForm((prev) => ({ ...prev, active: e.target.checked }))} />
+                        <span>Plano ativo</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <Button type="button" onClick={submitPlan} loading={planSubmitting}>
+                          {planEditingCode ? "Salvar plano" : "Criar plano"}
+                        </Button>
+                        {planEditingCode ? <Button type="button" variant="secondary" onClick={resetPlanForm}>Cancelar edição</Button> : null}
+                      </div>
+                    </div>
+                  ) : null}
+
                   {isDeveloperAdmin ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <p className="text-sm font-semibold text-gray-900">Contratantes</p>

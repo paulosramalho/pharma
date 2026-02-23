@@ -1,7 +1,7 @@
 ﻿const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../../common/prisma");
-const { resolveTenantLicense, isLicenseActive } = require("../../common/licensing/license.service");
+const { resolveTenantLicense, isLicenseActive, loadPlanCatalog } = require("../../common/licensing/license.service");
 
 const SECRET = process.env.JWT_SECRET || "fallback-secret";
 const ACCESS_EXP = process.env.JWT_ACCESS_EXPIRES || "15m";
@@ -30,6 +30,7 @@ function verifyToken(token) {
 }
 
 async function loadTenantLicense(tenantId) {
+  const catalog = await loadPlanCatalog(prisma);
   const row = await prisma.tenantLicense.findUnique({
     where: { tenantId },
     select: {
@@ -41,7 +42,7 @@ async function loadTenantLicense(tenantId) {
       updatedAt: true,
     },
   });
-  return resolveTenantLicense(row);
+  return resolveTenantLicense(row, catalog);
 }
 
 async function login(email, password) {

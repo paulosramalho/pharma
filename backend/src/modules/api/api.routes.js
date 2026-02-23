@@ -4,8 +4,9 @@ const { sendOk } = require("../../common/http/response");
 const idempotencyGuard = require("../../common/idempotencyGuard");
 const { makeReportSamplePdfBuffer, makeReportLinesPdfBuffer, makeReportCustomPdfBuffer } = require("../reports/reportPdfTemplate");
 const {
-  PLAN_CATALOG,
   getActiveLicense,
+  loadPlanCatalog,
+  DEFAULT_PLAN_CATALOG,
   resolveTenantLicense,
   normalizeStatus,
   normalizeRoleCaps,
@@ -70,12 +71,14 @@ function buildApiRoutes({ prisma, log }) {
 
   async function getLicense(req) {
     const tenantId = await resolveTenantId(req);
-    if (!tenantId) return getActiveLicense();
+    const catalog = await getPlanCatalogMap();
+    if (!tenantId) return getActiveLicense(catalog);
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { isDeveloperTenant: true },
     });
     if (tenant?.isDeveloperTenant) {
+      const masterCatalog = { ...catalog, ENTERPRISE: catalog.ENTERPRISE || DEFAULT_PLAN_CATALOG.ENTERPRISE };
       // Master/dev license always has full feature set.
       return resolveTenantLicense({
         planCode: "ENTERPRISE",
@@ -84,7 +87,7 @@ function buildApiRoutes({ prisma, log }) {
         endsAt: null,
         graceUntil: null,
         updatedAt: new Date(),
-      });
+      }, masterCatalog);
     }
     const row = await prisma.tenantLicense.findUnique({
       where: { tenantId },
@@ -102,16 +105,18 @@ function buildApiRoutes({ prisma, log }) {
         updatedAt: true,
       },
     });
-    return resolveTenantLicense(row);
+    return resolveTenantLicense(row, catalog);
   }
 
   async function resolveLicenseByTenantId(tenantId) {
-    if (!tenantId) return getActiveLicense();
+    const catalog = await getPlanCatalogMap();
+    if (!tenantId) return getActiveLicense(catalog);
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { isDeveloperTenant: true },
     });
     if (tenant?.isDeveloperTenant) {
+      const masterCatalog = { ...catalog, ENTERPRISE: catalog.ENTERPRISE || DEFAULT_PLAN_CATALOG.ENTERPRISE };
       return resolveTenantLicense({
         planCode: "ENTERPRISE",
         status: "ACTIVE",
@@ -119,7 +124,7 @@ function buildApiRoutes({ prisma, log }) {
         endsAt: null,
         graceUntil: null,
         updatedAt: new Date(),
-      });
+      }, masterCatalog);
     }
     const row = await prisma.tenantLicense.findUnique({
       where: { tenantId },
@@ -137,7 +142,7 @@ function buildApiRoutes({ prisma, log }) {
         updatedAt: true,
       },
     });
-    return resolveTenantLicense(row);
+    return resolveTenantLicense(row, catalog);
   }
 
   async function getTenantLicenseProfile(req) {
@@ -297,11 +302,23 @@ function buildApiRoutes({ prisma, log }) {
     return tenantId;
   }
 
+  async function getPlanCatalogMap() {
+    return loadPlanCatalog(prisma);
+  }
+
+  async function getPlanByCode(code) {
+    const catalog = await getPlanCatalogMap();
+    const key = String(code || "").trim().toUpperCase();
+    return catalog[key] || null;
+  }
+
   async function upsertTenantLicenseWithAudit({ tenantId, actor, body }) {
     const nextPlan = String(body?.planCode || "").trim().toUpperCase();
     const nextStatus = normalizeStatus(body?.status || "ACTIVE");
     const reason = body?.reason ? String(body.reason) : null;
     if (!nextPlan) throw Object.assign(new Error("planCode obrigatorio"), { statusCode: 400 });
+    const plan = await getPlanByCode(nextPlan);
+    if (!plan) throw Object.assign(new Error("Plano invalido"), { statusCode: 400 });
 
     const previous = await prisma.tenantLicense.findUnique({ where: { tenantId } });
     const now = new Date();
@@ -1333,11 +1350,13 @@ function buildApiRoutes({ prisma, log }) {
     };
   }
 
-  function buildProposalFromRoleCaps({ currentPlanCode, roleCaps, monthlyPriceCents, annualPriceCents, extrasDescription, note }) {
+  async function buildProposalFromRoleCaps({ currentPlanCode, roleCaps, monthlyPriceCents, annualPriceCents, extrasDescription, note }) {
     const requestedCaps = normalizeRoleCaps(roleCaps || {});
     const requestedTotal = totalRoleCaps(requestedCaps);
-    const bestPlan = findBestPlanForRoleCaps(requestedCaps);
-    const currentPlan = PLAN_CATALOG[String(currentPlanCode || "MINIMO").toUpperCase()] || PLAN_CATALOG.MINIMO;
+    const catalog = await getPlanCatalogMap();
+    const bestPlan = findBestPlanForRoleCaps(requestedCaps, catalog);
+    const firstPlan = Object.values(catalog)[0] || null;
+    const currentPlan = catalog[String(currentPlanCode || "MINIMO").toUpperCase()] || catalog.MINIMO || firstPlan;
     const currentMonthly = Number(currentPlan?.monthlyPriceCents || 0);
     const currentAnnual = Number(currentPlan?.annualPriceCents || 0);
 
@@ -1438,7 +1457,9 @@ function buildApiRoutes({ prisma, log }) {
     await prisma.$transaction(async (tx) => {
       const license = await tx.tenantLicense.findUnique({ where: { tenantId }, select: { id: true, endsAt: true, status: true } });
       if (!license?.id) throw Object.assign(new Error("Licenca nao encontrada"), { statusCode: 404 });
-      const appliedPlan = PLAN_CATALOG[String(request.proposedPlanCode || request.currentPlanCode || "MINIMO").toUpperCase()] || PLAN_CATALOG.MINIMO;
+      const catalog = await getPlanCatalogMap();
+      const firstPlan = Object.values(catalog)[0] || null;
+      const appliedPlan = catalog[String(request.proposedPlanCode || request.currentPlanCode || "MINIMO").toUpperCase()] || catalog.MINIMO || firstPlan;
       const appliedRoleCaps = normalizeRoleCaps(request.proposedRoleCaps || {});
       const appliedTotalUsers = Number(request.proposedTotalUsers || totalRoleCaps(appliedRoleCaps));
       const baseRoleCaps = normalizeRoleCaps(appliedPlan?.limits?.maxRoleActive || {});
@@ -1565,7 +1586,7 @@ function buildApiRoutes({ prisma, log }) {
     const roleCapsSource = req.body?.roleCaps && typeof req.body.roleCaps === "object"
       ? req.body.roleCaps
       : request.requestedRoleCaps;
-    const proposal = buildProposalFromRoleCaps({
+    const proposal = await buildProposalFromRoleCaps({
       currentPlanCode: request.currentPlanCode,
       roleCaps: roleCapsSource,
       monthlyPriceCents: req.body?.monthlyPriceCents,
@@ -1713,6 +1734,10 @@ function buildApiRoutes({ prisma, log }) {
     if (!sourceTenantId) return res.status(400).json({ error: { code: 400, message: "Tenant do desenvolvedor nao identificado" } });
 
     const validated = validateOnboardingPayload(req.body || {});
+    const onboardingPlan = await getPlanByCode(validated.planCode);
+    if (!onboardingPlan) {
+      return res.status(400).json({ error: { code: 400, message: "Plano informado nao existe" } });
+    }
     const passwordTemp = generateProvisionalPassword();
     const bcrypt = require("bcryptjs");
     const passwordHash = await bcrypt.hash(passwordTemp, 10);
@@ -1829,6 +1854,117 @@ function buildApiRoutes({ prisma, log }) {
         mustChangePassword: true,
       },
     });
+  }));
+
+  function normalizePlanPayload(raw = {}, { isCreate = false } = {}) {
+    const code = String(raw.code || "").trim().toUpperCase();
+    const name = String(raw.name || "").trim();
+    const currency = String(raw.currency || "BRL").trim().toUpperCase() || "BRL";
+    const dashboardMode = String(raw.dashboardMode || "FULL").trim().toUpperCase() || "FULL";
+    const monthlyPriceCents = Number(raw.monthlyPriceCents);
+    const annualPriceCents = Number(raw.annualPriceCents);
+    const limitsRaw = raw.limits && typeof raw.limits === "object" ? raw.limits : {};
+    const featuresRaw = raw.features && typeof raw.features === "object" ? raw.features : {};
+    const limits = {
+      maxActiveUsers: Number(limitsRaw.maxActiveUsers || 0),
+      maxActiveStores: Number(limitsRaw.maxActiveStores || 0),
+      maxRoleActive: normalizeRoleCaps(limitsRaw.maxRoleActive || {}),
+    };
+    const featureKeys = [
+      "dashboard",
+      "sales",
+      "cash",
+      "inventory",
+      "inventoryTransfers",
+      "inventoryReservations",
+      "products",
+      "chat",
+      "config",
+      "reportsSales",
+      "reportsCashClosings",
+      "reportsTransfers",
+    ];
+    const features = featureKeys.reduce((acc, key) => {
+      acc[key] = Boolean(featuresRaw[key]);
+      return acc;
+    }, {});
+    if (isCreate && !code) throw Object.assign(new Error("Codigo do plano obrigatorio"), { statusCode: 400 });
+    if (!name) throw Object.assign(new Error("Nome do plano obrigatorio"), { statusCode: 400 });
+    if (!Number.isFinite(monthlyPriceCents) || monthlyPriceCents < 0) throw Object.assign(new Error("Valor mensal invalido"), { statusCode: 400 });
+    if (!Number.isFinite(annualPriceCents) || annualPriceCents < 0) throw Object.assign(new Error("Valor anual invalido"), { statusCode: 400 });
+    if (!Number.isFinite(limits.maxActiveUsers) || limits.maxActiveUsers < 0) throw Object.assign(new Error("Limite maxActiveUsers invalido"), { statusCode: 400 });
+    if (!Number.isFinite(limits.maxActiveStores) || limits.maxActiveStores < 0) throw Object.assign(new Error("Limite maxActiveStores invalido"), { statusCode: 400 });
+    return {
+      code,
+      name,
+      currency,
+      dashboardMode,
+      monthlyPriceCents: Math.floor(monthlyPriceCents),
+      annualPriceCents: Math.floor(annualPriceCents),
+      limits,
+      features,
+      active: raw.active === undefined ? true : Boolean(raw.active),
+    };
+  }
+
+  router.get("/license/admin/plans", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const rows = await prisma.licensePlan.findMany({
+      orderBy: [{ active: "desc" }, { monthlyPriceCents: "asc" }, { code: "asc" }],
+    });
+    return sendOk(res, req, { plans: rows });
+  }));
+
+  router.post("/license/admin/plans", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const payload = normalizePlanPayload(req.body || {}, { isCreate: true });
+    const created = await prisma.licensePlan.create({
+      data: {
+        code: payload.code,
+        name: payload.name,
+        currency: payload.currency,
+        monthlyPriceCents: payload.monthlyPriceCents,
+        annualPriceCents: payload.annualPriceCents,
+        dashboardMode: payload.dashboardMode,
+        limits: payload.limits,
+        features: payload.features,
+        active: payload.active,
+      },
+    });
+    return sendOk(res, req, { plan: created });
+  }));
+
+  router.put("/license/admin/plans/:code", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const code = String(req.params.code || "").trim().toUpperCase();
+    if (!code) return res.status(400).json({ error: { code: 400, message: "Codigo do plano obrigatorio" } });
+    const payload = normalizePlanPayload({ ...req.body, code }, { isCreate: false });
+    const updated = await prisma.licensePlan.update({
+      where: { code },
+      data: {
+        name: payload.name,
+        currency: payload.currency,
+        monthlyPriceCents: payload.monthlyPriceCents,
+        annualPriceCents: payload.annualPriceCents,
+        dashboardMode: payload.dashboardMode,
+        limits: payload.limits,
+        features: payload.features,
+        active: payload.active,
+      },
+    });
+    return sendOk(res, req, { plan: updated });
+  }));
+
+  router.delete("/license/admin/plans/:code", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const code = String(req.params.code || "").trim().toUpperCase();
+    if (!code) return res.status(400).json({ error: { code: 400, message: "Codigo do plano obrigatorio" } });
+    const inUse = await prisma.tenantLicense.count({ where: { planCode: code } });
+    if (inUse > 0) {
+      return res.status(409).json({ error: { code: 409, message: "Nao e possivel excluir plano com contratantes vinculados" } });
+    }
+    await prisma.licensePlan.delete({ where: { code } });
+    return sendOk(res, req, { deleted: true, code });
   }));
 
   router.get("/license/admin/licenses", asyncHandler(async (req, res) => {

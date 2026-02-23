@@ -160,6 +160,23 @@ model TenantLicense {
   @@index([planCode, status])
 }
 
+model LicensePlan {
+  id                String   @id @default(uuid())
+  code              String   @unique
+  name              String
+  currency          String   @default("BRL")
+  monthlyPriceCents Int
+  annualPriceCents  Int
+  dashboardMode     String   @default("FULL")
+  limits            Json
+  features          Json
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([active, code])
+}
+
 model TenantLicenseChangeRequest {
   id String @id @default(uuid())
   tenant Tenant @relation(fields: [tenantId], references: [id])

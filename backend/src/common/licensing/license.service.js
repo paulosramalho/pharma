@@ -1,4 +1,4 @@
-const PLAN_CATALOG = {
+﻿const DEFAULT_PLAN_CATALOG = {
   MINIMO: {
     code: "MINIMO",
     name: "Pacote Minimo",
@@ -93,35 +93,6 @@ function normalizeStatus(raw) {
   return "ACTIVE";
 }
 
-function buildLicenseFromPlan(planCode, statusRaw) {
-  const requestedPlan = String(planCode || process.env.LICENSE_PLAN || "MINIMO").trim().toUpperCase();
-  const plan = PLAN_CATALOG[requestedPlan] || PLAN_CATALOG.MINIMO;
-  const status = normalizeStatus(statusRaw || process.env.LICENSE_STATUS);
-  return {
-    planCode: plan.code,
-    planName: plan.name,
-    status,
-    dashboardMode: plan.dashboardMode,
-    limits: plan.limits,
-    features: plan.features,
-    pricing: {
-      currency: plan.currency,
-      monthlyPriceCents: plan.monthlyPriceCents,
-      annualPriceCents: plan.annualPriceCents,
-    },
-    catalog: Object.values(PLAN_CATALOG).map((p) => ({
-      code: p.code,
-      name: p.name,
-      currency: p.currency,
-      monthlyPriceCents: p.monthlyPriceCents,
-      annualPriceCents: p.annualPriceCents,
-      limits: p.limits,
-      features: p.features,
-      dashboardMode: p.dashboardMode,
-    })),
-  };
-}
-
 function normalizeRoleCaps(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
   const out = {};
@@ -135,6 +106,90 @@ function normalizeRoleCaps(raw) {
 function totalRoleCaps(roleCaps) {
   const caps = normalizeRoleCaps(roleCaps);
   return Object.values(caps).reduce((sum, n) => sum + Number(n || 0), 0);
+}
+
+function normalizePlanRow(row) {
+  if (!row) return null;
+  const code = String(row.code || "").trim().toUpperCase();
+  if (!code) return null;
+  return {
+    code,
+    name: String(row.name || code),
+    monthlyPriceCents: Number(row.monthlyPriceCents || 0),
+    annualPriceCents: Number(row.annualPriceCents || 0),
+    currency: String(row.currency || "BRL").trim().toUpperCase() || "BRL",
+    dashboardMode: String(row.dashboardMode || "FULL").trim().toUpperCase() || "FULL",
+    limits: row.limits && typeof row.limits === "object" ? row.limits : {},
+    features: row.features && typeof row.features === "object" ? row.features : {},
+  };
+}
+
+function getCatalogMap(catalogInput) {
+  if (!catalogInput || typeof catalogInput !== "object") return DEFAULT_PLAN_CATALOG;
+  const values = Object.values(catalogInput);
+  if (!values.length) return DEFAULT_PLAN_CATALOG;
+  return catalogInput;
+}
+
+function listCatalog(catalogInput) {
+  const map = getCatalogMap(catalogInput);
+  return Object.values(map).map((p) => ({
+    code: p.code,
+    name: p.name,
+    currency: p.currency,
+    monthlyPriceCents: p.monthlyPriceCents,
+    annualPriceCents: p.annualPriceCents,
+    limits: p.limits,
+    features: p.features,
+    dashboardMode: p.dashboardMode,
+  }));
+}
+
+async function loadPlanCatalog(prisma) {
+  if (!prisma?.licensePlan) return DEFAULT_PLAN_CATALOG;
+  const rows = await prisma.licensePlan.findMany({
+    where: { active: true },
+    orderBy: [{ monthlyPriceCents: "asc" }, { code: "asc" }],
+    select: {
+      code: true,
+      name: true,
+      monthlyPriceCents: true,
+      annualPriceCents: true,
+      currency: true,
+      dashboardMode: true,
+      limits: true,
+      features: true,
+    },
+  });
+  if (!rows.length) return DEFAULT_PLAN_CATALOG;
+  const map = {};
+  rows.forEach((row) => {
+    const normalized = normalizePlanRow(row);
+    if (normalized?.code) map[normalized.code] = normalized;
+  });
+  return Object.keys(map).length ? map : DEFAULT_PLAN_CATALOG;
+}
+
+function buildLicenseFromPlan(planCode, statusRaw, catalogInput) {
+  const catalog = getCatalogMap(catalogInput);
+  const requestedPlan = String(planCode || process.env.LICENSE_PLAN || "MINIMO").trim().toUpperCase();
+  const firstPlan = Object.values(catalog)[0] || DEFAULT_PLAN_CATALOG.MINIMO;
+  const plan = catalog[requestedPlan] || catalog.MINIMO || firstPlan;
+  const status = normalizeStatus(statusRaw || process.env.LICENSE_STATUS);
+  return {
+    planCode: plan.code,
+    planName: plan.name,
+    status,
+    dashboardMode: plan.dashboardMode,
+    limits: plan.limits,
+    features: plan.features,
+    pricing: {
+      currency: plan.currency,
+      monthlyPriceCents: plan.monthlyPriceCents,
+      annualPriceCents: plan.annualPriceCents,
+    },
+    catalog: listCatalog(catalog),
+  };
 }
 
 function planSupportsRoleCaps(plan, roleCaps) {
@@ -151,18 +206,19 @@ function planSupportsRoleCaps(plan, roleCaps) {
   return wantedTotal <= maxUsers;
 }
 
-function findBestPlanForRoleCaps(roleCaps) {
-  const plans = Object.values(PLAN_CATALOG).slice().sort((a, b) => Number(a.monthlyPriceCents || 0) - Number(b.monthlyPriceCents || 0));
+function findBestPlanForRoleCaps(roleCaps, catalogInput) {
+  const catalog = getCatalogMap(catalogInput);
+  const plans = Object.values(catalog).slice().sort((a, b) => Number(a.monthlyPriceCents || 0) - Number(b.monthlyPriceCents || 0));
   return plans.find((plan) => planSupportsRoleCaps(plan, roleCaps)) || null;
 }
 
-function getActiveLicense() {
-  return buildLicenseFromPlan(null, null);
+function getActiveLicense(catalogInput) {
+  return buildLicenseFromPlan(null, null, catalogInput);
 }
 
-function resolveTenantLicense(tenantLicenseRow) {
-  if (!tenantLicenseRow) return getActiveLicense();
-  const base = buildLicenseFromPlan(tenantLicenseRow.planCode, tenantLicenseRow.status);
+function resolveTenantLicense(tenantLicenseRow, catalogInput) {
+  if (!tenantLicenseRow) return getActiveLicense(catalogInput);
+  const base = buildLicenseFromPlan(tenantLicenseRow.planCode, tenantLicenseRow.status, catalogInput);
   const addonRole = normalizeRoleCaps(tenantLicenseRow.addonMaxRoleActive || {});
   const baseRole = normalizeRoleCaps(base?.limits?.maxRoleActive || {});
   const mergedRole = Object.keys(baseRole).reduce((acc, role) => {
@@ -214,10 +270,13 @@ function isFeatureEnabled(featureKey, license = getActiveLicense()) {
 }
 
 module.exports = {
-  PLAN_CATALOG,
+  PLAN_CATALOG: DEFAULT_PLAN_CATALOG,
+  DEFAULT_PLAN_CATALOG,
   normalizeStatus,
   normalizeRoleCaps,
   totalRoleCaps,
+  listCatalog,
+  loadPlanCatalog,
   findBestPlanForRoleCaps,
   buildLicenseFromPlan,
   getActiveLicense,
