@@ -3,7 +3,7 @@ import { apiFetch, setAuth, clearAuth, getUser, getToken, getStoreId, setStoreId
 import { loginSync, refreshCounts } from "../lib/sync";
 
 const AuthContext = createContext(null);
-const INACTIVITY_TIMEOUT_MIN = Math.max(1, Number(import.meta.env.VITE_INACTIVITY_TIMEOUT_MINUTES || 1));
+const INACTIVITY_TIMEOUT_MIN = Math.max(1, Number(import.meta.env.VITE_INACTIVITY_TIMEOUT_MINUTES || 30));
 const INACTIVITY_TIMEOUT_MS = INACTIVITY_TIMEOUT_MIN * 60 * 1000;
 const ACTIVITY_KEY = "pharma_last_activity_at";
 const FORCE_LOGOUT_KEY = "pharma_force_logout";
@@ -18,6 +18,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(!!getToken());
   const [inactivityWarningSeconds, setInactivityWarningSeconds] = useState(null);
   const warningActiveRef = useRef(false);
+  const isMasterTenant = Boolean(license?.contractor?.isDeveloperTenant);
 
   const isAuthenticated = !!user;
   const touchActivity = useCallback(() => {
@@ -151,6 +152,11 @@ export function AuthProvider({ children }) {
 
       const leftMs = INACTIVITY_TIMEOUT_MS - (Date.now() - lastAt);
       if (leftMs <= 0) {
+        if (isMasterTenant) {
+          warningActiveRef.current = true;
+          setInactivityWarningSeconds(0);
+          return;
+        }
         setInactivityWarningSeconds(null);
         warningActiveRef.current = false;
         logout({ reason: "inactivity", broadcast: true });
@@ -184,10 +190,10 @@ export function AuthProvider({ children }) {
       document.removeEventListener("visibilitychange", mark);
       window.removeEventListener("storage", onStorage);
     };
-  }, [isAuthenticated, logout, touchActivity]);
+  }, [isAuthenticated, isMasterTenant, logout, touchActivity]);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout, refreshSession, stores, storeId, switchStore, permissions, hasPermission, license, hasFeature, isLicenseActive, inactivityWarningSeconds, continueSession, forceLogoutNow }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout, refreshSession, stores, storeId, switchStore, permissions, hasPermission, license, hasFeature, isLicenseActive, inactivityWarningSeconds, continueSession, forceLogoutNow, inactivityTimeoutMinutes: INACTIVITY_TIMEOUT_MIN, isMasterTenant }}>
       {children}
     </AuthContext.Provider>
   );

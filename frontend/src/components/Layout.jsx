@@ -34,7 +34,7 @@ const ROLE_LABELS = {
 };
 
 export default function Layout() {
-  const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive, license, inactivityWarningSeconds, continueSession, forceLogoutNow } = useAuth();
+  const { user, logout, stores, storeId, switchStore, hasPermission, hasFeature, isLicenseActive, license, inactivityWarningSeconds, continueSession, forceLogoutNow, inactivityTimeoutMinutes, isMasterTenant } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
@@ -349,29 +349,35 @@ export default function Layout() {
         </div>
       ) : null}
 
-      {Number(inactivityWarningSeconds || 0) > 0 ? (
+      {(inactivityWarningSeconds !== null && (isMasterTenant || Number(inactivityWarningSeconds || 0) > 0)) ? (
         <div className="fixed inset-0 z-[95] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/45" />
           <div className="relative w-full max-w-md rounded-xl bg-white shadow-2xl border border-gray-200 p-5">
-            <h3 className="text-lg font-semibold text-gray-900">Sessão prestes a expirar</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              {isMasterTenant ? "Tempo de inatividade" : "Sessão prestes a expirar"}
+            </h3>
             <p className="text-sm text-gray-600 mt-1">
-              Sua sessão será encerrada por inatividade em:
+              {isMasterTenant
+                ? `Conta Desenvolvedor sem logout automático. Limite configurado: ${inactivityTimeoutMinutes} minuto(s).`
+                : "Sua sessão será encerrada por inatividade em:"}
             </p>
-            <p className="mt-3 text-center text-3xl font-bold text-amber-600 tracking-widest">{inactivityLabel}</p>
+            <p className="mt-3 text-center text-3xl font-bold text-amber-600 tracking-widest">
+              {isMasterTenant ? `Inatividade: ${inactivityLabel}` : inactivityLabel}
+            </p>
             <div className="mt-5 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={forceLogoutNow}
                 className="px-4 py-2 rounded-lg border border-red-200 text-red-700 bg-red-50 text-sm font-medium hover:bg-red-100"
               >
-                Sair agora
+                Sair
               </button>
               <button
                 type="button"
                 onClick={continueSession}
                 className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
               >
-                Continuar sessão
+                OK
               </button>
             </div>
           </div>
