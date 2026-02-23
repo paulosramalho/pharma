@@ -59,6 +59,23 @@ const STATUS_LABELS = {
   CANCELED: "Cancelada",
 };
 
+const PAYMENT_STATUS_LABELS = {
+  PENDING: "Pendente",
+  PAID: "Pago",
+  OVERDUE: "Em atraso",
+};
+
+const ALERT_TYPE_LABELS = {
+  DUE_DAYS_BEFORE_PRIMARY: "Aviso antecipado (X dias)",
+  DUE_DAYS_BEFORE_SECONDARY: "Aviso antecipado (Y dias)",
+  DUE_EVE: "Véspera do vencimento",
+  DUE_TODAY: "Vencimento hoje",
+  PAYMENT_RECEIVED: "Pagamento recebido",
+  THREE_BUSINESS_DAYS_OVERDUE: "3 dias úteis em atraso",
+  THREE_DAYS_AFTER_OVERDUE_WARNING: "3 dias após aviso de atraso",
+  SERVICE_SUSPENDED: "Serviço suspenso",
+};
+
 const PERFIL_LABELS = {
   ADMIN: "Administrador",
   VENDEDOR: "Vendedor",
@@ -188,6 +205,10 @@ export default function Config() {
   const [importValidating, setImportValidating] = useState(false);
   const [importExecuting, setImportExecuting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [licensePayments, setLicensePayments] = useState([]);
+  const [licenseAlerts, setLicenseAlerts] = useState([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [markingPaymentId, setMarkingPaymentId] = useState("");
   const planosLicenciamentoMode = licenciamentoView === "PLANOS";
 
   // Load data based on tab
@@ -920,6 +941,10 @@ export default function Config() {
   };
 
   const dateLabel = (v) => (v ? formatDate(v) : "—");
+  const dateTimeLabel = (v) => {
+    if (!v) return "—";
+    return new Date(v).toLocaleString("pt-BR");
+  };
   const moduloHabilitado = (features = {}) =>
     Object.entries(features)
       .filter(([, enabled]) => Boolean(enabled))
@@ -929,6 +954,57 @@ export default function Config() {
     Object.entries(limits?.maxRoleActive || {})
       .filter(([, qty]) => Number(qty) > 0)
       .map(([role, qty]) => `${PERFIL_LABELS[role] || role}: ${qty}`);
+
+  const loadLicensePayments = async ({ targetTenantId = null } = {}) => {
+    if (!canManageLicense) return;
+    if (isDeveloperAdmin && !targetTenantId) {
+      setLicensePayments([]);
+      setLicenseAlerts([]);
+      return;
+    }
+    setPaymentsLoading(true);
+    try {
+      const endpoint = isDeveloperAdmin
+        ? `/api/license/admin/licenses/${targetTenantId}/payments`
+        : "/api/license/me/payments";
+      const res = await apiFetch(endpoint);
+      setLicensePayments(res?.data?.payments || []);
+      setLicenseAlerts(res?.data?.alerts || []);
+    } catch (err) {
+      addToast(err.message || "Falha ao carregar pagamentos da licença", "error");
+      setLicensePayments([]);
+      setLicenseAlerts([]);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  };
+
+  const markLicensePaymentAsPaid = async (payment) => {
+    if (!isDeveloperAdmin || !selectedLicense?.id || !payment?.id) return;
+    const amount = Number(payment.amountCents || 0);
+    const due = dateLabel(payment.dueDate);
+    const ok = window.confirm(
+      `Registrar pagamento desta parcela?\n\nVencimento: ${due}\nValor: ${moneyLabel(amount)}`
+    );
+    if (!ok) return;
+    setMarkingPaymentId(payment.id);
+    try {
+      await apiFetch(`/api/license/admin/licenses/${selectedLicense.id}/payments/${payment.id}/mark-paid`, {
+        method: "POST",
+        body: JSON.stringify({
+          paidAmountCents: amount,
+        }),
+      });
+      addToast("Pagamento registrado com sucesso", "success");
+      await loadLicensePayments({ targetTenantId: selectedLicense.id });
+      const listRes = await apiFetch("/api/license/admin/licenses");
+      setLicensesList(listRes?.data?.licenses || []);
+    } catch (err) {
+      addToast(err.message || "Falha ao registrar pagamento", "error");
+    } finally {
+      setMarkingPaymentId("");
+    }
+  };
 
   useEffect(() => {
     if (!isDeveloperAdmin || !selectedLicense) return;
@@ -949,6 +1025,20 @@ export default function Config() {
     setImportValidation([]);
     setImportResult(null);
   }, [selectedLicenseId, licenciamentoView]);
+
+  useEffect(() => {
+    if (tab !== "licenciamento" || !canManageLicense || planosLicenciamentoMode || licenciamentoView === "NOVO") return;
+    if (isDeveloperAdmin) {
+      if (!selectedLicense?.id) {
+        setLicensePayments([]);
+        setLicenseAlerts([]);
+        return;
+      }
+      loadLicensePayments({ targetTenantId: selectedLicense.id });
+      return;
+    }
+    loadLicensePayments();
+  }, [tab, canManageLicense, isDeveloperAdmin, licenciamentoView, planosLicenciamentoMode, selectedLicense?.id]);
 
   useEffect(() => {
     if (!selectedAdminRequest) return;
@@ -972,7 +1062,7 @@ export default function Config() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-        {((adminLicenseLocked || licenciamentoView !== "CONTRATANTES") ? TABS.filter((t) => t.key === "licenciamento") : TABS).map((t) => (
+        {(adminLicenseLocked ? TABS.filter((t) => t.key === "licenciamento") : TABS).map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${tab === t.key ? "bg-white text-primary-700 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
             <t.icon size={16} /> {t.label}
@@ -1630,6 +1720,85 @@ export default function Config() {
                       </div>
                     )}
                   </div>
+                  ) : null}
+
+                  {!planosLicenciamentoMode && canManageLicense && (!isDeveloperAdmin || selectedLicense) ? (
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-gray-900">Controle de pagamentos da licença</p>
+                        {paymentsLoading ? <span className="text-xs text-gray-500">Atualizando...</span> : null}
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-gray-200 text-left text-gray-500">
+                              <th className="px-2 py-1">Vencimento</th>
+                              <th className="px-2 py-1">Valor</th>
+                              <th className="px-2 py-1">Status</th>
+                              <th className="px-2 py-1">Pago em</th>
+                              <th className="px-2 py-1">Valor pago</th>
+                              <th className="px-2 py-1">Ação</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {(licensePayments || []).map((p) => (
+                              <tr key={p.id}>
+                                <td className="px-2 py-1 text-gray-700">{dateLabel(p.dueDate)}</td>
+                                <td className="px-2 py-1 text-gray-700">{moneyLabel(p.amountCents)}</td>
+                                <td className="px-2 py-1 text-gray-700">{PAYMENT_STATUS_LABELS[p.status] || p.status}</td>
+                                <td className="px-2 py-1 text-gray-700">{dateTimeLabel(p.paidAt)}</td>
+                                <td className="px-2 py-1 text-gray-700">{p.paidAmountCents != null ? moneyLabel(p.paidAmountCents) : "-"}</td>
+                                <td className="px-2 py-1">
+                                  {isDeveloperAdmin && p.status !== "PAID" ? (
+                                    <button
+                                      type="button"
+                                      className="text-primary-700 hover:text-primary-800 disabled:opacity-50"
+                                      disabled={markingPaymentId === p.id}
+                                      onClick={() => markLicensePaymentAsPaid(p)}
+                                    >
+                                      {markingPaymentId === p.id ? "Registrando..." : "Registrar pagamento"}
+                                    </button>
+                                  ) : "-"}
+                                </td>
+                              </tr>
+                            ))}
+                            {!licensePayments?.length ? (
+                              <tr>
+                                <td colSpan={6} className="px-2 py-2 text-gray-400">Sem parcelas geradas para esta licença.</td>
+                              </tr>
+                            ) : null}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-gray-700">Alertas de cobrança</p>
+                        <div className="max-h-56 overflow-auto rounded border border-gray-200">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-gray-200 text-left text-gray-500">
+                                <th className="px-2 py-1">Data</th>
+                                <th className="px-2 py-1">Tipo</th>
+                                <th className="px-2 py-1">Mensagem</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {(licenseAlerts || []).map((a) => (
+                                <tr key={a.id}>
+                                  <td className="px-2 py-1 text-gray-700">{dateTimeLabel(a.alertDate)}</td>
+                                  <td className="px-2 py-1 text-gray-700">{ALERT_TYPE_LABELS[a.type] || a.type}</td>
+                                  <td className="px-2 py-1 text-gray-700">{a.message || "-"}</td>
+                                </tr>
+                              ))}
+                              {!licenseAlerts?.length ? (
+                                <tr>
+                                  <td colSpan={3} className="px-2 py-2 text-gray-400">Sem alertas registrados.</td>
+                                </tr>
+                              ) : null}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
                   ) : null}
                 </>
               ) : (

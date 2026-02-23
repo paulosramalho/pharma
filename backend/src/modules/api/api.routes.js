@@ -27,6 +27,7 @@ function safeDate(v) {
 function buildApiRoutes({ prisma, log }) {
   const router = express.Router();
   const ONLINE_WINDOW_MS = 120000;
+  const billingDailySyncByTenant = new Map();
 
   function isAdmin(req) {
     return req.user?.role === "ADMIN";
@@ -89,6 +90,7 @@ function buildApiRoutes({ prisma, log }) {
         updatedAt: new Date(),
       }, masterCatalog);
     }
+    await processTenantLicenseBillingIfNeeded({ tenantId, actorUserId: req.user?.id || null });
     const row = await prisma.tenantLicense.findUnique({
       where: { tenantId },
       select: {
@@ -126,6 +128,7 @@ function buildApiRoutes({ prisma, log }) {
         updatedAt: new Date(),
       }, masterCatalog);
     }
+    await processTenantLicenseBillingIfNeeded({ tenantId });
     const row = await prisma.tenantLicense.findUnique({
       where: { tenantId },
       select: {
@@ -310,6 +313,282 @@ function buildApiRoutes({ prisma, log }) {
     const catalog = await getPlanCatalogMap();
     const key = String(code || "").trim().toUpperCase();
     return catalog[key] || null;
+  }
+
+  function atNoon(dateValue) {
+    const d = new Date(dateValue);
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }
+
+  function addDays(dateValue, days) {
+    const d = atNoon(dateValue);
+    d.setDate(d.getDate() + Number(days || 0));
+    return d;
+  }
+
+  function addMonthsClamped(dateValue, months) {
+    const base = atNoon(dateValue);
+    const day = base.getDate();
+    const y = base.getFullYear();
+    const m = base.getMonth() + Number(months || 0);
+    const first = new Date(y, m, 1, 12, 0, 0, 0);
+    const lastDay = new Date(first.getFullYear(), first.getMonth() + 1, 0, 12, 0, 0, 0).getDate();
+    first.setDate(Math.min(day, lastDay));
+    return first;
+  }
+
+  function isBusinessDay(dateValue) {
+    const d = atNoon(dateValue).getDay();
+    return d !== 0 && d !== 6;
+  }
+
+  function addBusinessDays(dateValue, businessDays) {
+    let current = atNoon(dateValue);
+    let remaining = Number(businessDays || 0);
+    while (remaining > 0) {
+      current = addDays(current, 1);
+      if (isBusinessDay(current)) remaining -= 1;
+    }
+    return current;
+  }
+
+  function dateKey(dateValue) {
+    return atNoon(dateValue).toISOString().slice(0, 10);
+  }
+
+  function billingMessage(type, dueDate, amountCents) {
+    const dueLabel = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" }).format(atNoon(dueDate));
+    const amountLabel = (Number(amountCents || 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    const messages = {
+      DUE_DAYS_BEFORE_PRIMARY: `Lembrete: parcela da licença vence em breve (${dueLabel}) no valor de ${amountLabel}.`,
+      DUE_DAYS_BEFORE_SECONDARY: `Aviso: faltam poucos dias para o vencimento da licença (${dueLabel}) no valor de ${amountLabel}.`,
+      DUE_EVE: `Atenção: a licença vence amanhã (${dueLabel}) no valor de ${amountLabel}.`,
+      DUE_TODAY: `Vencimento hoje: parcela da licença (${dueLabel}) no valor de ${amountLabel}.`,
+      PAYMENT_RECEIVED: `Pagamento da licença recebido (${dueLabel}) no valor de ${amountLabel}.`,
+      THREE_BUSINESS_DAYS_OVERDUE: `Parcela da licença em atraso há 3 dias úteis (${dueLabel}) e sem registro de pagamento.`,
+      THREE_DAYS_AFTER_OVERDUE_WARNING: `Licença ainda em atraso. Serviço será suspenso em 2 dias se não houver pagamento.`,
+      SERVICE_SUSPENDED: `Serviço suspenso por inadimplência da licença. Apenas admin pode regularizar.`,
+    };
+    return messages[type] || `Alerta de licença: ${type}`;
+  }
+
+  async function createLicenseAlertIfMissing(tx, { tenantId, paymentId, type, alertDate, amountCents, dueDate }) {
+    const normalizedDate = atNoon(alertDate);
+    const exists = await tx.tenantLicenseAlert.findFirst({
+      where: {
+        tenantId,
+        paymentId: paymentId || null,
+        type,
+        alertDate: normalizedDate,
+      },
+      select: { id: true },
+    });
+    if (exists?.id) return null;
+    return tx.tenantLicenseAlert.create({
+      data: {
+        tenantId,
+        paymentId: paymentId || null,
+        type,
+        alertDate: normalizedDate,
+        message: billingMessage(type, dueDate || normalizedDate, amountCents || 0),
+      },
+    });
+  }
+
+  async function processTenantLicenseBilling({ tenantId, actorUserId = null, today = new Date() }) {
+    const now = atNoon(today);
+    const catalog = await getPlanCatalogMap();
+    const license = await prisma.tenantLicense.findUnique({
+      where: { tenantId },
+      select: {
+        id: true,
+        tenantId: true,
+        planCode: true,
+        status: true,
+        startsAt: true,
+        endsAt: true,
+        graceUntil: true,
+        addonMaxActiveUsers: true,
+        addonMaxRoleActive: true,
+        overrideMonthlyPriceCents: true,
+        overrideAnnualPriceCents: true,
+        extrasDescription: true,
+        billingToleranceDays: true,
+        alertDaysPrimary: true,
+        alertDaysSecondary: true,
+      },
+    });
+    if (!license?.id) return null;
+    if (!license.startsAt || !license.endsAt) return license;
+
+    const resolved = resolveTenantLicense(license, catalog);
+    const monthlyAmount = Number(resolved?.pricing?.monthlyPriceCents || 0);
+    const toleranceDays = Math.max(0, Number(license.billingToleranceDays || 0));
+    const alertPrimary = Math.max(0, Number(license.alertDaysPrimary || 0));
+    const alertSecondary = Math.max(0, Number(license.alertDaysSecondary || 0));
+    const startsAt = atNoon(license.startsAt);
+    const endsAt = atNoon(license.endsAt);
+
+    const dueDates = [];
+    let cursor = atNoon(startsAt);
+    while (cursor <= endsAt) {
+      dueDates.push(atNoon(cursor));
+      cursor = addMonthsClamped(cursor, 1);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const dueDate of dueDates) {
+        // eslint-disable-next-line no-await-in-loop
+        await tx.tenantLicensePayment.upsert({
+          where: { tenantId_dueDate: { tenantId, dueDate } },
+          update: {},
+          create: {
+            tenantId,
+            licenseId: license.id,
+            dueDate,
+            amountCents: monthlyAmount,
+            status: "PENDING",
+          },
+        });
+      }
+
+      const payments = await tx.tenantLicensePayment.findMany({
+        where: { tenantId, licenseId: license.id },
+        orderBy: [{ dueDate: "asc" }],
+      });
+
+      let shouldSuspend = false;
+      let shouldGrace = false;
+      for (const payment of payments) {
+        const dueDate = atNoon(payment.dueDate);
+        const isPaid = Boolean(payment.paidAt);
+        if (isPaid) {
+          if (payment.status !== "PAID") {
+            // eslint-disable-next-line no-await-in-loop
+            await tx.tenantLicensePayment.update({ where: { id: payment.id }, data: { status: "PAID" } });
+          }
+          // eslint-disable-next-line no-await-in-loop
+          await createLicenseAlertIfMissing(tx, {
+            tenantId,
+            paymentId: payment.id,
+            type: "PAYMENT_RECEIVED",
+            alertDate: payment.paidAt || now,
+            amountCents: payment.paidAmountCents || payment.amountCents,
+            dueDate,
+          });
+          continue;
+        }
+
+        const overdueToleranceDate = addDays(dueDate, toleranceDays);
+        if (now > overdueToleranceDate && payment.status !== "OVERDUE") {
+          // eslint-disable-next-line no-await-in-loop
+          await tx.tenantLicensePayment.update({ where: { id: payment.id }, data: { status: "OVERDUE" } });
+        }
+
+        if (now > overdueToleranceDate) shouldGrace = true;
+
+        const alertPrimaryDate = addDays(dueDate, -alertPrimary);
+        const alertSecondaryDate = addDays(dueDate, -alertSecondary);
+        const eveDate = addDays(dueDate, -1);
+        const todayDate = dueDate;
+        const businessOverdueDate = addBusinessDays(dueDate, 3);
+        const threeAfterBusiness = addDays(businessOverdueDate, 3);
+        const suspensionDate = addDays(threeAfterBusiness, 2);
+
+        if (now >= alertPrimaryDate) {
+          // eslint-disable-next-line no-await-in-loop
+          await createLicenseAlertIfMissing(tx, { tenantId, paymentId: payment.id, type: "DUE_DAYS_BEFORE_PRIMARY", alertDate: alertPrimaryDate, amountCents: payment.amountCents, dueDate });
+        }
+        if (now >= alertSecondaryDate) {
+          // eslint-disable-next-line no-await-in-loop
+          await createLicenseAlertIfMissing(tx, { tenantId, paymentId: payment.id, type: "DUE_DAYS_BEFORE_SECONDARY", alertDate: alertSecondaryDate, amountCents: payment.amountCents, dueDate });
+        }
+        if (now >= eveDate) {
+          // eslint-disable-next-line no-await-in-loop
+          await createLicenseAlertIfMissing(tx, { tenantId, paymentId: payment.id, type: "DUE_EVE", alertDate: eveDate, amountCents: payment.amountCents, dueDate });
+        }
+        if (now >= todayDate) {
+          // eslint-disable-next-line no-await-in-loop
+          await createLicenseAlertIfMissing(tx, { tenantId, paymentId: payment.id, type: "DUE_TODAY", alertDate: todayDate, amountCents: payment.amountCents, dueDate });
+        }
+        if (now >= businessOverdueDate) {
+          // eslint-disable-next-line no-await-in-loop
+          await createLicenseAlertIfMissing(tx, { tenantId, paymentId: payment.id, type: "THREE_BUSINESS_DAYS_OVERDUE", alertDate: businessOverdueDate, amountCents: payment.amountCents, dueDate });
+        }
+        if (now >= threeAfterBusiness) {
+          // eslint-disable-next-line no-await-in-loop
+          await createLicenseAlertIfMissing(tx, { tenantId, paymentId: payment.id, type: "THREE_DAYS_AFTER_OVERDUE_WARNING", alertDate: threeAfterBusiness, amountCents: payment.amountCents, dueDate });
+        }
+        if (now >= suspensionDate) {
+          shouldSuspend = true;
+          // eslint-disable-next-line no-await-in-loop
+          await createLicenseAlertIfMissing(tx, { tenantId, paymentId: payment.id, type: "SERVICE_SUSPENDED", alertDate: suspensionDate, amountCents: payment.amountCents, dueDate });
+        }
+      }
+
+      const normalizedStatus = String(license.status || "ACTIVE").toUpperCase();
+      const mutableStatuses = ["TRIAL", "ACTIVE", "GRACE", "SUSPENDED"];
+      if (mutableStatuses.includes(normalizedStatus)) {
+        let nextStatus = normalizedStatus;
+        if (shouldSuspend) nextStatus = "SUSPENDED";
+        else if (shouldGrace) nextStatus = "GRACE";
+        else nextStatus = normalizedStatus === "TRIAL" ? "TRIAL" : "ACTIVE";
+
+        if (nextStatus !== normalizedStatus) {
+          await tx.tenantLicense.update({
+            where: { tenantId },
+            data: {
+              status: nextStatus,
+              updatedById: actorUserId || null,
+              updatedByName: actorUserId ? "Sistema" : "Sistema",
+            },
+          });
+          await tx.tenantLicenseAudit.create({
+            data: {
+              tenantId,
+              previousPlan: license.planCode,
+              newPlan: license.planCode,
+              previousStatus: normalizedStatus,
+              newStatus: nextStatus,
+              changedById: actorUserId || null,
+              changedByName: "Sistema",
+              reason: "Atualizacao automatica de status por controle de pagamentos de licenca",
+            },
+          });
+        }
+      }
+    });
+
+    return prisma.tenantLicense.findUnique({ where: { tenantId } });
+  }
+
+  async function processTenantLicenseBillingIfNeeded({ tenantId, actorUserId = null, force = false, today = new Date() }) {
+    if (!tenantId) return null;
+    const key = dateKey(today);
+    if (!force && billingDailySyncByTenant.get(tenantId) === key) return null;
+    const updated = await processTenantLicenseBilling({ tenantId, actorUserId, today });
+    billingDailySyncByTenant.set(tenantId, key);
+    return updated;
+  }
+
+  async function getTenantLicenseBillingView({ tenantId, limitAlerts = 80, forceProcess = true, actorUserId = null }) {
+    if (!tenantId) throw Object.assign(new Error("tenantId obrigatorio"), { statusCode: 400 });
+    if (forceProcess) {
+      await processTenantLicenseBillingIfNeeded({ tenantId, actorUserId, force: true });
+    }
+    const [payments, alerts] = await Promise.all([
+      prisma.tenantLicensePayment.findMany({
+        where: { tenantId },
+        orderBy: [{ dueDate: "asc" }],
+      }),
+      prisma.tenantLicenseAlert.findMany({
+        where: { tenantId },
+        orderBy: [{ alertDate: "desc" }, { createdAt: "desc" }],
+        take: Math.max(10, Number(limitAlerts || 80)),
+      }),
+    ]);
+    return { payments, alerts };
   }
 
   async function upsertTenantLicenseWithAudit({ tenantId, actor, body }) {
@@ -997,7 +1276,13 @@ function buildApiRoutes({ prisma, log }) {
     const license = await getLicense(req);
     if (isLicenseActive(license)) return next();
     const p = String(req.path || "");
-    if (p === "/license/me" || p === "/license/me/contractor" || p === "/license/onboarding/finalize" || p.startsWith("/license/cep/")) return next();
+    if (
+      p === "/license/me"
+      || p === "/license/me/contractor"
+      || p === "/license/me/payments"
+      || p === "/license/onboarding/finalize"
+      || p.startsWith("/license/cep/")
+    ) return next();
     return res.status(403).json({
       error: {
         code: 403,
@@ -1198,6 +1483,16 @@ function buildApiRoutes({ prisma, log }) {
     const license = await getLicense(req);
     const profile = await getTenantLicenseProfile(req);
     return sendOk(res, req, { ...license, tenantId: profile.tenantId, contractor: profile.contractor });
+  }));
+
+  router.get("/license/me/payments", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: { code: 403, message: "Somente admin pode consultar pagamentos da licença" } });
+    }
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant nao identificado" } });
+    const view = await getTenantLicenseBillingView({ tenantId, actorUserId: req.user?.id || null, forceProcess: true });
+    return sendOk(res, req, view);
   }));
 
   router.put("/license/me", asyncHandler(async (req, res) => {
@@ -2078,6 +2373,72 @@ function buildApiRoutes({ prisma, log }) {
       license,
       provisionalAdmin: provisionalByTenant[tenant.id] || null,
     });
+  }));
+
+  router.get("/license/admin/licenses/:tenantId/payments", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const tenantId = String(req.params.tenantId || "").trim();
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatorio" } });
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Controle de pagamentos nao se aplica a licenca Desenvolvedor" } });
+    }
+    const view = await getTenantLicenseBillingView({ tenantId, actorUserId: req.user?.id || null, forceProcess: true });
+    return sendOk(res, req, view);
+  }));
+
+  router.post("/license/admin/licenses/:tenantId/payments/:paymentId/mark-paid", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const tenantId = String(req.params.tenantId || "").trim();
+    const paymentId = String(req.params.paymentId || "").trim();
+    if (!tenantId || !paymentId) {
+      return res.status(400).json({ error: { code: 400, message: "licenciadoId e paymentId sao obrigatorios" } });
+    }
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, isDeveloperTenant: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado nao encontrado" } });
+    if (tenant.isDeveloperTenant) {
+      return res.status(403).json({ error: { code: 403, message: "Licenca Desenvolvedor nao possui cobranca de pagamentos" } });
+    }
+
+    const payment = await prisma.tenantLicensePayment.findFirst({
+      where: { id: paymentId, tenantId },
+      select: { id: true, tenantId: true, status: true, amountCents: true, paidAt: true },
+    });
+    if (!payment) return res.status(404).json({ error: { code: 404, message: "Parcela nao encontrada para o licenciado informado" } });
+
+    const paidAt = req.body?.paidAt ? safeDate(req.body.paidAt) : new Date();
+    const paidAmountCentsRaw = req.body?.paidAmountCents;
+    const paidAmountCents = Number.isFinite(Number(paidAmountCentsRaw))
+      ? Math.max(0, Math.round(Number(paidAmountCentsRaw)))
+      : Number(payment.amountCents || 0);
+    const note = req.body?.note ? String(req.body.note).trim().slice(0, 500) : null;
+
+    await prisma.tenantLicensePayment.update({
+      where: { id: payment.id },
+      data: {
+        status: "PAID",
+        paidAt,
+        paidAmountCents,
+        paidByUserId: req.user?.id || null,
+        note,
+      },
+    });
+
+    await processTenantLicenseBillingIfNeeded({
+      tenantId,
+      actorUserId: req.user?.id || null,
+      force: true,
+      today: paidAt,
+    });
+    const view = await getTenantLicenseBillingView({ tenantId, forceProcess: false });
+    return sendOk(res, req, { paymentId: payment.id, ...view });
   }));
 
   router.put("/license/admin/licenses/:tenantId", asyncHandler(async (req, res) => {

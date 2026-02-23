@@ -126,6 +126,8 @@ model Tenant {
   license      TenantLicense?
   licenseAudit TenantLicenseAudit[]
   licenseChangeRequests TenantLicenseChangeRequest[]
+  licensePayments TenantLicensePayment[]
+  licenseAlerts   TenantLicenseAlert[]
   inventoryLots        InventoryLot[]
   inventoryMovements   InventoryMovement[]
   saleItems            SaleItem[]
@@ -154,10 +156,69 @@ model TenantLicense {
   overrideMonthlyPriceCents Int?
   overrideAnnualPriceCents Int?
   extrasDescription String?
+  billingToleranceDays Int @default(3)
+  alertDaysPrimary Int @default(10)
+  alertDaysSecondary Int @default(5)
+  payments       TenantLicensePayment[]
   updatedAt      DateTime      @updatedAt
   createdAt      DateTime      @default(now())
 
   @@index([planCode, status])
+}
+
+enum TenantLicensePaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+enum TenantLicenseAlertType {
+  DUE_DAYS_BEFORE_PRIMARY
+  DUE_DAYS_BEFORE_SECONDARY
+  DUE_EVE
+  DUE_TODAY
+  PAYMENT_RECEIVED
+  THREE_BUSINESS_DAYS_OVERDUE
+  THREE_DAYS_AFTER_OVERDUE_WARNING
+  SERVICE_SUSPENDED
+}
+
+model TenantLicensePayment {
+  id           String @id @default(uuid())
+  tenant       Tenant @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  license      TenantLicense @relation(fields: [licenseId], references: [id])
+  licenseId    String
+  dueDate      DateTime
+  amountCents  Int
+  status       TenantLicensePaymentStatus @default(PENDING)
+  paidAt       DateTime?
+  paidAmountCents Int?
+  paidByUserId String?
+  note         String?
+  alerts       TenantLicenseAlert[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, dueDate])
+  @@index([tenantId, status, dueDate])
+  @@index([licenseId, dueDate])
+}
+
+model TenantLicenseAlert {
+  id         String @id @default(uuid())
+  tenant     Tenant @relation(fields: [tenantId], references: [id])
+  tenantId   String
+  payment    TenantLicensePayment? @relation(fields: [paymentId], references: [id])
+  paymentId  String?
+  type       TenantLicenseAlertType
+  message    String
+  alertDate  DateTime
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, type, alertDate, paymentId])
+  @@index([tenantId, alertDate])
+  @@index([paymentId, type])
 }
 
 model LicensePlan {
