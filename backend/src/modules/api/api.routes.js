@@ -1066,10 +1066,21 @@ function buildApiRoutes({ prisma, log }) {
       throw Object.assign(new Error(`Tabela não suportada para exportação: ${table}`), { statusCode: 400 });
     }
     if (table === "stores") {
-      const stores = await prisma.store.findMany({
+      let stores = await prisma.store.findMany({
         where: { tenantId },
         orderBy: [{ name: "asc" }],
       });
+      // Fallback legado: alguns registros antigos podem ter sido gravados sem tenantId.
+      if (stores.length === 0) {
+        try {
+          stores = await prisma.store.findMany({
+            where: { OR: [{ tenantId }, { tenantId: null }] },
+            orderBy: [{ name: "asc" }],
+          });
+        } catch {
+          stores = [];
+        }
+      }
       return stores.map((s) => ({
         name: s.name || "",
         type: s.type || "LOJA",
@@ -1089,10 +1100,20 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     if (table === "categories") {
-      const categories = await prisma.category.findMany({
+      let categories = await prisma.category.findMany({
         where: { tenantId },
         orderBy: [{ name: "asc" }],
       });
+      if (categories.length === 0) {
+        try {
+          categories = await prisma.category.findMany({
+            where: { OR: [{ tenantId }, { tenantId: null }] },
+            orderBy: [{ name: "asc" }],
+          });
+        } catch {
+          categories = [];
+        }
+      }
       return categories.map((c) => ({
         name: c.name || "",
         active: "true",
@@ -1100,11 +1121,22 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     if (table === "products") {
-      const products = await prisma.product.findMany({
+      let products = await prisma.product.findMany({
         where: { tenantId },
         include: { category: { select: { name: true } } },
         orderBy: [{ name: "asc" }],
       });
+      if (products.length === 0) {
+        try {
+          products = await prisma.product.findMany({
+            where: { OR: [{ tenantId }, { tenantId: null }] },
+            include: { category: { select: { name: true } } },
+            orderBy: [{ name: "asc" }],
+          });
+        } catch {
+          products = [];
+        }
+      }
       return products.map((p) => ({
         name: p.name || "",
         ean: p.ean || "",
@@ -1118,10 +1150,20 @@ function buildApiRoutes({ prisma, log }) {
     }
 
     if (table === "customers") {
-      const customers = await prisma.customer.findMany({
+      let customers = await prisma.customer.findMany({
         where: { tenantId },
         orderBy: [{ name: "asc" }],
       });
+      if (customers.length === 0) {
+        try {
+          customers = await prisma.customer.findMany({
+            where: { OR: [{ tenantId }, { tenantId: null }] },
+            orderBy: [{ name: "asc" }],
+          });
+        } catch {
+          customers = [];
+        }
+      }
       return customers.map((c) => ({
         name: c.name || "",
         document: c.document || "",
