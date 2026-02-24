@@ -1004,6 +1004,7 @@ export default function Config() {
         email: String(lic?.contractor?.email || ""),
         logoFile: String(lic?.contractor?.logoFile || ""),
       });
+      await refreshSession().catch(() => null);
       addToast("Dados do contratante atualizados!", "success");
     } catch (err) {
       addToast(err.message || "Erro ao atualizar contratante", "error");
@@ -1052,6 +1053,7 @@ export default function Config() {
         });
         const lic = res?.data || null;
         setLicenseData(lic);
+        await refreshSession().catch(() => null);
       }
 
       setContractorForm((prev) => ({ ...prev, logoFile: dataUrl }));
