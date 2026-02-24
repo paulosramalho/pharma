@@ -1572,7 +1572,7 @@ export default function Config() {
                     </div>
                   ) : null}
 
-                  {!planosLicenciamentoMode && canManageLicense && !isDeveloperAdmin ? (
+                  {!planosLicenciamentoMode && canManageLicense && (!isDeveloperAdmin || selectedLicense) ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
                       <div>
                         <p className="text-sm font-semibold text-gray-900">Importação de tabelas</p>
@@ -2122,7 +2122,6 @@ export default function Config() {
     </div>
   );
 }
-
 
 
 
