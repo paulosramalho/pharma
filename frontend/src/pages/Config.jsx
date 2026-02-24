@@ -214,6 +214,7 @@ export default function Config() {
   const [exportSelections, setExportSelections] = useState({});
   const [exportExecuting, setExportExecuting] = useState(false);
   const [exportResult, setExportResult] = useState(null);
+  const [logoImporting, setLogoImporting] = useState(false);
   const [licensePayments, setLicensePayments] = useState([]);
   const [licenseAlerts, setLicenseAlerts] = useState([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
@@ -1025,6 +1026,44 @@ export default function Config() {
     }
   };
 
+  const importContractorLogoFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setLogoImporting(true);
+      const targetTenantId = isDeveloperAdmin ? (selectedLicense?.id || licenseData?.tenantId) : licenseData?.tenantId;
+      if (!targetTenantId) {
+        addToast("Licenciado não identificado para importar logomarca", "warning");
+        return;
+      }
+
+      if (isDeveloperAdmin && selectedLicense?.id) {
+        await apiFetch(`/api/license/admin/licenses/${selectedLicense.id}/contractor-logo`, {
+          method: "PUT",
+          body: JSON.stringify({ logoFile: dataUrl }),
+        });
+        const listRes = await apiFetch("/api/license/admin/licenses");
+        setLicensesList(listRes?.data?.licenses || []);
+      } else {
+        const res = await apiFetch("/api/license/me/contractor-logo", {
+          method: "PUT",
+          body: JSON.stringify({ logoFile: dataUrl }),
+        });
+        const lic = res?.data || null;
+        setLicenseData(lic);
+      }
+
+      setContractorForm((prev) => ({ ...prev, logoFile: dataUrl }));
+      addToast("Logomarca importada com sucesso", "success");
+    } catch (err) {
+      addToast(err.message || "Falha ao importar logomarca", "error");
+    } finally {
+      setLogoImporting(false);
+      event.target.value = "";
+    }
+  };
+
   const dateLabel = (v) => (v ? formatDate(v) : "—");
   const dateTimeLabel = (v) => {
     if (!v) return "—";
@@ -1605,7 +1644,6 @@ export default function Config() {
                               />
                               <span className="font-medium">{opt.label}</span>
                             </label>
-                            <p className="text-[11px] text-gray-500 mt-1">Colunas: {opt.columns}</p>
                             <input
                               type="file"
                               accept=".txt,.csv"
@@ -1700,7 +1738,6 @@ export default function Config() {
                             />
                             <span>
                               <span className="font-medium">{opt.label}</span>
-                              <span className="block text-[11px] text-gray-500 mt-1">Colunas: {opt.columns}</span>
                             </span>
                           </label>
                         ))}
@@ -1735,6 +1772,31 @@ export default function Config() {
                     </div>
                   ) : null}
 
+                  {!planosLicenciamentoMode && canManageLicense ? (
+                    <div className="p-3 rounded-lg border border-gray-200 bg-white space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Importar logomarca</p>
+                        <p className="text-xs text-gray-500">Envie uma imagem ou um arquivo MP4 para atualizar a logomarca.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => contractorLogoInputRef.current?.click()}
+                          loading={logoImporting}
+                        >
+                          Importar logomarca (imagem ou MP4)
+                        </Button>
+                        <input
+                          ref={contractorLogoInputRef}
+                          type="file"
+                          accept="image/*,video/mp4"
+                          className="hidden"
+                          onChange={importContractorLogoFile}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                   {!planosLicenciamentoMode && isDeveloperAdmin && !selectedLicense ? (
                     <div className="p-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-600">
                       Selecione um contratante para visualizar o plano e alterar a licença.

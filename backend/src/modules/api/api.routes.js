@@ -1933,6 +1933,38 @@ function buildApiRoutes({ prisma, log }) {
     return sendOk(res, req, { ...license, tenantId: profile.tenantId, contractor: profile.contractor });
   }));
 
+  router.put("/license/me/contractor-logo", asyncHandler(async (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: { code: 403, message: "Somente admin pode alterar logomarca" } });
+    }
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "Tenant não identificado" } });
+    const logoFile = String(req.body?.logoFile || "").trim() || null;
+
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { contractorLogoFile: logoFile },
+    });
+
+    await prisma.tenantLicenseAudit.create({
+      data: {
+        tenantId,
+        previousPlan: null,
+        newPlan: "CONTRACTOR_LOGO",
+        previousStatus: null,
+        newStatus: "ACTIVE",
+        changedById: req.user?.id || null,
+        changedByName: req.user?.name || req.user?.email || "Admin",
+        reason: "Atualização de logomarca do contratante",
+        payload: { logoFile },
+      },
+    });
+
+    const license = await getLicense(req);
+    const profile = await getTenantLicenseProfile(req);
+    return sendOk(res, req, { ...license, tenantId: profile.tenantId, contractor: profile.contractor });
+  }));
+
   router.get("/license/cep/:cep", asyncHandler(async (req, res) => {
     const cep = String(req.params.cep || "").replace(/\D/g, "");
     if (cep.length !== 8) {
@@ -2873,6 +2905,45 @@ function buildApiRoutes({ prisma, log }) {
     await upsertTenantLicenseWithAudit({ tenantId: tenant.id, actor: req.user, body: req.body });
     const license = await resolveLicenseByTenantId(tenant.id);
     return sendOk(res, req, { tenantId: tenant.id, tenantName: tenant.name, license });
+  }));
+
+  router.put("/license/admin/licenses/:tenantId/contractor-logo", asyncHandler(async (req, res) => {
+    await assertDeveloperAdmin(req);
+    const tenantId = String(req.params.tenantId || "").trim();
+    if (!tenantId) return res.status(400).json({ error: { code: 400, message: "licenciadoId obrigatório" } });
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, name: true },
+    });
+    if (!tenant) return res.status(404).json({ error: { code: 404, message: "Licenciado não encontrado" } });
+    const logoFile = String(req.body?.logoFile || "").trim() || null;
+
+    await prisma.tenant.update({
+      where: { id: tenant.id },
+      data: { contractorLogoFile: logoFile },
+    });
+
+    const sourceTenantId = await resolveTenantId(req);
+    const sourceLicense = await resolveLicenseByTenantId(sourceTenantId);
+    await prisma.tenantLicenseAudit.create({
+      data: {
+        tenantId: sourceTenantId,
+        previousPlan: sourceLicense?.planCode || null,
+        newPlan: sourceLicense?.planCode || "ENTERPRISE",
+        previousStatus: sourceLicense?.status || null,
+        newStatus: sourceLicense?.status || "ACTIVE",
+        changedById: req.user?.id || null,
+        changedByName: req.user?.name || req.user?.email || "Admin",
+        reason: "Atualização de logomarca do licenciado",
+        payload: {
+          targetTenantId: tenant.id,
+          targetTenantName: tenant.name,
+          logoFile,
+        },
+      },
+    });
+
+    return sendOk(res, req, { tenantId: tenant.id, tenantName: tenant.name, logoFile });
   }));
 
   router.post("/license/admin/cleanup", asyncHandler(async (req, res) => {
