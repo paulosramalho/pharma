@@ -161,13 +161,23 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      const leftMs = INACTIVITY_TIMEOUT_MS - (Date.now() - lastAt);
-      if (leftMs <= 0) {
-        if (isMasterTenant) {
+      const elapsedMs = Date.now() - lastAt;
+      const leftMs = INACTIVITY_TIMEOUT_MS - elapsedMs;
+
+      if (isMasterTenant) {
+        const warningElapsedMs = elapsedMs - (INACTIVITY_TIMEOUT_MS - 60000);
+        if (warningElapsedMs >= 0) {
+          const progressiveSeconds = Math.floor(warningElapsedMs / 1000);
           warningActiveRef.current = true;
-          setInactivityWarningSeconds(0);
-          return;
+          setInactivityWarningSeconds((prev) => (prev === progressiveSeconds ? prev : progressiveSeconds));
+        } else {
+          warningActiveRef.current = false;
+          setInactivityWarningSeconds((prev) => (prev === null ? prev : null));
         }
+        return;
+      }
+
+      if (leftMs <= 0) {
         setInactivityWarningSeconds(null);
         warningActiveRef.current = false;
         logout({ reason: "inactivity", broadcast: true });
