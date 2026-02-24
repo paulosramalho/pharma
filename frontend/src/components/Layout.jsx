@@ -63,6 +63,25 @@ export default function Layout() {
     ? (rawTradeName && !/^tenant\s*default$/i.test(rawTradeName) ? rawTradeName : "Pharma")
     : (rawTradeName || (!isGenericTenantName ? rawTenantName : "") || "Pharma");
   const brandLogo = contractor?.logoFile || "/brand/LogoPharma.PNG";
+  const isVideoLogo = /^data:video\/mp4/i.test(String(brandLogo || "")) || /\.mp4(\?|#|$)/i.test(String(brandLogo || ""));
+  const renderBrandLogo = (sizeClass) => (
+    isVideoLogo ? (
+      <video
+        src={brandLogo}
+        className={`${sizeClass} object-contain bg-transparent shrink-0`}
+        autoPlay
+        loop
+        muted
+        playsInline
+      />
+    ) : (
+      <img
+        src={brandLogo}
+        alt="Logo"
+        className={`${sizeClass} object-contain bg-transparent shrink-0`}
+      />
+    )
+  );
 
   const hasPositiveNotice = (billingNotice?.notices || []).some((n) => Number(n?.amountCents || 0) > 0);
 
@@ -172,11 +191,7 @@ export default function Layout() {
       <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transition-transform lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <img
-              src={brandLogo}
-              alt="Logo"
-              className="w-11 h-11 object-contain bg-transparent shrink-0"
-            />
+            {renderBrandLogo("w-11 h-11")}
             <div className="min-w-0 max-w-[150px]">
               <span className="block text-base font-bold text-gray-900 truncate leading-5">{brandName}</span>
             </div>
@@ -250,11 +265,7 @@ export default function Layout() {
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2">
-            <img
-              src={brandLogo}
-              alt="Logo"
-              className="w-8 h-8 object-contain bg-transparent shrink-0"
-            />
+            {renderBrandLogo("w-8 h-8")}
             <div className="min-w-0 max-w-[180px]">
               <span className="font-bold text-gray-900 block truncate leading-5">{brandName}</span>
             </div>
