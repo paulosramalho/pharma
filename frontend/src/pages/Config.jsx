@@ -116,6 +116,7 @@ const DASHBOARD_MODE_LABELS = {
 const USER_ROLE_ORDER = ["ADMIN", "VENDEDOR", "CAIXA", "FARMACEUTICO"];
 
 const IMPORT_TABLE_OPTIONS = [
+  { key: "contractor", label: "Licença/Contratante", columns: "document;nameOrCompany;tradeName;addressFull;street;number;complement;district;city;state;zipCode;phoneWhatsapp;email;logoFile" },
   { key: "stores", label: "Lojas", columns: "name;type;active;isDefault;cnpj;phone;email;street;number;complement;district;city;state;zipCode" },
   { key: "categories", label: "Categorias", columns: "name;active" },
   { key: "products", label: "Produtos", columns: "name;ean;active;requiresPrescription;controlled;defaultMarkup;categoryName;basePrice" },
@@ -123,7 +124,7 @@ const IMPORT_TABLE_OPTIONS = [
 ];
 
 export default function Config() {
-  const { user, isLicenseActive } = useAuth();
+  const { user, isLicenseActive, refreshSession } = useAuth();
   const { addToast } = useToast();
   const [tab, setTab] = useState("lojas");
   const [loading, setLoading] = useState(true);
@@ -2137,4 +2138,3 @@ export default function Config() {
     </div>
   );
 }
-

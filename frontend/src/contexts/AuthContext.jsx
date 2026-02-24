@@ -31,6 +31,11 @@ export function AuthProvider({ children }) {
       body: JSON.stringify({ email, password }),
     });
     const d = res.data;
+    // Persist auth first to ensure subsequent calls use the new token/user context.
+    setAuth({ accessToken: d.accessToken, refreshToken: d.refreshToken, user: d.user, stores: d.stores });
+    setUser(d.user);
+    setPermissions(d.permissions || []);
+    setStores(d.stores || []);
     let licenseData = null;
     try {
       const lic = await apiFetch("/api/license/me");
@@ -38,10 +43,6 @@ export function AuthProvider({ children }) {
     } catch {
       licenseData = null;
     }
-    setAuth({ accessToken: d.accessToken, refreshToken: d.refreshToken, user: d.user, stores: d.stores });
-    setUser(d.user);
-    setPermissions(d.permissions || []);
-    setStores(d.stores || []);
     setLicense(licenseData);
     touchActivity();
     const defaultStore = d.stores?.find((s) => s.isDefault) || d.stores?.[0];
@@ -91,6 +92,16 @@ export function AuthProvider({ children }) {
     if (!getToken()) return null;
     const [meRes, licRes] = await Promise.all([apiFetch("/me"), apiFetch("/api/license/me").catch(() => ({ data: null }))]);
     const d = meRes.data;
+    const currentUser = getUser();
+    if (currentUser?.id && d?.user?.id && currentUser.id !== d.user.id) {
+      clearAuth();
+      setUser(null);
+      setPermissions([]);
+      setStores([]);
+      setLicense(null);
+      setCurrentStore(null);
+      throw new Error("Sessão inconsistente. Faça login novamente.");
+    }
     setUser(d.user);
     setPermissions(d.permissions || []);
     setStores(d.stores || []);

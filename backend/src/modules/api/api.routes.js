@@ -970,6 +970,11 @@ function buildApiRoutes({ prisma, log }) {
   }
 
   const IMPORT_TABLES = {
+    contractor: {
+      label: "Licença/Contratante",
+      required: ["tradeName"],
+      allowed: ["document", "nameOrCompany", "tradeName", "addressFull", "street", "number", "complement", "district", "city", "state", "zipCode", "phoneWhatsapp", "email", "logoFile"],
+    },
     stores: {
       label: "Lojas",
       required: ["name", "type"],
@@ -1050,6 +1055,18 @@ function buildApiRoutes({ prisma, log }) {
       .trim();
   }
 
+  function encodeLogoForDelimited(value) {
+    const v = String(value || "").trim();
+    if (!v) return "";
+    try { return encodeURIComponent(v); } catch { return ""; }
+  }
+
+  function decodeLogoFromDelimited(value) {
+    const v = String(value || "").trim();
+    if (!v) return null;
+    try { return decodeURIComponent(v); } catch { return v; }
+  }
+
   function buildDelimitedText(headers, rows) {
     const safeHeaders = Array.isArray(headers) ? headers.map((h) => String(h || "").trim()) : [];
     const lines = [safeHeaders.join(";")];
@@ -1065,6 +1082,45 @@ function buildApiRoutes({ prisma, log }) {
     if (!schema) {
       throw Object.assign(new Error(`Tabela não suportada para exportação: ${table}`), { statusCode: 400 });
     }
+    if (table === "contractor") {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+          contractorDocument: true,
+          contractorNameOrCompany: true,
+          contractorTradeName: true,
+          contractorAddressFull: true,
+          contractorStreet: true,
+          contractorNumber: true,
+          contractorComplement: true,
+          contractorDistrict: true,
+          contractorCity: true,
+          contractorState: true,
+          contractorZipCode: true,
+          contractorPhoneWhatsapp: true,
+          contractorEmail: true,
+          contractorLogoFile: true,
+        },
+      });
+      if (!tenant) return [];
+      return [{
+        document: tenant.contractorDocument || "",
+        nameOrCompany: tenant.contractorNameOrCompany || "",
+        tradeName: tenant.contractorTradeName || "",
+        addressFull: tenant.contractorAddressFull || "",
+        street: tenant.contractorStreet || "",
+        number: tenant.contractorNumber || "",
+        complement: tenant.contractorComplement || "",
+        district: tenant.contractorDistrict || "",
+        city: tenant.contractorCity || "",
+        state: tenant.contractorState || "",
+        zipCode: tenant.contractorZipCode || "",
+        phoneWhatsapp: tenant.contractorPhoneWhatsapp || "",
+        email: tenant.contractorEmail || "",
+        logoFile: encodeLogoForDelimited(tenant.contractorLogoFile),
+      }];
+    }
+
     if (table === "stores") {
       let stores = await prisma.store.findMany({
         where: { tenantId },
@@ -1226,6 +1282,33 @@ function buildApiRoutes({ prisma, log }) {
   }
 
   async function applyImportRows({ tx, tenantId, table, rows }) {
+    if (table === "contractor") {
+      const row = (rows || [])[0] || null;
+      if (!row) return { imported: 0 };
+      const tradeName = String(row.tradeName || "").trim();
+      if (!tradeName) return { imported: 0 };
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: {
+          contractorDocument: String(row.document || "").replace(/\D/g, "") || null,
+          contractorNameOrCompany: String(row.nameOrCompany || "").trim() || null,
+          contractorTradeName: tradeName,
+          contractorAddressFull: String(row.addressFull || "").trim() || null,
+          contractorStreet: String(row.street || "").trim() || null,
+          contractorNumber: String(row.number || "").trim() || null,
+          contractorComplement: String(row.complement || "").trim() || null,
+          contractorDistrict: String(row.district || "").trim() || null,
+          contractorCity: String(row.city || "").trim() || null,
+          contractorState: String(row.state || "").trim().toUpperCase().slice(0, 2) || null,
+          contractorZipCode: String(row.zipCode || "").replace(/\D/g, "") || null,
+          contractorPhoneWhatsapp: String(row.phoneWhatsapp || "").replace(/\D/g, "") || null,
+          contractorEmail: String(row.email || "").trim().toLowerCase() || null,
+          contractorLogoFile: decodeLogoFromDelimited(row.logoFile),
+        },
+      });
+      return { imported: 1 };
+    }
+
     if (table === "stores") {
       let count = 0;
       for (const r of rows) {
